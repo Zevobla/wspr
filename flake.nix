@@ -80,6 +80,10 @@
           pname = "whspr-cli";
           cargoExtraArgs = "-p whspr-cli";
           doCheck = false;
+          # The crate's [[bin]] is named `whspr`, not `whspr-cli`; without
+          # this, `nix run .#whspr-cli` tries to exec a `whspr-cli` binary
+          # that doesn't exist.
+          meta.mainProgram = "whspr";
         });
 
         whspr-app = craneLib.buildPackage (commonArgs // {
