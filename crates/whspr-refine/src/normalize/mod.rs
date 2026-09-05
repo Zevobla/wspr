@@ -3,6 +3,7 @@
 //! string transforms - no LLM, no network - each independently toggleable
 //! via `whspr_config::NormalizeSettings`.
 
+mod currency;
 mod dates;
 mod numbers;
 mod times;
@@ -60,6 +61,7 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     }
     if settings.numbers {
         text = numbers::normalize_numbers(&text);
+        text = currency::normalize_currency(&text);
     }
     text
 }
