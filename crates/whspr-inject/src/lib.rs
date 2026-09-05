@@ -42,6 +42,16 @@ impl Default for GlobalHotkeyListener {
     }
 }
 
+/// Translates a `global-hotkey` press/release state into our own
+/// `HotkeyEvent`. Split out as a pure function so the translation can be
+/// unit tested without needing a real OS-level hotkey to fire.
+fn map_hotkey_state(state: HotKeyState) -> HotkeyEvent {
+    match state {
+        HotKeyState::Pressed => HotkeyEvent::Pressed,
+        HotKeyState::Released => HotkeyEvent::Released,
+    }
+}
+
 impl HotkeyListener for GlobalHotkeyListener {
     fn subscribe(&self) -> mpsc::Receiver<HotkeyEvent> {
         let (tx, rx) = mpsc::channel(10);
@@ -53,10 +63,7 @@ impl HotkeyListener for GlobalHotkeyListener {
             let receiver = GlobalHotKeyEvent::receiver();
 
             while let Ok(event) = receiver.recv() {
-                let hk_event = match event.state {
-                    HotKeyState::Pressed => HotkeyEvent::Pressed,
-                    HotKeyState::Released => HotkeyEvent::Released,
-                };
+                let hk_event = map_hotkey_state(event.state);
 
                 // `blocking_send` is designed exactly for sending from a
                 // synchronous, non-async thread into a tokio mpsc channel —
