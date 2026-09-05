@@ -69,7 +69,7 @@
 //! verification harness (deliberately not part of `cargo test --workspace`,
 //! which must stay offline and model-free).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use sherpa_rs::diarize::{Diarize, DiarizeConfig};
@@ -93,6 +93,24 @@ pub struct SherpaDiarizer {
 }
 
 impl SherpaDiarizer {
+    /// Resolves the model directory to use: an explicit path (e.g. from a
+    /// `--model-dir` flag or `whspr-config`'s `[speaker].model_dir`) takes
+    /// priority. If none is given, falls back to the `SPEAKER_MODEL_DIR`
+    /// environment variable, which the project's Nix devShell sets to a
+    /// directory of pinned, reproducibly-fetched checkpoints (see
+    /// `nix/models.nix`) so nobody needs to download models by hand.
+    /// Mirrors `whspr_asr::WhisperLocal::resolve_model_path`'s identical
+    /// reasoning: this is a build/environment-provided path, not a
+    /// user-changeable app setting, so reading it here doesn't run afoul of
+    /// `whspr-config`'s "no env vars" rule.
+    ///
+    /// Returns `None` if neither is available; callers should treat that as
+    /// "no real diarization backend configured" rather than constructing a
+    /// `SherpaDiarizer` pointed at a path that doesn't exist.
+    pub fn resolve_model_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
+        explicit.or_else(|| std::env::var_os("SPEAKER_MODEL_DIR").map(PathBuf::from))
+    }
+
     /// Loads the segmentation model, and the embedding model named by
     /// `embedding_choice`, from `model_dir`. See the module doc comment for
     /// the exact filenames expected.
