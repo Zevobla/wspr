@@ -518,7 +518,9 @@ async fn main() -> anyhow::Result<()> {
             let diarizer = build_diarizer(&config, model_dir.as_deref())?;
 
             eprintln!("Running diarization...");
-            let turns = diarizer.diarize(&audio).map_err(|e| anyhow::anyhow!("{}", e))?;
+            let turns = diarizer
+                .diarize(&audio)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
 
             let data_dir = resolve_data_dir(data_dir.as_deref())?;
             std::fs::create_dir_all(&data_dir)?;
