@@ -81,6 +81,31 @@ pub fn run_env(
     })
 }
 
+/// Same as [`run`], but removing the given environment variables from the
+/// child's environment first (used to prove a code path doesn't implicitly
+/// depend on, e.g., a display server being present).
+pub fn run_without_envs(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    remove: &[&str],
+) -> anyhow::Result<CmdOutput> {
+    let mut cmd = Command::new(program);
+    cmd.args(args).current_dir(root);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to spawn `{program} {}`: {e}", args.join(" ")))?;
+    Ok(CmdOutput {
+        success: output.status.success(),
+        code: output.status.code(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
 /// Builds `package` and returns the path to its `bin_name` binary under
 /// the default `target/debug/` layout. Assumes no custom
 /// `CARGO_TARGET_DIR`, which matches every documented dev workflow in
@@ -99,6 +124,19 @@ pub fn ensure_binary_built(root: &Path, package: &str, bin_name: &str) -> anyhow
         );
     }
     Ok(path)
+}
+
+/// Runs `cargo metadata --format-version 1` and parses its JSON. Shared by
+/// every check that needs the resolved dependency graph or per-package
+/// manifest fields (declared deps, license, ...) rather than just reading
+/// Cargo.toml files directly.
+pub fn cargo_metadata(root: &Path) -> anyhow::Result<serde_json::Value> {
+    let output = run(root, "cargo", &["metadata", "--format-version", "1"])?;
+    if !output.success {
+        anyhow::bail!("`cargo metadata` failed: {}", output.stderr);
+    }
+    serde_json::from_str(&output.stdout)
+        .map_err(|e| anyhow::anyhow!("could not parse cargo metadata JSON: {e}"))
 }
 
 /// Reads README.md from the repo root. Shared by every doc-content check

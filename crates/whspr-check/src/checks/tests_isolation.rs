@@ -191,3 +191,122 @@ pub fn check_test_suite(root: &Path) -> Vec<CheckResult> {
         ],
     }
 }
+
+/// Per-test outcome lines (`test <name> ... ok`/`FAILED`/`ignored`) from a
+/// `cargo test` run's stdout, sorted - used by AB-12 to compare two runs by
+/// *what happened*, not by raw byte-for-byte stdout (which would also
+/// vary on cosmetic things like parallel-test print ordering that have
+/// nothing to do with whether the tests themselves are flaky).
+fn extract_test_outcomes(stdout: &str) -> Vec<String> {
+    let mut outcomes: Vec<String> = stdout
+        .lines()
+        .filter(|l| {
+            let l = l.trim_start();
+            // Per-test lines look like "test some::path ... ok" - distinct
+            // from the "test result: ok. N passed; ...; finished in X.XXs"
+            // summary line, which legitimately varies in timing between
+            // runs and must not be compared here.
+            l.starts_with("test ")
+                && !l.starts_with("test result:")
+                && (l.contains(" ... ok") || l.contains(" ... FAILED"))
+        })
+        .map(|l| l.trim().to_string())
+        .collect();
+    outcomes.sort();
+    outcomes
+}
+
+/// AB-05 (test-suite runtime is bounded) and AB-12 (tests give identical
+/// outcomes across repeat runs), from two plain, unpoisoned `cargo test
+/// --workspace` runs.
+///
+/// Deliberately separate runs from `check_test_suite`'s poisoned-network
+/// one above: AB-05/AB-12 are about wall-clock time and outcome stability,
+/// not network isolation, and timing/comparing a poisoned run wouldn't
+/// represent normal behavior.
+///
+/// AB-05's 120s threshold is this checker's own defensible heuristic
+/// (matching the AD-group checks' style): today's suite runs in ~1s,
+/// leaving generous room to grow before flagging anything.
+pub fn check_test_suite_runtime_and_determinism(root: &Path) -> Vec<CheckResult> {
+    let start = std::time::Instant::now();
+    let first = repo::run(root, "cargo", &["test", "--workspace"]);
+    let elapsed = start.elapsed();
+
+    const MAX_SECS: f64 = 120.0;
+    let ab05 = match &first {
+        Ok(out) if out.success => {
+            if elapsed.as_secs_f64() <= MAX_SECS {
+                CheckResult::pass(
+                    "AB-05",
+                    format!(
+                        "`cargo test --workspace` completed in {:.2}s (threshold: <= \
+                         {MAX_SECS:.0}s)",
+                        elapsed.as_secs_f64()
+                    ),
+                )
+            } else {
+                CheckResult::fail(
+                    "AB-05",
+                    format!(
+                        "`cargo test --workspace` took {:.2}s (threshold: <= {MAX_SECS:.0}s)",
+                        elapsed.as_secs_f64()
+                    ),
+                )
+            }
+        }
+        Ok(out) => CheckResult::fail(
+            "AB-05",
+            format!(
+                "test suite failed, so its runtime isn't a meaningful measurement; stderr tail: \
+                 {}",
+                tail(&out.stderr, 400)
+            ),
+        ),
+        Err(e) => CheckResult::fail("AB-05", format!("could not run cargo test: {e}")),
+    };
+
+    let second = repo::run(root, "cargo", &["test", "--workspace"]);
+    let ab12 = match (&first, &second) {
+        (Ok(a), Ok(b)) => {
+            let outcomes_a = extract_test_outcomes(&a.stdout);
+            let outcomes_b = extract_test_outcomes(&b.stdout);
+            if !outcomes_a.is_empty() && outcomes_a == outcomes_b {
+                CheckResult::pass(
+                    "AB-12",
+                    format!(
+                        "{} individual test outcomes (name + pass/fail) are identical across \
+                         two consecutive `cargo test --workspace` runs",
+                        outcomes_a.len()
+                    ),
+                )
+            } else if outcomes_a.is_empty() {
+                CheckResult::fail(
+                    "AB-12",
+                    "could not extract any per-test outcome lines from cargo test output to \
+                     compare",
+                )
+            } else {
+                use std::collections::HashSet;
+                let set_a: HashSet<&String> = outcomes_a.iter().collect();
+                let set_b: HashSet<&String> = outcomes_b.iter().collect();
+                let only_first: Vec<&&String> = set_a.difference(&set_b).collect();
+                let only_second: Vec<&&String> = set_b.difference(&set_a).collect();
+                CheckResult::fail(
+                    "AB-12",
+                    format!(
+                        "test outcomes differ between two consecutive runs: {} outcome(s) only \
+                         in run 1, {} only in run 2 - e.g. {:?} / {:?}",
+                        only_first.len(),
+                        only_second.len(),
+                        only_first.first(),
+                        only_second.first()
+                    ),
+                )
+            }
+        }
+        _ => CheckResult::fail("AB-12", "could not run cargo test twice to compare"),
+    };
+
+    vec![ab05, ab12]
+}
