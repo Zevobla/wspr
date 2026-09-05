@@ -446,6 +446,28 @@ mod tests {
         assert_eq!(clipboard.content.as_deref(), Some("user's data"));
     }
 
+    /// Even if the paste step *panics*, the guard's `Drop` still runs while
+    /// unwinding, so the user's clipboard is restored rather than left
+    /// holding our injected text.
+    #[test]
+    fn stage_and_paste_restores_original_when_paste_panics() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+
+        // Silence the default panic hook so the deliberate panic below
+        // doesn't clutter the test output.
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _ = stage_and_paste(&mut clipboard, "injected text", || panic!("paste blew up"));
+        }));
+        std::panic::set_hook(prev_hook);
+
+        assert!(result.is_err(), "the paste panic should propagate");
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+    }
+
     /// Verifies the arboard integration is real: setting text actually
     /// round-trips through the system clipboard, including non-ASCII text
     /// (the case `paste_from_clipboard` exists for). This is the one piece
