@@ -3,7 +3,7 @@
 
 use crate::report::CheckResult;
 use crate::repo::{self, CmdOutput};
-use crate::util::tail;
+use crate::util::{tail, MODEL_WEIGHT_EXTENSIONS};
 use std::path::Path;
 
 /// Bogus proxy env vars that make any HTTP client routing through a system
@@ -21,8 +21,6 @@ const POISON_ENV: &[(&str, &str)] = &[
 fn run_tests_with_poisoned_network(root: &Path) -> anyhow::Result<CmdOutput> {
     repo::run_env(root, "cargo", &["test", "--workspace"], POISON_ENV)
 }
-
-const MODEL_WEIGHT_EXTENSIONS: &[&str] = &[".gguf", ".bin", ".ggml"];
 
 /// Known CI config locations across common providers. Presence of any one
 /// of these is treated as "tests run in CI" - we don't attempt to verify
