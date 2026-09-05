@@ -122,6 +122,11 @@
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
+
+          # Points WhisperLocal at the pinned, reproducibly-fetched ggml
+          # model (see nix/models.nix) so it has a working model without
+          # anyone downloading one by hand.
+          WHISPER_MODEL_PATH = "${whisper-model}";
         };
       });
 }
