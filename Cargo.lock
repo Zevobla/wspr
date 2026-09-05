@@ -5878,6 +5878,7 @@ dependencies = [
  "directories",
  "hound",
  "predicates",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
