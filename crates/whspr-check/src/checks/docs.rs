@@ -81,6 +81,65 @@ pub fn check_readme_settings_table(root: &Path) -> CheckResult {
     }
 }
 
+/// Superlatives that read as overclaiming for an early-stage project.
+/// Presence isn't automatically disqualifying content-wise, but combined
+/// with a README that also fails to separate "done" from "planned", it's
+/// exactly the pattern AC-03 exists to catch.
+const OVERCLAIM_PHRASES: &[&str] = &[
+    "production-ready",
+    "production ready",
+    "fully working",
+    "100% accurate",
+    "enterprise-grade",
+    "battle-tested",
+    "state-of-the-art accuracy",
+];
+
+/// AC-03: README distinguishes shipped work from aspirational claims.
+///
+/// This is inherently a heuristic (genuinely judging honesty needs a human
+/// reader), so it checks two structural, checkable proxies for it: does
+/// the README have an explicit "what's real vs planned" split, and does it
+/// avoid unqualified overclaiming language. Note this checks the *target
+/// repo's* README, not whspr-check's own - see the crate doc comment in
+/// main.rs for how this checker holds itself to the same rule.
+pub fn check_readme_honesty(root: &Path) -> CheckResult {
+    let text = match repo::read_readme(root) {
+        Ok(t) => t,
+        Err(e) => return CheckResult::fail("AC-03", e.to_string()),
+    };
+    let lower = text.to_lowercase();
+
+    let has_done_marker = lower.contains("today") || lower.contains("works today");
+    let has_planned_marker = lower.contains("planned") || lower.contains("not yet implemented");
+    let overclaims: Vec<&str> = OVERCLAIM_PHRASES
+        .iter()
+        .filter(|p| lower.contains(*p))
+        .copied()
+        .collect();
+
+    if has_done_marker && has_planned_marker && overclaims.is_empty() {
+        CheckResult::pass(
+            "AC-03",
+            "README has both a \"today\"/done marker and a \"planned\"/not-yet marker, and \
+             contains none of this checker's overclaim phrases",
+        )
+    } else {
+        CheckResult::fail(
+            "AC-03",
+            format!(
+                "done marker present: {has_done_marker}, planned marker present: \
+                 {has_planned_marker}, overclaim phrases found: {}",
+                if overclaims.is_empty() {
+                    "none".to_string()
+                } else {
+                    overclaims.join(", ")
+                }
+            ),
+        )
+    }
+}
+
 /// AH-03: README documents system dependencies (a "Dependencies" section
 /// naming at least a couple of the real system libs the build needs).
 pub fn check_readme_dependencies_documented(root: &Path) -> CheckResult {
