@@ -21,7 +21,10 @@ pub fn check_build_and_lock(root: &Path) -> Vec<CheckResult> {
     if lockfile.is_file() {
         out.push(CheckResult::pass(
             "A-03",
-            format!("{} exists and is presumably tracked by git", lockfile.display()),
+            format!(
+                "{} exists and is presumably tracked by git",
+                lockfile.display()
+            ),
         ));
     } else {
         out.push(CheckResult::fail(
@@ -62,11 +65,19 @@ pub fn check_clippy(root: &Path) -> CheckResult {
     match crate::repo::run(
         root,
         "cargo",
-        &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
     ) {
-        Ok(output) if output.success => {
-            CheckResult::pass("AA-13", "`cargo clippy --workspace --all-targets -- -D warnings` exited 0")
-        }
+        Ok(output) if output.success => CheckResult::pass(
+            "AA-13",
+            "`cargo clippy --workspace --all-targets -- -D warnings` exited 0",
+        ),
         Ok(output) => CheckResult::fail(
             "AA-13",
             format!(

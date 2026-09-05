@@ -12,8 +12,8 @@
 //! applied, so a reviewer can disagree with the threshold without
 //! disputing the measurement.
 
-use crate::report::CheckResult;
 use crate::repo;
+use crate::report::CheckResult;
 use std::path::Path;
 
 /// Resolves to `main` if it exists, else `HEAD` (e.g. a checkout that only
@@ -93,7 +93,10 @@ pub fn check_commit_timing(root: &Path) -> Vec<CheckResult> {
     by_time.sort_unstable_by_key(|c| c.timestamp);
 
     if by_time.len() < 2 {
-        let evidence = format!("only {} commit(s) on {git_ref}; need >= 2 to measure gaps", by_time.len());
+        let evidence = format!(
+            "only {} commit(s) on {git_ref}; need >= 2 to measure gaps",
+            by_time.len()
+        );
         return vec![
             CheckResult::needs_bench("AD-02", evidence.clone()),
             CheckResult::needs_bench("AD-03", evidence),
@@ -353,7 +356,11 @@ pub fn check_single_authorship(root: &Path) -> CheckResult {
     if authors.len() == 1 {
         CheckResult::pass(
             "AD-11",
-            format!("all {} commits on {git_ref} are authored by {}", commits.len(), authors[0]),
+            format!(
+                "all {} commits on {git_ref} are authored by {}",
+                commits.len(),
+                authors[0]
+            ),
         )
     } else {
         CheckResult::fail(

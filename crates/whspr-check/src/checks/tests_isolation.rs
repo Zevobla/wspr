@@ -1,8 +1,8 @@
 //! Checks about the test suite itself: does it pass, is it isolated from
 //! the network, does it need a mic/model files, does it run in CI.
 
-use crate::report::CheckResult;
 use crate::repo::{self, CmdOutput};
+use crate::report::CheckResult;
 use crate::util::{tail, MODEL_WEIGHT_EXTENSIONS};
 use std::path::Path;
 
@@ -91,7 +91,9 @@ pub fn check_mic_model_independence(root: &Path, tests_passed: bool) -> CheckRes
         .iter()
         .filter(|p| {
             let lower = p.to_lowercase();
-            MODEL_WEIGHT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+            MODEL_WEIGHT_EXTENSIONS
+                .iter()
+                .any(|ext| lower.ends_with(ext))
         })
         .collect();
     if !model_files.is_empty() {
@@ -175,9 +177,11 @@ pub fn check_test_suite(root: &Path) -> Vec<CheckResult> {
                 CheckResult::fail("A-13", evidence.clone()),
                 CheckResult::fail(
                     "AB-13",
-                    format!("{evidence} (failure under a poisoned proxy may indicate a real \
+                    format!(
+                        "{evidence} (failure under a poisoned proxy may indicate a real \
                              network dependency, or may just be the A-13 failure itself - see \
-                             the A-13 evidence)"),
+                             the A-13 evidence)"
+                    ),
                 ),
             ]
         }

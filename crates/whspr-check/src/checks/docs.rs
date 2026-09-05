@@ -1,8 +1,8 @@
 //! README content checks: architecture diagram, settings table,
 //! model-swap docs, dependency/build docs, and the anti-slop honesty check.
 
-use crate::report::CheckResult;
 use crate::repo;
+use crate::report::CheckResult;
 use std::path::Path;
 
 /// W-06: README documents the 4-stage architecture (capture -> ASR ->
@@ -151,7 +151,11 @@ pub fn check_readme_dependencies_documented(root: &Path) -> CheckResult {
 
     let has_heading = lower.contains("## dependencies") || lower.contains("# dependencies");
     let known_deps = ["ffmpeg", "cmake", "clang", "alsa", "apple-sdk", "audiounit"];
-    let mentioned: Vec<&str> = known_deps.iter().filter(|d| lower.contains(*d)).copied().collect();
+    let mentioned: Vec<&str> = known_deps
+        .iter()
+        .filter(|d| lower.contains(*d))
+        .copied()
+        .collect();
 
     if has_heading && mentioned.len() >= 2 {
         CheckResult::pass(
