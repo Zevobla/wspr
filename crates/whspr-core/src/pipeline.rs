@@ -147,6 +147,97 @@ mod tests {
         assert_eq!(refined, MockAsr::default().canned.text);
     }
 
+    /// A `TextRefiner` that sleeps for a fixed delay before returning canned
+    /// text - used to exercise `with_refine_timeout`'s fallback path
+    /// deterministically, without a real (slow, non-deterministic) backend.
+    struct SleepyRefiner {
+        delay: Duration,
+    }
+
+    #[async_trait::async_trait]
+    impl TextRefiner for SleepyRefiner {
+        async fn refine(&self, _raw: &str, _ctx: &RefineContext) -> Result<String> {
+            tokio::time::sleep(self.delay).await;
+            Ok("this refined text must never surface".to_string())
+        }
+
+        fn id(&self) -> &'static str {
+            "sleepy-test-refiner"
+        }
+    }
+
+    #[tokio::test]
+    async fn refine_timeout_falls_back_to_raw_text_without_failing_the_turn() {
+        let pipeline = Pipeline::new(
+            Box::new(MockAsr::default()),
+            Box::new(SleepyRefiner {
+                delay: Duration::from_millis(200),
+            }),
+        )
+        .with_refine_timeout(Duration::from_millis(10));
+        let audio = AudioBuffer::new(vec![0.0; 16_000], 16_000);
+
+        let result = pipeline
+            .run(audio, &RefineContext::default())
+            .await
+            .expect("a refine timeout must not fail the whole turn");
+
+        assert_eq!(result, MockAsr::default().canned.text);
+    }
+
+    #[tokio::test]
+    async fn refine_timeout_reports_error_state_then_recovers_to_idle() {
+        use std::sync::{Arc, Mutex};
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        let pipeline = Pipeline::new(
+            Box::new(MockAsr::default()),
+            Box::new(SleepyRefiner {
+                delay: Duration::from_millis(200),
+            }),
+        )
+        .with_refine_timeout(Duration::from_millis(10))
+        .with_state_callback(Box::new(move |s| seen_cb.lock().unwrap().push(s)));
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                PipelineState::Transcribing,
+                PipelineState::Refining,
+                PipelineState::Error,
+                PipelineState::Idle,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn refiner_finishing_within_timeout_is_unaffected() {
+        let pipeline = Pipeline::new(
+            Box::new(MockAsr::default()),
+            Box::new(SleepyRefiner {
+                delay: Duration::from_millis(1),
+            }),
+        )
+        .with_refine_timeout(Duration::from_millis(200));
+        let audio = AudioBuffer::new(vec![0.0; 16_000], 16_000);
+
+        let result = pipeline
+            .run(audio, &RefineContext::default())
+            .await
+            .unwrap();
+
+        assert_eq!(result, "this refined text must never surface");
+    }
+
     #[tokio::test]
     async fn reports_expected_state_transitions() {
         use std::sync::{Arc, Mutex};
