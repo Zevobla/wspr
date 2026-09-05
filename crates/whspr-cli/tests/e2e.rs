@@ -5,7 +5,11 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 /// Creates a minimal test WAV file with a given sample rate.
-fn create_test_wav(path: &std::path::Path, sample_rate: u32, duration_secs: f32) -> anyhow::Result<()> {
+fn create_test_wav(
+    path: &std::path::Path,
+    sample_rate: u32,
+    duration_secs: f32,
+) -> anyhow::Result<()> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,
@@ -78,8 +82,10 @@ fn transcribe_with_json_flag_parses() {
         .args(["transcribe", fixture_path.to_str().unwrap(), "--json"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("WhisperLocal not available")
-            .or(predicate::str::contains("Error")));
+        .stderr(
+            predicate::str::contains("WhisperLocal not available")
+                .or(predicate::str::contains("Error")),
+        );
 }
 
 #[test]

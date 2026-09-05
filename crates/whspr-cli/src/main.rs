@@ -88,7 +88,10 @@ enum Command {
 }
 
 /// Builds an ASR backend from config and command-line flags.
-fn build_asr_backend(config: &whspr_config::Config, asr_id: Option<&str>) -> anyhow::Result<Box<dyn AsrBackend>> {
+fn build_asr_backend(
+    config: &whspr_config::Config,
+    asr_id: Option<&str>,
+) -> anyhow::Result<Box<dyn AsrBackend>> {
     let choice = if let Some(id) = asr_id {
         AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?
     } else {
@@ -98,20 +101,27 @@ fn build_asr_backend(config: &whspr_config::Config, asr_id: Option<&str>) -> any
     match choice {
         AsrChoice::WhisperLocal => Ok(Box::new(WhisperLocal::new("model.bin"))),
         AsrChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai")
-                .ok_or_else(|| anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)"))?;
+            let api_key = api_key_for(config, "openai").ok_or_else(|| {
+                anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
+            })?;
             Ok(Box::new(OpenAiAsr::new(api_key)))
         }
         AsrChoice::Deepgram => {
-            let api_key = api_key_for(config, "deepgram")
-                .ok_or_else(|| anyhow::anyhow!("Deepgram API key not configured (set [api_keys].deepgram in config)"))?;
+            let api_key = api_key_for(config, "deepgram").ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Deepgram API key not configured (set [api_keys].deepgram in config)"
+                )
+            })?;
             Ok(Box::new(DeepgramAsr::new(api_key)))
         }
     }
 }
 
 /// Builds a text refiner backend from config and command-line flags.
-fn build_refiner(config: &whspr_config::Config, refine_id: Option<&str>) -> anyhow::Result<Box<dyn TextRefiner>> {
+fn build_refiner(
+    config: &whspr_config::Config,
+    refine_id: Option<&str>,
+) -> anyhow::Result<Box<dyn TextRefiner>> {
     let choice = if let Some(id) = refine_id {
         RefineChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?
     } else {
@@ -121,14 +131,21 @@ fn build_refiner(config: &whspr_config::Config, refine_id: Option<&str>) -> anyh
     match choice {
         RefineChoice::Noop => Ok(Box::new(NoopRefiner)),
         RefineChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai")
-                .ok_or_else(|| anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)"))?;
+            let api_key = api_key_for(config, "openai").ok_or_else(|| {
+                anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
+            })?;
             Ok(Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini")))
         }
         RefineChoice::Anthropic => {
-            let api_key = api_key_for(config, "anthropic")
-                .ok_or_else(|| anyhow::anyhow!("Anthropic API key not configured (set [api_keys].anthropic in config)"))?;
-            Ok(Box::new(AnthropicRefiner::new(api_key, "claude-3-5-sonnet-20241022")))
+            let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Anthropic API key not configured (set [api_keys].anthropic in config)"
+                )
+            })?;
+            Ok(Box::new(AnthropicRefiner::new(
+                api_key,
+                "claude-3-5-sonnet-20241022",
+            )))
         }
         RefineChoice::LlamaLocal => Ok(Box::new(LlamaLocal::new("model.gguf"))),
     }
@@ -153,7 +170,12 @@ async fn load_audio(file_path: &Path) -> anyhow::Result<AudioBuffer> {
 }
 
 /// Saves a transcription result to the history file.
-async fn save_to_history(text: &str, asr_id: &str, refine_id: &str, wpm: f64) -> anyhow::Result<()> {
+async fn save_to_history(
+    text: &str,
+    asr_id: &str,
+    refine_id: &str,
+    wpm: f64,
+) -> anyhow::Result<()> {
     let dirs = directories::ProjectDirs::from("", "", "whspr")
         .ok_or_else(|| anyhow::anyhow!("cannot determine platform data dir"))?;
 
@@ -178,7 +200,7 @@ async fn save_to_history(text: &str, asr_id: &str, refine_id: &str, wpm: f64) ->
         "word_count": word_count,
     });
 
-    let line = format!("{}\n", entry.to_string());
+    let line = format!("{}\n", entry);
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -283,7 +305,8 @@ async fn main() -> anyhow::Result<()> {
                                     results.push(result);
 
                                     if !no_store {
-                                        let _ = save_to_history(&output, asr_id, refine_id, 0.0).await;
+                                        let _ =
+                                            save_to_history(&output, asr_id, refine_id, 0.0).await;
                                     }
                                 }
                                 Err(e) => {
@@ -300,7 +323,7 @@ async fn main() -> anyhow::Result<()> {
 
             if output_json {
                 for result in results {
-                    println!("{}", result.to_string());
+                    println!("{}", result);
                 }
             } else {
                 for result in results {
@@ -312,7 +335,9 @@ async fn main() -> anyhow::Result<()> {
         }
 
         None => {
-            anyhow::bail!("no subcommand given; try `whspr transcribe <FILE>` or `whspr --version`");
+            anyhow::bail!(
+                "no subcommand given; try `whspr transcribe <FILE>` or `whspr --version`"
+            );
         }
     }
 
