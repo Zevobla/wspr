@@ -17,6 +17,8 @@
 //!   --json                          Output JSON object instead of plain text
 //!   --no-store                      Don't save result to history file
 
+mod diarize_cmd;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -25,12 +27,9 @@ use std::time::Instant;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
-use whspr_config::{
-    api_key_for, load as load_config, AsrChoice, RefineChoice, SpeakerDb, SpeakerEmbeddingChoice,
-};
-use whspr_core::testkit::{MockAsr, MockDiarizer, NoopRefiner};
-use whspr_core::{AsrBackend, AudioBuffer, Diarizer, Pipeline, RefineContext, TextRefiner};
-use whspr_diarize::SherpaDiarizer;
+use whspr_config::{api_key_for, load as load_config, AsrChoice, RefineChoice};
+use whspr_core::testkit::{MockAsr, NoopRefiner};
+use whspr_core::{AsrBackend, AudioBuffer, Pipeline, RefineContext, TextRefiner};
 use whspr_refine::{AnthropicRefiner, LlamaLocal, OpenAiRefiner};
 
 #[derive(Parser)]
@@ -268,46 +267,6 @@ fn build_refiner(
             )))
         }
         RefineChoice::LlamaLocal => Ok(Box::new(LlamaLocal::new("model.gguf"))),
-    }
-}
-
-/// Builds a diarization backend from config and command-line flags, falling
-/// back to `MockDiarizer` when no model directory is available from
-/// `--model-dir`, the config file's `[speaker].model_dir`, or the
-/// `SPEAKER_MODEL_DIR` environment variable the project's Nix devShell/
-/// package sets (see `SherpaDiarizer::resolve_model_dir`) -- mirrors
-/// `build_asr_backend`'s "explicit opt-in, else a deterministic default"
-/// reasoning: a real `SherpaDiarizer` needs model files that aren't
-/// guaranteed present, so it's never constructed unless a model directory
-/// is available from *some* source.
-///
-/// The embedding model itself is never hardcoded either: `--embedding`
-/// (falling back to `config.speaker.embedding_model`) picks a
-/// `SpeakerEmbeddingChoice`, which `SherpaDiarizer` resolves to a filename.
-fn build_diarizer(
-    config: &whspr_config::Config,
-    model_dir_flag: Option<&Path>,
-    embedding_flag: Option<&str>,
-) -> anyhow::Result<Box<dyn Diarizer>> {
-    let model_dir = SherpaDiarizer::resolve_model_dir(
-        model_dir_flag
-            .map(PathBuf::from)
-            .or_else(|| config.speaker.model_dir.clone()),
-    );
-
-    match model_dir {
-        Some(dir) => {
-            let embedding_choice = match embedding_flag {
-                Some(id) => {
-                    SpeakerEmbeddingChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?
-                }
-                None => config.speaker.embedding_model,
-            };
-            let diarizer = SherpaDiarizer::new(&dir, embedding_choice)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            Ok(Box::new(diarizer))
-        }
-        None => Ok(Box::new(MockDiarizer::default())),
     }
 }
 
@@ -549,62 +508,7 @@ async fn main() -> anyhow::Result<()> {
             json: output_json,
             data_dir,
         }) => {
-            eprintln!("Loading audio...");
-            let audio = load_audio(&file).await?;
-            let audio =
-                whspr_audio::resample_to_16k_mono(&audio).map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            let diarizer = build_diarizer(&config, model_dir.as_deref(), embedding.as_deref())?;
-
-            eprintln!("Running diarization...");
-            let turns = diarizer
-                .diarize(&audio)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            let data_dir = resolve_data_dir(data_dir.as_deref())?;
-            std::fs::create_dir_all(&data_dir)?;
-            let speakers_path = data_dir.join("speakers.json");
-            let mut speaker_db = SpeakerDb::load(&speakers_path);
-
-            let scan_id = file.display().to_string();
-            let threshold = config.speaker.similarity_threshold;
-            let labeled_turns: Vec<_> = turns
-                .into_iter()
-                .map(|mut turn| {
-                    let (id, _is_new) =
-                        speaker_db.match_or_enroll(&turn.embedding, threshold, &scan_id);
-                    turn.speaker = Some(id);
-                    turn
-                })
-                .collect();
-
-            speaker_db
-                .save(&speakers_path)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            if output_json {
-                let json_out: Vec<_> = labeled_turns
-                    .iter()
-                    .map(|t| {
-                        json!({
-                            "start_secs": t.start_secs,
-                            "end_secs": t.end_secs,
-                            "speaker": t.speaker,
-                            "score": t.score,
-                        })
-                    })
-                    .collect();
-                println!("{}", serde_json::to_string(&json_out)?);
-            } else {
-                for t in &labeled_turns {
-                    println!(
-                        "[{:.2}-{:.2}] {}",
-                        t.start_secs,
-                        t.end_secs,
-                        t.speaker.as_deref().unwrap_or("?")
-                    );
-                }
-            }
+            diarize_cmd::run(&config, file, model_dir, embedding, data_dir, output_json).await?;
         }
 
         None => {
