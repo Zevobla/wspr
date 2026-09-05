@@ -72,6 +72,22 @@ pub fn trim_silence(audio: &AudioBuffer, threshold: f32, min_keep: usize) -> Aud
     AudioBuffer::new(samples[start..end].to_vec(), audio.sample_rate)
 }
 
+/// Default RMS energy threshold (on the `AudioBuffer`'s [-1.0, 1.0]
+/// amplitude scale) below which a short window of audio is classified as
+/// silence by `trim_silence`.
+pub const DEFAULT_SILENCE_THRESHOLD: f32 = 0.02;
+
+/// Default floor, in samples, below which `trim_silence` refuses to shrink
+/// the buffer further. 1600 samples is 100ms at 16kHz. Guards against ever
+/// handing an ASR backend a suspiciously tiny or fully-empty clip.
+pub const DEFAULT_MIN_KEEP_SAMPLES: usize = 1600;
+
+/// `trim_silence` with sensible defaults (see `DEFAULT_SILENCE_THRESHOLD`,
+/// `DEFAULT_MIN_KEEP_SAMPLES`). This is what `decode_wav` calls internally.
+pub fn trim_silence_default(audio: &AudioBuffer) -> AudioBuffer {
+    trim_silence(audio, DEFAULT_SILENCE_THRESHOLD, DEFAULT_MIN_KEEP_SAMPLES)
+}
+
 /// Decodes a WAV file into an `AudioBuffer` at its native sample rate/channel
 /// layout (resample separately with `resample_to_16k_mono`).
 ///
