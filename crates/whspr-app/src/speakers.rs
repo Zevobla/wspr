@@ -16,12 +16,14 @@ pub fn speaker_db_path() -> Option<PathBuf> {
 }
 
 /// Decodes + resamples `file`, runs it through a `Diarizer` (a real
-/// `SherpaDiarizer` if `model_dir` is set, otherwise the deterministic
-/// `MockDiarizer` -- same "explicit opt-in, else a safe default"
-/// philosophy as `whspr-cli`'s backend builders), matches every resulting
-/// turn against `speaker_db`, persists the updated db to `db_path`, and
-/// returns the updated db plus how many turns were found. Runs entirely on
-/// a blocking thread since decoding, resampling, and diarization are all
+/// `SherpaDiarizer` if a model directory is available -- from `model_dir`,
+/// or else the `SPEAKER_MODEL_DIR` env var the Nix devShell/package sets,
+/// see `SherpaDiarizer::resolve_model_dir` -- otherwise the deterministic
+/// `MockDiarizer`, same "explicit opt-in, else a safe default" philosophy
+/// as `whspr-cli`'s backend builders), matches every resulting turn
+/// against `speaker_db`, persists the updated db to `db_path`, and returns
+/// the updated db plus how many turns were found. Runs entirely on a
+/// blocking thread since decoding, resampling, and diarization are all
 /// synchronous/CPU-bound.
 pub async fn run_diarize_scan(
     file: PathBuf,
@@ -35,13 +37,14 @@ pub async fn run_diarize_scan(
         let audio = whspr_audio::decode_wav(&file).map_err(|e| e.to_string())?;
         let audio = whspr_audio::resample_to_16k_mono(&audio).map_err(|e| e.to_string())?;
 
-        let diarizer: Box<dyn Diarizer> = match model_dir {
-            Some(dir) => Box::new(
-                whspr_diarize::SherpaDiarizer::new(dir, embedding_choice)
-                    .map_err(|e| e.to_string())?,
-            ),
-            None => Box::new(whspr_core::testkit::MockDiarizer::default()),
-        };
+        let diarizer: Box<dyn Diarizer> =
+            match whspr_diarize::SherpaDiarizer::resolve_model_dir(model_dir) {
+                Some(dir) => Box::new(
+                    whspr_diarize::SherpaDiarizer::new(dir, embedding_choice)
+                        .map_err(|e| e.to_string())?,
+                ),
+                None => Box::new(whspr_core::testkit::MockDiarizer::default()),
+            };
 
         let turns = diarizer.diarize(&audio).map_err(|e| e.to_string())?;
         let scan_id = file.display().to_string();
