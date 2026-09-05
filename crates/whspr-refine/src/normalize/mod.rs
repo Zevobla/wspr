@@ -6,6 +6,7 @@
 mod currency;
 mod dates;
 mod numbers;
+mod percents;
 mod times;
 
 use async_trait::async_trait;
@@ -62,6 +63,7 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     if settings.numbers {
         text = numbers::normalize_numbers(&text);
         text = currency::normalize_currency(&text);
+        text = percents::normalize_percents(&text);
     }
     text
 }
