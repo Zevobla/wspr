@@ -81,6 +81,126 @@ impl HotkeyListener for GlobalHotkeyListener {
     }
 }
 
+/// A minimal system-clipboard abstraction.
+///
+/// The clipboard-paste path needs to *save* the user's current clipboard,
+/// stage our own text, paste, then *restore* what was there before. Hiding
+/// the real `arboard` behind this trait lets that save/set/restore sequence
+/// be unit-tested with an in-memory fake, without a display server or a
+/// live system clipboard.
+trait Clipboard {
+    /// Returns the current clipboard text, or an error if there is no text
+    /// on the clipboard (e.g. it's empty or holds a non-text payload).
+    fn get_text(&mut self) -> Result<String>;
+    /// Replaces the clipboard contents with `text`.
+    fn set_text(&mut self, text: &str) -> Result<()>;
+    /// Empties the clipboard.
+    fn clear(&mut self) -> Result<()>;
+}
+
+/// The real [`Clipboard`], backed by the system clipboard via `arboard`.
+struct ArboardClipboard(arboard::Clipboard);
+
+impl ArboardClipboard {
+    /// Opens a handle to the system clipboard.
+    fn new() -> Result<Self> {
+        arboard::Clipboard::new()
+            .map(ArboardClipboard)
+            .map_err(|e| WhsprError::Inject(format!("failed to access clipboard: {}", e)))
+    }
+}
+
+impl Clipboard for ArboardClipboard {
+    fn get_text(&mut self) -> Result<String> {
+        self.0
+            .get_text()
+            .map_err(|e| WhsprError::Inject(format!("failed to read clipboard: {}", e)))
+    }
+
+    fn set_text(&mut self, text: &str) -> Result<()> {
+        self.0
+            .set_text(text)
+            .map_err(|e| WhsprError::Inject(format!("failed to set clipboard: {}", e)))
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        self.0
+            .clear()
+            .map_err(|e| WhsprError::Inject(format!("failed to clear clipboard: {}", e)))
+    }
+}
+
+/// Restores a saved clipboard state when dropped.
+///
+/// Holding the restore in a guard makes it run no matter how the paste
+/// step turns out — a normal return, an early error, or even a panic
+/// unwinding through the paste — so we never leave our injected text
+/// sitting on the user's clipboard.
+struct ClipboardRestoreGuard<'a, C: Clipboard> {
+    clipboard: &'a mut C,
+    /// What was on the clipboard before we overwrote it. `None` means it
+    /// held no text (empty, or a non-text payload we can't reproduce), so
+    /// the closest restore is to clear it.
+    original: Option<String>,
+}
+
+impl<'a, C: Clipboard> ClipboardRestoreGuard<'a, C> {
+    fn new(clipboard: &'a mut C, original: Option<String>) -> Self {
+        Self {
+            clipboard,
+            original,
+        }
+    }
+}
+
+impl<C: Clipboard> Drop for ClipboardRestoreGuard<'_, C> {
+    fn drop(&mut self) {
+        // Best-effort: if restoring fails there's nothing useful we can do
+        // during unwinding, so swallow the error rather than risk a panic.
+        let _ = match &self.original {
+            Some(text) => self.clipboard.set_text(text),
+            None => self.clipboard.clear(),
+        };
+    }
+}
+
+/// What happened when we tried to inject via the clipboard.
+enum PasteOutcome {
+    /// Our text was staged on the clipboard and the paste ran; carries the
+    /// paste's own result (which may itself be an error). The original
+    /// clipboard has already been restored.
+    Pasted(Result<()>),
+    /// We couldn't even stage our text on the clipboard (access denied,
+    /// etc.), so the caller should fall back to another injection method.
+    /// The clipboard was left untouched.
+    Unstaged,
+}
+
+/// Saves the current clipboard, stages `text`, runs `paste`, then restores
+/// the original clipboard.
+///
+/// The restore happens via a [`ClipboardRestoreGuard`], so the user's
+/// clipboard is put back even if `paste` returns an error or panics. If our
+/// text can't be staged in the first place, returns [`PasteOutcome::Unstaged`]
+/// without touching the clipboard, leaving the caller to fall back.
+fn stage_and_paste<C, F>(clipboard: &mut C, text: &str, paste: F) -> PasteOutcome
+where
+    C: Clipboard,
+    F: FnOnce() -> Result<()>,
+{
+    // Save whatever is on the clipboard now so we can put it back later.
+    let original = clipboard.get_text().ok();
+
+    if clipboard.set_text(text).is_err() {
+        return PasteOutcome::Unstaged;
+    }
+
+    // From here on the clipboard holds our text; the guard restores the
+    // saved contents when this scope ends, however `paste` turns out.
+    let _guard = ClipboardRestoreGuard::new(clipboard, original);
+    PasteOutcome::Pasted(paste())
+}
+
 /// Delivers text to the focused application via synthetic keystrokes
 /// (falling back to clipboard paste for long text).
 pub struct EnigoTextSink;
@@ -88,6 +208,12 @@ pub struct EnigoTextSink;
 impl EnigoTextSink {
     /// The threshold (in characters) above which we switch from keystrokes to clipboard paste
     const LONG_TEXT_THRESHOLD: usize = 200;
+
+    /// How long to wait after sending the paste keystroke before restoring
+    /// the user's clipboard. The synthesized Cmd+V/Ctrl+V is delivered
+    /// asynchronously by the OS, so we give the target app a moment to read
+    /// the clipboard before putting the original contents back.
+    const PASTE_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
 
     /// Decides which injection strategy `insert` should use for `text`.
     /// Split out as a pure function so the branching can be unit tested
@@ -122,17 +248,29 @@ impl EnigoTextSink {
         Ok(())
     }
 
-    /// Copies text to clipboard and simulates a paste keystroke.
+    /// Copies text to the clipboard and simulates a paste keystroke,
+    /// restoring the user's previous clipboard contents afterward.
+    ///
+    /// If the clipboard can't be used (no display, permission denied, a
+    /// non-text payload we can't stage over, etc.) this falls back to
+    /// typing the text directly rather than failing the injection outright.
     fn paste_from_clipboard(&self, text: &str) -> Result<()> {
-        // Set clipboard content
-        let mut clipboard = arboard::Clipboard::new()
-            .map_err(|e| WhsprError::Inject(format!("failed to access clipboard: {}", e)))?;
+        // If we can't even open the clipboard, type the text instead.
+        let mut clipboard = match ArboardClipboard::new() {
+            Ok(clipboard) => clipboard,
+            Err(_) => return self.type_text(text),
+        };
 
-        clipboard
-            .set_text(text)
-            .map_err(|e| WhsprError::Inject(format!("failed to set clipboard: {}", e)))?;
+        match stage_and_paste(&mut clipboard, text, || self.send_paste_keystroke()) {
+            PasteOutcome::Pasted(result) => result,
+            // Couldn't stage our text on the clipboard; type it instead.
+            PasteOutcome::Unstaged => self.type_text(text),
+        }
+    }
 
-        // Simulate paste keystroke (Cmd+V on macOS, Ctrl+V elsewhere)
+    /// Simulates the platform paste shortcut (Cmd+V on macOS, Ctrl+V
+    /// elsewhere) into whatever window currently has focus.
+    fn send_paste_keystroke(&self) -> Result<()> {
         let mut enigo = Enigo::new(&Settings::default())
             .map_err(|e| WhsprError::Inject(format!("failed to initialize enigo: {}", e)))?;
 
@@ -160,6 +298,9 @@ impl EnigoTextSink {
                 .key(Key::Control, Direction::Release)
                 .map_err(|e| WhsprError::Inject(format!("failed to release control key: {}", e)))?;
         }
+
+        // Let the target consume the clipboard before the caller restores it.
+        thread::sleep(Self::PASTE_SETTLE_DELAY);
 
         Ok(())
     }
@@ -231,17 +372,144 @@ mod tests {
         assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
     }
 
-    /// Verifies the arboard integration is real: setting text actually
-    /// round-trips through the system clipboard, including non-ASCII text
-    /// (the case `paste_from_clipboard` exists for). This is the one piece
-    /// of `EnigoTextSink` that's exercisable without synthesizing keystrokes,
-    /// since it only touches the clipboard, not the focused window.
+    /// An in-memory [`Clipboard`] test double, so the save/stage/restore
+    /// sequence can be exercised with no display server or real clipboard.
+    struct MockClipboard {
+        /// Current clipboard contents (`None` = empty / no text payload).
+        content: Option<String>,
+        /// When true, every `set_text` fails, simulating a denied clipboard.
+        set_fails: bool,
+        /// Every value passed to `set_text`, in order — lets tests assert
+        /// the exact stage-then-restore sequence.
+        writes: Vec<String>,
+    }
+
+    impl MockClipboard {
+        fn with_content(content: Option<&str>) -> Self {
+            Self {
+                content: content.map(str::to_string),
+                set_fails: false,
+                writes: Vec::new(),
+            }
+        }
+    }
+
+    impl Clipboard for MockClipboard {
+        fn get_text(&mut self) -> Result<String> {
+            self.content
+                .clone()
+                .ok_or_else(|| WhsprError::Inject("clipboard is empty".into()))
+        }
+
+        fn set_text(&mut self, text: &str) -> Result<()> {
+            if self.set_fails {
+                return Err(WhsprError::Inject("clipboard access denied".into()));
+            }
+            self.content = Some(text.to_string());
+            self.writes.push(text.to_string());
+            Ok(())
+        }
+
+        fn clear(&mut self) -> Result<()> {
+            self.content = None;
+            Ok(())
+        }
+    }
+
+    /// The happy path: stage our text, run the paste, then put the user's
+    /// original clipboard back — in that order.
+    #[test]
+    fn stage_and_paste_restores_original_after_successful_paste() {
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || Ok(()));
+
+        assert!(matches!(outcome, PasteOutcome::Pasted(Ok(()))));
+        // Our text was staged first, then the original was restored.
+        let writes: Vec<&str> = clipboard.writes.iter().map(String::as_str).collect();
+        assert_eq!(writes, ["injected text", "user's data"]);
+        // The clipboard ends up back exactly where it started.
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+    }
+
+    /// A mid-paste error must not strand our text on the clipboard: the
+    /// original is still restored, and the paste error is reported.
+    #[test]
+    fn stage_and_paste_restores_original_when_paste_errors() {
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || {
+            Err(WhsprError::Inject("paste failed".into()))
+        });
+
+        assert!(matches!(outcome, PasteOutcome::Pasted(Err(_))));
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+    }
+
+    /// Even if the paste step *panics*, the guard's `Drop` still runs while
+    /// unwinding, so the user's clipboard is restored rather than left
+    /// holding our injected text.
+    #[test]
+    fn stage_and_paste_restores_original_when_paste_panics() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+
+        // Silence the default panic hook so the deliberate panic below
+        // doesn't clutter the test output.
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _ = stage_and_paste(&mut clipboard, "injected text", || panic!("paste blew up"));
+        }));
+        std::panic::set_hook(prev_hook);
+
+        assert!(result.is_err(), "the paste panic should propagate");
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+    }
+
+    /// When our text can't even be staged (clipboard access denied), the
+    /// sequence reports `Unstaged` without running the paste and leaves the
+    /// clipboard untouched — signalling the caller to fall back to typing.
+    #[test]
+    fn stage_and_paste_reports_unstaged_when_set_text_fails() {
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+        clipboard.set_fails = true;
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || {
+            panic!("paste must not run when staging failed")
+        });
+
+        assert!(matches!(outcome, PasteOutcome::Unstaged));
+        // The clipboard was never modified.
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+        assert!(clipboard.writes.is_empty());
+    }
+
+    /// If the clipboard started empty (nothing to save), restoring means
+    /// clearing it, so our injected text isn't left behind.
+    #[test]
+    fn stage_and_paste_clears_clipboard_that_started_empty() {
+        let mut clipboard = MockClipboard::with_content(None);
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || Ok(()));
+
+        assert!(matches!(outcome, PasteOutcome::Pasted(Ok(()))));
+        assert_eq!(clipboard.content, None);
+    }
+
+    /// Verifies the real [`ArboardClipboard`] seam is genuine: text set
+    /// through it actually round-trips through the system clipboard,
+    /// including non-ASCII text (the case `paste_from_clipboard` exists
+    /// for). This exercises the same trait impl the save/restore path uses,
+    /// but only the clipboard — not the focused window — so it needs no
+    /// synthesized keystrokes.
     ///
     /// Side effect: this overwrites the real system clipboard. We save and
     /// best-effort restore whatever was there before.
     #[test]
     fn clipboard_round_trip_preserves_unicode_text() {
-        let mut clipboard = match arboard::Clipboard::new() {
+        let mut clipboard = match ArboardClipboard::new() {
             Ok(c) => c,
             Err(e) => {
                 // No clipboard/display server available (e.g. headless CI).
@@ -261,8 +529,14 @@ mod tests {
             .expect("get_text should succeed right after set_text");
         assert_eq!(read_back, payload);
 
-        if let Some(previous) = previous {
-            let _ = clipboard.set_text(previous);
+        // Restore, or clear if the clipboard was empty before.
+        match previous {
+            Some(previous) => {
+                let _ = clipboard.set_text(&previous);
+            }
+            None => {
+                let _ = clipboard.clear();
+            }
         }
     }
 
@@ -282,10 +556,12 @@ mod tests {
             .expect("insert should succeed with a display and Accessibility permission granted");
     }
 
-    /// `EnigoTextSink::insert` for long text sets the clipboard (tested
-    /// above) and then simulates a real paste keystroke (Cmd+V / Ctrl+V)
-    /// into whatever window has OS focus. Same non-hermetic constraints as
-    /// `type_text_sends_real_keystrokes` above.
+    /// `EnigoTextSink::insert` for long text saves the current clipboard,
+    /// stages the text, simulates a real paste keystroke (Cmd+V / Ctrl+V)
+    /// into whatever window has OS focus, then restores the original
+    /// clipboard. Same non-hermetic constraints as
+    /// `type_text_sends_real_keystrokes` above; the save/restore logic
+    /// itself is covered hermetically by the `stage_and_paste_*` tests.
     #[test]
     #[ignore = "pastes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
     fn paste_from_clipboard_sends_real_paste_keystroke() {
