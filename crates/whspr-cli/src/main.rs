@@ -311,10 +311,7 @@ fn build_refiner(
                     "Anthropic API key not configured (set [api_keys].anthropic in config)"
                 )
             })?;
-            Box::new(AnthropicRefiner::new(
-                api_key,
-                "claude-3-5-sonnet-20241022",
-            ))
+            Box::new(AnthropicRefiner::new(api_key, "claude-3-5-sonnet-20241022"))
         }
         RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
     };
