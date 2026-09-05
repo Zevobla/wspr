@@ -66,6 +66,51 @@ impl FromStr for RefineChoice {
     }
 }
 
+/// Which speaker-embedding model `whspr-diarize` should load, out of
+/// however many the sherpa-onnx model zoo provides pinned Nix derivations
+/// for. Mirrors `AsrChoice`'s pattern: a user-facing menu choice that maps
+/// to a concrete filename, never a single hardcoded model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpeakerEmbeddingChoice {
+    /// WeSpeaker CAM++ (VoxCeleb-trained). The current default: broad
+    /// English coverage and the first embedding model this feature shipped
+    /// with (see `whspr-diarize`'s crate docs).
+    #[default]
+    CamPlusPlus,
+    /// 3D-Speaker ERes2Net.
+    Eres2Net,
+}
+
+impl SpeakerEmbeddingChoice {
+    /// The filename this choice maps to inside `SpeakerSettings::model_dir`.
+    /// `whspr-diarize`'s `SherpaDiarizer` loads exactly this file, never a
+    /// hardcoded name.
+    pub fn filename(&self) -> &'static str {
+        match self {
+            SpeakerEmbeddingChoice::CamPlusPlus => "embedding-campplus.onnx",
+            SpeakerEmbeddingChoice::Eres2Net => "embedding-eres2net.onnx",
+        }
+    }
+}
+
+impl FromStr for SpeakerEmbeddingChoice {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Normalize "_"/"+" to "-" first so "cam++"/"cam_plus_plus" and
+        // friends collapse onto the same few match arms as the canonical
+        // "cam-plus-plus" spelling.
+        match s.to_lowercase().replace(['_', '+'], "-").as_str() {
+            "cam-plus-plus" | "camplusplus" | "campplus" | "cam--" => {
+                Ok(SpeakerEmbeddingChoice::CamPlusPlus)
+            }
+            "eres2net" | "eres2-net" => Ok(SpeakerEmbeddingChoice::Eres2Net),
+            _ => Err(format!("unknown speaker embedding choice: {}", s)),
+        }
+    }
+}
+
 /// Settings for the speaker-fingerprinting (diarization) feature.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
@@ -82,6 +127,8 @@ pub struct SpeakerSettings {
     /// Minimum cosine similarity to match a turn to an already-enrolled
     /// speaker rather than creating a new one. See `SpeakerDb::match_or_enroll`.
     pub similarity_threshold: f32,
+    /// Which speaker-embedding model to use (see `SpeakerEmbeddingChoice`).
+    pub embedding_model: SpeakerEmbeddingChoice,
 }
 
 impl Default for SpeakerSettings {
@@ -90,6 +137,7 @@ impl Default for SpeakerSettings {
             enabled: true,
             model_dir: None,
             similarity_threshold: 0.7,
+            embedding_model: SpeakerEmbeddingChoice::default(),
         }
     }
 }
@@ -383,5 +431,59 @@ mod tests {
         let loaded = load_from(Some(temp_dir.path()));
         assert_eq!(loaded.asr, AsrChoice::OpenAi);
         assert_eq!(loaded.speaker.similarity_threshold, 0.8);
+    }
+
+    #[test]
+    fn speaker_embedding_choice_defaults_to_cam_plus_plus() {
+        assert_eq!(
+            SpeakerSettings::default().embedding_model,
+            SpeakerEmbeddingChoice::CamPlusPlus
+        );
+    }
+
+    #[test]
+    fn speaker_embedding_choice_from_str_accepts_known_spellings() {
+        for s in ["cam-plus-plus", "CamPlusPlus", "campplus", "cam++"] {
+            assert_eq!(
+                SpeakerEmbeddingChoice::from_str(s),
+                Ok(SpeakerEmbeddingChoice::CamPlusPlus),
+                "expected {s:?} to parse as CamPlusPlus"
+            );
+        }
+        for s in ["eres2net", "ERes2Net", "eres2-net"] {
+            assert_eq!(
+                SpeakerEmbeddingChoice::from_str(s),
+                Ok(SpeakerEmbeddingChoice::Eres2Net),
+                "expected {s:?} to parse as Eres2Net"
+            );
+        }
+        assert!(SpeakerEmbeddingChoice::from_str("nonexistent-model").is_err());
+    }
+
+    #[test]
+    fn speaker_embedding_choice_maps_to_expected_filenames() {
+        assert_eq!(
+            SpeakerEmbeddingChoice::CamPlusPlus.filename(),
+            "embedding-campplus.onnx"
+        );
+        assert_eq!(
+            SpeakerEmbeddingChoice::Eres2Net.filename(),
+            "embedding-eres2net.onnx"
+        );
+    }
+
+    #[test]
+    fn speaker_settings_embedding_model_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.speaker.embedding_model = SpeakerEmbeddingChoice::Eres2Net;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(
+            round_tripped.speaker.embedding_model,
+            SpeakerEmbeddingChoice::Eres2Net
+        );
     }
 }
