@@ -32,4 +32,6 @@ pub enum Message {
     HubOpened(window::Id),
     /// The user picked a new ASR backend label in the Hub.
     AsrSelected(&'static str),
+    /// The user picked a new refiner backend label in the Hub.
+    RefineSelected(&'static str),
 }
