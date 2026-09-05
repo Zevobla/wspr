@@ -33,6 +33,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
 
     results.push(license::check_license_file_present(root));
     results.extend(license::check_declared_license(root));
+    results.push(license::check_readme_names_license(root));
 
     results
 }
