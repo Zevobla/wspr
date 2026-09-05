@@ -81,6 +81,31 @@ pub fn run_env(
     })
 }
 
+/// Same as [`run`], but removing the given environment variables from the
+/// child's environment first (used to prove a code path doesn't implicitly
+/// depend on, e.g., a display server being present).
+pub fn run_without_envs(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    remove: &[&str],
+) -> anyhow::Result<CmdOutput> {
+    let mut cmd = Command::new(program);
+    cmd.args(args).current_dir(root);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to spawn `{program} {}`: {e}", args.join(" ")))?;
+    Ok(CmdOutput {
+        success: output.status.success(),
+        code: output.status.code(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
 /// Builds `package` and returns the path to its `bin_name` binary under
 /// the default `target/debug/` layout. Assumes no custom
 /// `CARGO_TARGET_DIR`, which matches every documented dev workflow in
