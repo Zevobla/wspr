@@ -66,9 +66,7 @@ impl CubicBezier {
 
     fn sample_dx(&self, t: f32) -> f32 {
         let mt = 1.0 - t;
-        3.0 * mt * mt * self.x1
-            + 6.0 * mt * t * (self.x2 - self.x1)
-            + 3.0 * t * t * (1.0 - self.x2)
+        3.0 * mt * mt * self.x1 + 6.0 * mt * t * (self.x2 - self.x1) + 3.0 * t * t * (1.0 - self.x2)
     }
 
     fn solve_for_x(&self, x: f32) -> f32 {

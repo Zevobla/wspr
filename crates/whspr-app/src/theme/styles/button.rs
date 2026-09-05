@@ -69,7 +69,13 @@ pub fn text(scheme: &color::Scheme, status: Status) -> Style {
 }
 
 /// Applies MD3's state-layer wash on top of a filled `base` style.
-fn styled(base: Style, fill: Color, on_fill: Color, scheme: &color::Scheme, status: Status) -> Style {
+fn styled(
+    base: Style,
+    fill: Color,
+    on_fill: Color,
+    scheme: &color::Scheme,
+    status: Status,
+) -> Style {
     match status {
         Status::Active => base,
         Status::Hovered => Style {
@@ -131,7 +137,10 @@ fn disabled(scheme: &color::Scheme, base: Style) -> Style {
 
     Style {
         background: base.background.map(|_| {
-            Background::Color(color::wash(scheme.on_surface, color::DISABLED_CONTAINER_OPACITY))
+            Background::Color(color::wash(
+                scheme.on_surface,
+                color::DISABLED_CONTAINER_OPACITY,
+            ))
         }),
         text_color: color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY),
         border,
