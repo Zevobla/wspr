@@ -10,6 +10,7 @@ mod numbers;
 mod percents;
 mod phones;
 mod times;
+mod urls;
 
 use async_trait::async_trait;
 use whspr_config::NormalizeSettings;
@@ -68,6 +69,7 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
         text = percents::normalize_percents(&text);
         text = phones::normalize_phones(&text);
         text = emails::normalize_emails(&text);
+        text = urls::normalize_urls(&text);
     }
     text
 }
