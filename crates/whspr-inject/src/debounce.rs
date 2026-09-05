@@ -140,4 +140,127 @@ mod tests {
             base + DOUBLE_PRESS_WINDOW + Duration::from_millis(1)
         ));
     }
+
+    /// A normal hold — press, hold past the threshold, release — records
+    /// once: start on press, stop on release.
+    #[test]
+    fn normal_hold_starts_then_stops_recording() {
+        let base = Instant::now();
+        let mut debouncer = HotkeyDebouncer::new();
+
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Pressed, base),
+            DebounceAction::StartRecording
+        );
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Released, base + Duration::from_millis(500)),
+            DebounceAction::StopRecording
+        );
+    }
+
+    /// D-10: a press released before the min-hold threshold is cancelled,
+    /// not committed, so no (empty) recording results.
+    #[test]
+    fn short_hold_is_cancelled_not_recorded() {
+        let base = Instant::now();
+        let mut debouncer = HotkeyDebouncer::new();
+
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Pressed, base),
+            DebounceAction::StartRecording
+        );
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Released, base + Duration::from_millis(50)),
+            DebounceAction::CancelRecording
+        );
+    }
+
+    /// D-09: a second press while the first is still held is ignored, so the
+    /// single hold still finalizes exactly once.
+    #[test]
+    fn second_press_while_holding_is_ignored() {
+        let base = Instant::now();
+        let mut debouncer = HotkeyDebouncer::new();
+
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Pressed, base),
+            DebounceAction::StartRecording
+        );
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Pressed, base + Duration::from_millis(20)),
+            DebounceAction::Ignore
+        );
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Released, base + Duration::from_millis(400)),
+            DebounceAction::StopRecording
+        );
+    }
+
+    /// D-09: a rapid double-tap (two quick press/release pairs) starts at
+    /// most one recording — the second press falls inside the double-press
+    /// window and is ignored.
+    #[test]
+    fn rapid_double_tap_does_not_start_two_recordings() {
+        let base = Instant::now();
+        let mut debouncer = HotkeyDebouncer::new();
+
+        let sequence = [
+            (HotkeyEvent::Pressed, 0, DebounceAction::StartRecording),
+            (HotkeyEvent::Released, 40, DebounceAction::CancelRecording),
+            // Second tap lands within DOUBLE_PRESS_WINDOW of the first press.
+            (HotkeyEvent::Pressed, 80, DebounceAction::Ignore),
+            (HotkeyEvent::Released, 120, DebounceAction::Ignore),
+        ];
+
+        for (event, offset_ms, expected) in sequence {
+            assert_eq!(
+                debouncer.on_event(event, base + Duration::from_millis(offset_ms)),
+                expected,
+                "event {event:?} at +{offset_ms}ms",
+            );
+        }
+    }
+
+    /// Two deliberate presses spaced beyond the double-press window each
+    /// start their own recording — debouncing doesn't swallow real repeats.
+    #[test]
+    fn separate_presses_after_the_window_each_record() {
+        let base = Instant::now();
+        let mut debouncer = HotkeyDebouncer::new();
+
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Pressed, base),
+            DebounceAction::StartRecording
+        );
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Released, base + Duration::from_millis(400)),
+            DebounceAction::StopRecording
+        );
+
+        // Well past the window since the previous press: a fresh recording.
+        let second = Duration::from_millis(400) + DOUBLE_PRESS_WINDOW + Duration::from_millis(10);
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Pressed, base + second),
+            DebounceAction::StartRecording
+        );
+        assert_eq!(
+            debouncer.on_event(
+                HotkeyEvent::Released,
+                base + second + Duration::from_millis(400)
+            ),
+            DebounceAction::StopRecording
+        );
+    }
+
+    /// A release with no press in progress (a stray event) is ignored.
+    #[test]
+    fn release_without_active_press_is_ignored() {
+        let base = Instant::now();
+        let mut debouncer = HotkeyDebouncer::new();
+
+        assert_eq!(
+            debouncer.on_event(HotkeyEvent::Released, base),
+            DebounceAction::Ignore
+        );
+    }
 }
