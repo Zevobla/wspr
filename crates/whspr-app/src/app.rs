@@ -108,6 +108,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Worker(event) => {
             match event {
                 crate::worker::WorkerEvent::StateChanged(pipeline_state) => {
+                    if pipeline_state != state.pipeline_state {
+                        state.pipeline_state_since = std::time::Instant::now();
+                    }
                     state.pipeline_state = pipeline_state;
                 }
                 crate::worker::WorkerEvent::Completed {
@@ -183,6 +186,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        // No state to update -- see the variant's doc comment.
+        Message::AnimationTick => Task::none(),
     }
 }
 
@@ -218,10 +223,34 @@ fn worker_subscription(_state: &State) -> iced::Subscription<Message> {
     iced::Subscription::run(crate::worker::pipeline_worker).map(Message::Worker)
 }
 
+/// Drives the Flow Bar's per-state animation (see `crate::flow_bar`):
+/// ticks continuously while a state animates on a loop (Recording's pulse,
+/// Transcribing/Refining's sweep), and briefly after entering `Injecting`
+/// for its one-shot fade-in -- then stops, so an idle Flow Bar costs
+/// nothing. ~60Hz is plenty smooth for a small overlay pill.
+fn flow_bar_animation_subscription(state: &State) -> iced::Subscription<Message> {
+    let animating = match state.pipeline_state {
+        whspr_core::PipelineState::Recording
+        | whspr_core::PipelineState::Transcribing
+        | whspr_core::PipelineState::Refining => true,
+        whspr_core::PipelineState::Injecting => {
+            state.pipeline_state_since.elapsed() < crate::theme::motion::MEDIUM_4
+        }
+        whspr_core::PipelineState::Idle | whspr_core::PipelineState::Error => false,
+    };
+
+    if animating {
+        iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
+    } else {
+        iced::Subscription::none()
+    }
+}
+
 fn subscription(state: &State) -> iced::Subscription<Message> {
     iced::Subscription::batch([
         hotkey_capture_subscription(state),
         worker_subscription(state),
+        flow_bar_animation_subscription(state),
     ])
 }
 

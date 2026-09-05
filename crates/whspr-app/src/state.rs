@@ -59,6 +59,12 @@ pub struct State {
     /// scan (e.g. "Diarizing recording.wav..." or an error), shown in the
     /// Speakers section. `None` when nothing is happening.
     pub diarize_status: Option<String>,
+    /// When `pipeline_state` most recently changed. The Flow Bar times its
+    /// per-state animation (pulse/sweep phase, fade-in progress -- see
+    /// `crate::flow_bar::animate`) from this instant rather than from app
+    /// boot, so e.g. the "Done" fade always restarts from the moment a
+    /// dictation turn actually completes.
+    pub pipeline_state_since: std::time::Instant,
 }
 
 impl State {
@@ -81,6 +87,7 @@ impl State {
             speaker_db: whspr_config::SpeakerDb::default(),
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,
+            pipeline_state_since: std::time::Instant::now(),
         }
     }
 }
@@ -129,4 +136,10 @@ pub enum Message {
     SpeakerRenameInputChanged(String, String),
     /// The user pressed "Save" on a speaker's rename: speaker id.
     SpeakerRenameSubmitted(String),
+    /// A tick of the Flow Bar's animation clock (see
+    /// `crate::app::flow_bar_animation_subscription`). Carries no data --
+    /// its only job is to make iced re-invoke `view` while a Flow Bar
+    /// animation is playing; the animation itself reads elapsed time from
+    /// `State::pipeline_state_since` at render time.
+    AnimationTick,
 }
