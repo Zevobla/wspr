@@ -28,6 +28,24 @@ impl WhisperLocal {
             model_path: model_path.into(),
         }
     }
+
+    /// Resolves the GGML model path to use: an explicit path (e.g. from a
+    /// `--model` flag or `whspr-config`'s `[whisper].model_path`) takes
+    /// priority. If none is given, falls back to the `WHISPER_MODEL_PATH`
+    /// environment variable, which the project's Nix devShell sets to a
+    /// pinned, reproducibly-fetched model (see `nix/models.nix`) so nobody
+    /// needs to download one by hand. That's a build/environment-provided
+    /// path, not a user-changeable app setting, so reading it here doesn't
+    /// run afoul of `whspr-config`'s "no env vars" rule — that rule is
+    /// specifically about app settings silently overriding the config file
+    /// (see that crate's module doc comment).
+    ///
+    /// Returns `None` if neither is available; callers should surface that
+    /// as a clear "no model configured" error rather than constructing a
+    /// `WhisperLocal` pointed at a path that doesn't exist.
+    pub fn resolve_model_path(explicit: Option<PathBuf>) -> Option<PathBuf> {
+        explicit.or_else(|| std::env::var_os("WHISPER_MODEL_PATH").map(PathBuf::from))
+    }
 }
 
 #[async_trait]
@@ -380,6 +398,29 @@ impl AsrBackend for DeepgramAsr {
 mod tests {
     use super::*;
     use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
+
+    /// Exercises all three precedence outcomes in one test (rather than
+    /// three separate `#[test]` fns) since `cargo test` runs tests in
+    /// parallel threads by default and mutating a shared env var from
+    /// multiple concurrently-running tests would race.
+    #[test]
+    fn resolve_model_path_precedence() {
+        std::env::remove_var("WHISPER_MODEL_PATH");
+        assert_eq!(WhisperLocal::resolve_model_path(None), None);
+
+        std::env::set_var("WHISPER_MODEL_PATH", "/from/env.bin");
+        assert_eq!(
+            WhisperLocal::resolve_model_path(None),
+            Some(PathBuf::from("/from/env.bin")),
+            "should fall back to WHISPER_MODEL_PATH when no explicit path is given"
+        );
+        assert_eq!(
+            WhisperLocal::resolve_model_path(Some(PathBuf::from("/explicit.bin"))),
+            Some(PathBuf::from("/explicit.bin")),
+            "an explicit path should win over WHISPER_MODEL_PATH"
+        );
+        std::env::remove_var("WHISPER_MODEL_PATH");
+    }
 
     #[tokio::test]
     async fn test_openai_asr_transcribe() {
