@@ -271,3 +271,81 @@ pub fn start_capture() -> Result<CaptureHandle> {
         sample_rate,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_decode_wav_basic() {
+        // Create a minimal WAV file with known properties
+        let temp_file = NamedTempFile::new().expect("failed to create temp file");
+        let path = temp_file.path();
+
+        // Write a simple test WAV: 8kHz mono, 16-bit, 100 samples
+        {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 8000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+
+            let mut writer =
+                hound::WavWriter::create(path, spec).expect("failed to create WAV writer");
+
+            // Write a simple ramp: 0, 1, 2, ..., 99
+            for i in 0..100 {
+                writer
+                    .write_sample((i as i16) * 100)
+                    .expect("failed to write sample");
+            }
+
+            writer.finalize().expect("failed to finalize WAV");
+        }
+
+        // Decode the WAV
+        let decoded = decode_wav(path).expect("failed to decode WAV");
+
+        // Verify properties
+        assert_eq!(decoded.sample_rate, 8000, "sample rate should be 8000");
+        assert_eq!(decoded.samples.len(), 100, "sample count should be 100");
+
+        // Verify samples are normalized
+        for sample in &decoded.samples {
+            assert!(
+                *sample >= -1.0 && *sample <= 1.0,
+                "samples should be normalized to [-1.0, 1.0]"
+            );
+        }
+    }
+
+    #[test]
+    fn test_resample_to_16k_mono_passthrough() {
+        // Test passthrough when already at 16kHz
+        let buffer = AudioBuffer::new(vec![0.1, 0.2, 0.3], 16000);
+        let resampled = resample_to_16k_mono(&buffer).expect("resampling failed");
+
+        assert_eq!(resampled.sample_rate, 16000);
+        // Should be the same or very close (it's a clone passthrough)
+        assert_eq!(resampled.samples.len(), 3);
+    }
+
+    #[test]
+    fn test_resample_to_16k_mono_upsampling() {
+        // Test upsampling from 8kHz to 16kHz
+        let buffer = AudioBuffer::new(vec![0.5; 1000], 8000);
+        let resampled = resample_to_16k_mono(&buffer).expect("resampling failed");
+
+        assert_eq!(resampled.sample_rate, 16000);
+        // Upsampling should roughly double the sample count
+        let expected_len = (1000.0 * 16000.0 / 8000.0) as usize;
+        assert!(
+            (resampled.samples.len() as i32 - expected_len as i32).abs() <= 1,
+            "upsampled length should be ~{}, got {}",
+            expected_len,
+            resampled.samples.len()
+        );
+    }
+}
