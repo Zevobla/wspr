@@ -28,6 +28,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
         root,
         tests_passed,
     ));
+    results.push(tests_isolation::check_ci_configured(root));
 
     results
 }
