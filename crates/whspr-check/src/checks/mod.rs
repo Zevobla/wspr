@@ -4,6 +4,7 @@
 //! `report::print`.
 
 pub mod build;
+pub mod cli;
 pub mod docs;
 pub mod git_growth;
 pub mod license;
@@ -50,6 +51,8 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.extend(git_growth::check_commit_timing(root));
     results.push(git_growth::check_single_authorship(root));
     results.extend(git_growth::check_rs_commit_shape(root));
+
+    results.extend(cli::run_cli_checks(root));
 
     results
 }
