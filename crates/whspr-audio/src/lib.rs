@@ -91,6 +91,8 @@ pub fn trim_silence_default(audio: &AudioBuffer) -> AudioBuffer {
 /// Decodes a WAV file into an `AudioBuffer` at its native sample rate/channel
 /// layout (resample separately with `resample_to_16k_mono`).
 ///
+/// Automatically trims leading and trailing silence (see `trim_silence` for details).
+///
 /// Handles arbitrary bit depths (8/16/24/32-bit int, float) and channel layouts,
 /// normalizing all to f32 [-1.0, 1.0] and downmixing to mono during decode.
 /// (By design, `AudioBuffer` has no channels field, so it's always implicitly mono.)
@@ -178,7 +180,8 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
         samples = mono;
     }
 
-    Ok(AudioBuffer::new(samples, sample_rate))
+    let audio = AudioBuffer::new(samples, sample_rate);
+    Ok(trim_silence_default(&audio))
 }
 
 /// Resamples an `AudioBuffer` to 16kHz mono.
