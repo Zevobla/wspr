@@ -62,7 +62,11 @@ mod tests {
 
     #[test]
     fn asr_label_roundtrips_through_from_label() {
-        for choice in [AsrChoice::WhisperLocal, AsrChoice::OpenAi, AsrChoice::Deepgram] {
+        for choice in [
+            AsrChoice::WhisperLocal,
+            AsrChoice::OpenAi,
+            AsrChoice::Deepgram,
+        ] {
             assert_eq!(asr_from_label(asr_label(choice)), choice);
         }
     }
@@ -81,7 +85,10 @@ mod tests {
 
     #[test]
     fn asr_from_label_falls_back_to_default_for_unknown_label() {
-        assert_eq!(asr_from_label("not-a-real-backend"), AsrChoice::WhisperLocal);
+        assert_eq!(
+            asr_from_label("not-a-real-backend"),
+            AsrChoice::WhisperLocal
+        );
     }
 
     #[test]

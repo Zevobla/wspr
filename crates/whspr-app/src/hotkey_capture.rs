@@ -45,7 +45,10 @@ mod tests {
 
     #[test]
     fn formats_plain_character_key() {
-        assert_eq!(format_key_combo(Modifiers::default(), &Key::Character("d".into())), "D");
+        assert_eq!(
+            format_key_combo(Modifiers::default(), &Key::Character("d".into())),
+            "D"
+        );
     }
 
     #[test]
@@ -67,6 +70,9 @@ mod tests {
 
     #[test]
     fn formats_unidentified_key() {
-        assert_eq!(format_key_combo(Modifiers::default(), &Key::Unidentified), "?");
+        assert_eq!(
+            format_key_combo(Modifiers::default(), &Key::Unidentified),
+            "?"
+        );
     }
 }

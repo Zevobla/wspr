@@ -105,12 +105,14 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                         match pipeline.run(audio, &RefineContext::default()).await {
                             Ok(text) => {
                                 let _ = output
-                                    .send(WorkerEvent::Completed { text, duration_secs })
+                                    .send(WorkerEvent::Completed {
+                                        text,
+                                        duration_secs,
+                                    })
                                     .await;
                             }
                             Err(error) => {
-                                let _ =
-                                    output.send(WorkerEvent::Failed(error.to_string())).await;
+                                let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
                             }
                         }
                     }
