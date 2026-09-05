@@ -272,6 +272,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "Y",
         title: "CLI works headless (no display-server env vars present)",
     },
+    Criterion {
+        id: "Y-14",
+        group: "Y",
+        title: "Repeat run gives identical output (determinism)",
+    },
     // --- P: Autonomy/privacy ---
     Criterion {
         id: "P-01",
