@@ -3,6 +3,9 @@
 //! Usage:
 //!   whspr transcribe <FILE|->      Transcribe an audio file (- for stdin, must be WAV format)
 //!   whspr transcribe-batch <DIR>   Transcribe all .wav files in a directory
+//!   whspr diarize <FILE>           Diarize a multi-speaker audio file: find
+//!                                  speaker turns and match them against the
+//!                                  persisted speaker database
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
@@ -20,9 +23,10 @@ use std::time::Instant;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
-use whspr_config::{api_key_for, load as load_config, AsrChoice, RefineChoice};
-use whspr_core::testkit::{MockAsr, NoopRefiner};
-use whspr_core::{AsrBackend, AudioBuffer, Pipeline, RefineContext, TextRefiner};
+use whspr_config::{api_key_for, load as load_config, AsrChoice, RefineChoice, SpeakerDb};
+use whspr_core::testkit::{MockAsr, MockDiarizer, NoopRefiner};
+use whspr_core::{AsrBackend, AudioBuffer, Diarizer, Pipeline, RefineContext, TextRefiner};
+use whspr_diarize::SherpaDiarizer;
 use whspr_refine::{AnthropicRefiner, LlamaLocal, OpenAiRefiner};
 
 #[derive(Parser)]
@@ -123,6 +127,31 @@ enum Command {
         #[arg(long, hide = true)]
         asr_api_key: Option<String>,
     },
+
+    /// Diarize a multi-speaker audio file: find speaker turns and match
+    /// each one against the persisted speaker database.
+    Diarize {
+        /// Path to audio file (WAV format).
+        file: PathBuf,
+
+        /// Directory containing sherpa-onnx segmentation + embedding model
+        /// files. Falls back to the config file's `[speaker].model-dir` if
+        /// not given. If neither is set, uses a deterministic mock
+        /// diarizer (offline, no real model files needed) -- same
+        /// "explicit opt-in, else a safe default" philosophy as `--asr`.
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+
+        /// Output a JSON array of `{start_secs, end_secs, speaker, score}`
+        /// instead of plain text lines.
+        #[arg(long)]
+        json: bool,
+
+        /// Override the data directory (speakers.json lives here). Hidden:
+        /// test-only, so the e2e suite can redirect writes to a tempdir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
+    },
 }
 
 /// Builds an ASR backend from command-line flags, falling back to `MockAsr`
@@ -219,6 +248,29 @@ fn build_refiner(
             )))
         }
         RefineChoice::LlamaLocal => Ok(Box::new(LlamaLocal::new("model.gguf"))),
+    }
+}
+
+/// Builds a diarization backend from config and command-line flags, falling
+/// back to `MockDiarizer` when neither `--model-dir` nor the config file's
+/// `[speaker].model_dir` is set -- mirrors `build_asr_backend`'s "explicit
+/// opt-in, else a deterministic default" reasoning: a real `SherpaDiarizer`
+/// needs model files that aren't guaranteed present, so it's never
+/// constructed unless the user pointed at a model directory somehow.
+fn build_diarizer(
+    config: &whspr_config::Config,
+    model_dir_flag: Option<&Path>,
+) -> anyhow::Result<Box<dyn Diarizer>> {
+    let model_dir = model_dir_flag
+        .map(PathBuf::from)
+        .or_else(|| config.speaker.model_dir.clone());
+
+    match model_dir {
+        Some(dir) => {
+            let diarizer = SherpaDiarizer::new(&dir).map_err(|e| anyhow::anyhow!("{}", e))?;
+            Ok(Box::new(diarizer))
+        }
+        None => Ok(Box::new(MockDiarizer::default())),
     }
 }
 
@@ -448,6 +500,68 @@ async fn main() -> anyhow::Result<()> {
                     if let Some(text) = result.get("text").and_then(|v| v.as_str()) {
                         println!("{}", text);
                     }
+                }
+            }
+        }
+
+        Some(Command::Diarize {
+            file,
+            model_dir,
+            json: output_json,
+            data_dir,
+        }) => {
+            eprintln!("Loading audio...");
+            let audio = load_audio(&file).await?;
+            let audio =
+                whspr_audio::resample_to_16k_mono(&audio).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+            let diarizer = build_diarizer(&config, model_dir.as_deref())?;
+
+            eprintln!("Running diarization...");
+            let turns = diarizer.diarize(&audio).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+            let data_dir = resolve_data_dir(data_dir.as_deref())?;
+            std::fs::create_dir_all(&data_dir)?;
+            let speakers_path = data_dir.join("speakers.json");
+            let mut speaker_db = SpeakerDb::load(&speakers_path);
+
+            let scan_id = file.display().to_string();
+            let threshold = config.speaker.similarity_threshold;
+            let labeled_turns: Vec<_> = turns
+                .into_iter()
+                .map(|mut turn| {
+                    let (id, _is_new) =
+                        speaker_db.match_or_enroll(&turn.embedding, threshold, &scan_id);
+                    turn.speaker = Some(id);
+                    turn
+                })
+                .collect();
+
+            speaker_db
+                .save(&speakers_path)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+            if output_json {
+                let json_out: Vec<_> = labeled_turns
+                    .iter()
+                    .map(|t| {
+                        json!({
+                            "start_secs": t.start_secs,
+                            "end_secs": t.end_secs,
+                            "speaker": t.speaker,
+                            "score": t.score,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string(&json_out)?);
+            } else {
+                for t in &labeled_turns {
+                    println!(
+                        "[{:.2}-{:.2}] {}",
+                        t.start_secs,
+                        t.end_secs,
+                        t.speaker.as_deref().unwrap_or("?")
+                    );
                 }
             }
         }
