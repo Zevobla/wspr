@@ -44,6 +44,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(license::check_model_weights_ignored_and_absent(root));
     results.push(license::check_no_secrets_in_history(root));
     results.push(license::check_dependency_license_inventory(root));
+    results.push(license::check_no_copyleft_dependencies(root));
 
     results.push(docs::check_readme_architecture(root));
     results.push(docs::check_readme_settings_table(root));

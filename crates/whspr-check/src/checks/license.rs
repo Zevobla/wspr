@@ -376,3 +376,59 @@ pub fn check_dependency_license_inventory(root: &Path) -> CheckResult {
         )
     }
 }
+
+/// Z-08: no copyleft dependency licenses under our permissive Apache-2.0
+/// project.
+///
+/// Classifies a declared license as copyleft by checking for a "GPL"
+/// substring, case-sensitive - this catches the GPL-/LGPL-/AGPL- SPDX
+/// family regardless of version/suffix, while none of the common
+/// permissive ids (MIT, Apache-2.0, BSD-*, ISC, MPL-2.0, Unlicense, Zlib,
+/// ...) contain that substring.
+///
+/// Not a full SPDX-expression parser: it does account for the one
+/// distinction that actually matters for "is this a forced obligation" -
+/// an `OR` (or the older `/`-separated shorthand, e.g. "Apache-2.0/MIT")
+/// means the expression offers a permissive alternative you can choose
+/// instead, so a hit is only real copyleft exposure when GPL appears
+/// *without* one (a bare "GPL-3.0-only", or an `AND` combination like
+/// "MIT AND GPL-2.0-only" that can't avoid the GPL side). Caught in
+/// practice: `r-efi` declares "MIT OR Apache-2.0 OR LGPL-2.1-or-later" -
+/// correctly not flagged, since picking MIT or Apache-2.0 fully satisfies
+/// it. Dependencies with no declared license (Z-07's finding) are
+/// excluded here - Z-07 already reports that gap.
+pub fn check_no_copyleft_dependencies(root: &Path) -> CheckResult {
+    let deps = match third_party_licenses(root) {
+        Ok(d) => d,
+        Err(e) => return CheckResult::fail("Z-08", e.to_string()),
+    };
+    let total = deps.len();
+
+    let copyleft: Vec<String> = deps
+        .iter()
+        .filter_map(|(name, lic, _)| lic.as_ref().map(|l| (name, l)))
+        .filter(|(_, lic)| lic.contains("GPL") && !lic.contains(" OR ") && !lic.contains('/'))
+        .map(|(name, lic)| format!("{name} ({lic})"))
+        .collect();
+
+    if copyleft.is_empty() {
+        CheckResult::pass(
+            "Z-08",
+            format!(
+                "none of the {total} resolved third-party dependency licenses contain \"GPL\" \
+                 (checked as a substring, catching the GPL-/LGPL-/AGPL- SPDX family regardless \
+                 of version/suffix)"
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "Z-08",
+            format!(
+                "{} of {total} dependencies report a copyleft-shaped license under this \
+                 permissive Apache-2.0 project: {}",
+                copyleft.len(),
+                copyleft.join(", ")
+            ),
+        )
+    }
+}
