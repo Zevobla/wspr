@@ -322,4 +322,76 @@ mod tests {
             DebounceAction::Ignore
         );
     }
+
+    /// A [`HotkeyListener`] that replays a fixed script of raw events on its
+    /// own thread, then closes the channel — enough to drive the wrapper
+    /// without a real display or OS hotkey.
+    struct ScriptedListener {
+        events: Vec<HotkeyEvent>,
+    }
+
+    impl HotkeyListener for ScriptedListener {
+        fn subscribe(&self) -> mpsc::Receiver<HotkeyEvent> {
+            let (tx, rx) = mpsc::channel(16);
+            let events = self.events.clone();
+            thread::spawn(move || {
+                for event in events {
+                    if tx.blocking_send(event).is_err() {
+                        return;
+                    }
+                }
+            });
+            rx
+        }
+    }
+
+    /// A clock that hands out `times` in call order, deterministically
+    /// pairing each raw event with the timestamp the wrapper should see.
+    fn scripted_clock(times: Vec<Instant>) -> Clock {
+        let next = std::sync::Mutex::new(0usize);
+        Arc::new(move || {
+            let mut i = next.lock().unwrap();
+            let time = times[(*i).min(times.len() - 1)];
+            *i += 1;
+            time
+        })
+    }
+
+    /// End-to-end through the wrapper: a rapid double-tap yields a single
+    /// (cancelled) recording — the second tap is filtered out entirely, and
+    /// `Ignore` outcomes never reach the action stream.
+    #[test]
+    fn debounced_listener_filters_a_rapid_double_tap() {
+        let base = Instant::now();
+        let listener = DebouncedHotkeyListener {
+            inner: ScriptedListener {
+                events: vec![
+                    HotkeyEvent::Pressed,
+                    HotkeyEvent::Released,
+                    HotkeyEvent::Pressed,
+                    HotkeyEvent::Released,
+                ],
+            },
+            clock: scripted_clock(vec![
+                base,
+                base + Duration::from_millis(40),
+                base + Duration::from_millis(80),
+                base + Duration::from_millis(120),
+            ]),
+        };
+
+        let mut actions = listener.subscribe_actions();
+        let mut collected = Vec::new();
+        while let Some(action) = actions.blocking_recv() {
+            collected.push(action);
+        }
+
+        assert_eq!(
+            collected,
+            vec![
+                DebounceAction::StartRecording,
+                DebounceAction::CancelRecording
+            ]
+        );
+    }
 }
