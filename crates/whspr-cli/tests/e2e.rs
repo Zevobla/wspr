@@ -254,6 +254,101 @@ fn transcribe_no_store_skips_history_entry() {
     );
 }
 
+#[test]
+fn transcribe_format_srt_prints_timecoded_cues() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // MockAsr's canned Transcript never populates per-segment timing, so
+    // this exercises `subtitles`'s degenerate single-cue fallback rather
+    // than real segment-per-line output - see subtitles.rs's own unit
+    // tests for the multi-segment case.
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--format",
+            "srt",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("1\n00:00:00,000 --> "))
+        .stdout(predicate::str::contains(MOCK_TRANSCRIPT));
+}
+
+#[test]
+fn transcribe_format_vtt_prints_webvtt_header() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--format",
+            "vtt",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("WEBVTT\n\n1\n"))
+        .stdout(predicate::str::contains(MOCK_TRANSCRIPT));
+}
+
+#[test]
+fn transcribe_format_unknown_value_fails_with_clear_error() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--format",
+            "docx",
+            "--no-store",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown export format"));
+}
+
+#[test]
+fn transcribe_format_takes_precedence_over_json() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--format",
+            "srt",
+            "--json",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("1\n00:00:00,000 --> "));
+}
+
 // The wiremock server's background listener task and the subprocess spawned
 // by assert_cmd both need to make progress at once: the subprocess call
 // blocks the calling OS thread synchronously, so a single-threaded runtime
@@ -385,4 +480,14 @@ fn transcribe_help_mentions_no_store_flag() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--no-store"));
+}
+
+#[test]
+fn transcribe_help_mentions_format_flag() {
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args(["transcribe", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--format"));
 }
