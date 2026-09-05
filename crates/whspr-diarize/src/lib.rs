@@ -81,6 +81,7 @@ pub const EMBEDDING_MODEL_FILENAME: &str = "embedding.onnx";
 /// `whspr_core::Diarizer` backed by sherpa-onnx (via `sherpa-rs`). See the
 /// module docs for exactly which model files it needs and how it derives
 /// per-turn embeddings.
+#[derive(Debug)]
 pub struct SherpaDiarizer {
     diarize: Mutex<Diarize>,
     embedder: Mutex<EmbeddingExtractor>,
@@ -222,5 +223,47 @@ impl Diarizer for SherpaDiarizer {
 
     fn id(&self) -> &'static str {
         "sherpa"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_rejects_missing_model_dir() {
+        let err = SherpaDiarizer::new("/nonexistent/whspr-diarize-test-model-dir").unwrap_err();
+        assert!(matches!(err, WhsprError::Diarize(_)));
+    }
+
+    #[test]
+    fn new_rejects_model_dir_missing_both_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = SherpaDiarizer::new(dir.path()).unwrap_err();
+        match err {
+            WhsprError::Diarize(msg) => assert!(
+                msg.contains("segmentation model"),
+                "expected the segmentation model to be reported missing first, got: {msg}"
+            ),
+            other => panic!("expected WhsprError::Diarize, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_rejects_model_dir_missing_embedding_file_only() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(SEGMENTATION_MODEL_FILENAME),
+            b"not a real onnx model, just enough to exist as a file",
+        )
+        .unwrap();
+        let err = SherpaDiarizer::new(dir.path()).unwrap_err();
+        match err {
+            WhsprError::Diarize(msg) => assert!(
+                msg.contains("embedding model"),
+                "expected the embedding model to be reported missing, got: {msg}"
+            ),
+            other => panic!("expected WhsprError::Diarize, got {other:?}"),
+        }
     }
 }
