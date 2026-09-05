@@ -30,6 +30,73 @@ pub struct CheckResult {
     pub evidence: String,
 }
 
+/// Prints the full grouped report to stdout: each result under its group
+/// heading (looked up from the catalog), then a headline summary line.
+///
+/// `results` is expected to contain at most one entry per catalog id;
+/// results are printed in catalog order, grouped by the criterion's group
+/// code, so the report's shape tracks `criteria::CATALOG` regardless of
+/// what order checks happened to run in.
+pub fn print(results: &[CheckResult]) {
+    use crate::criteria;
+
+    let mut current_group: Option<&str> = None;
+    for result in results {
+        let meta = criteria::lookup(result.id);
+        if current_group != Some(meta.group) {
+            let group_name = criteria::GROUPS
+                .iter()
+                .find(|(code, _)| *code == meta.group)
+                .map(|(_, name)| *name)
+                .unwrap_or("?");
+            println!("\n== {} - {} ==", meta.group, group_name);
+            current_group = Some(meta.group);
+        }
+        let tag = match result.verdict {
+            Verdict::Pass => "PASS",
+            Verdict::Fail => "FAIL",
+            Verdict::NeedsBench => "NEEDS-BENCH",
+            Verdict::Skipped => "SKIPPED",
+        };
+        println!("[{tag:11}] {:<7} {}", result.id, meta.title);
+        println!("              {}", result.evidence);
+    }
+
+    let pass = results
+        .iter()
+        .filter(|r| r.verdict == Verdict::Pass)
+        .count();
+    let fail = results
+        .iter()
+        .filter(|r| r.verdict == Verdict::Fail)
+        .count();
+    let bench = results
+        .iter()
+        .filter(|r| r.verdict == Verdict::NeedsBench)
+        .count();
+    let skipped = results
+        .iter()
+        .filter(|r| r.verdict == Verdict::Skipped)
+        .count();
+    let auto_checkable = pass + fail;
+    let not_automated = criteria::TOTAL_CRITERIA.saturating_sub(results.len());
+
+    println!("\n== SUMMARY ==");
+    println!(
+        "auto-checkable: {auto_checkable}, pass: {pass}, fail: {fail}; \
+         needs-bench/skipped-in-this-run: {}; not yet automated by this tool: {not_automated} \
+         (of {} total acceptance-matrix criteria)",
+        bench + skipped,
+        criteria::TOTAL_CRITERIA
+    );
+    if fail > 0 {
+        println!("\nFAILING criteria (highest priority for the next wave):");
+        for result in results.iter().filter(|r| r.verdict == Verdict::Fail) {
+            println!("  - {}: {}", result.id, criteria::lookup(result.id).title);
+        }
+    }
+}
+
 impl CheckResult {
     pub fn pass(id: &'static str, evidence: impl Into<String>) -> Self {
         Self {

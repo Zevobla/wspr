@@ -19,20 +19,15 @@ use report::CheckResult;
 
 fn main() -> anyhow::Result<()> {
     let root = repo::find_repo_root()?;
+    println!("whspr-check: analyzing {}", root.display());
 
-    // Placeholder result until the real checks land; proves `report` wires
-    // into `main` and into the catalog.
-    let placeholder = CheckResult::needs_bench(
+    // Placeholder result set until the real checks land in follow-up
+    // commits; proves report::print renders against the real catalog.
+    let results = vec![CheckResult::needs_bench(
         criteria::CATALOG[0].id,
         "checker not implemented yet".to_string(),
-    );
-    println!(
-        "whspr-check: repo root = {}; {} criteria in catalog (of {} total in the acceptance matrix); e.g. {} -> {:?}",
-        root.display(),
-        criteria::CATALOG.len(),
-        criteria::TOTAL_CRITERIA,
-        placeholder.id,
-        placeholder.verdict
-    );
+    )];
+
+    report::print(&results);
     Ok(())
 }
