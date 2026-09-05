@@ -187,7 +187,10 @@ mod tests {
         // No previous press can't be a double-press.
         assert!(!is_double_press(None, base));
         // A press just after the previous one is a double-press.
-        assert!(is_double_press(Some(base), base + Duration::from_millis(10)));
+        assert!(is_double_press(
+            Some(base),
+            base + Duration::from_millis(10)
+        ));
         assert!(is_double_press(
             Some(base),
             base + DOUBLE_PRESS_WINDOW - Duration::from_millis(1)
