@@ -16,8 +16,10 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+mod autostart;
 mod speaker;
 
+pub use autostart::{install_autostart, remove_autostart};
 pub use speaker::{SpeakerDb, SpeakerProfile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
