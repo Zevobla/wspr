@@ -6,8 +6,8 @@
 use async_trait::async_trait;
 
 use crate::error::Result;
-use crate::traits::{AsrBackend, TextRefiner};
-use crate::types::{AsrOptions, AudioBuffer, RefineContext, Transcript};
+use crate::traits::{AsrBackend, Diarizer, TextRefiner};
+use crate::types::{AsrOptions, AudioBuffer, RefineContext, SpeakerTurn, Transcript};
 
 /// Returns a canned `Transcript` for every call, ignoring the audio content.
 pub struct MockAsr {
@@ -53,5 +53,47 @@ impl TextRefiner for NoopRefiner {
 
     fn id(&self) -> &'static str {
         "noop"
+    }
+}
+
+/// Returns canned `SpeakerTurn`s for every call, ignoring the audio content.
+pub struct MockDiarizer {
+    pub canned: Vec<SpeakerTurn>,
+}
+
+impl MockDiarizer {
+    pub fn new(turns: Vec<SpeakerTurn>) -> Self {
+        Self { canned: turns }
+    }
+}
+
+impl Default for MockDiarizer {
+    fn default() -> Self {
+        Self::new(vec![
+            SpeakerTurn {
+                start_secs: 0.0,
+                end_secs: 2.5,
+                embedding: vec![0.1, 0.2, 0.3],
+                speaker: None,
+                score: 0.95,
+            },
+            SpeakerTurn {
+                start_secs: 2.5,
+                end_secs: 5.0,
+                embedding: vec![0.4, 0.5, 0.6],
+                speaker: None,
+                score: 0.92,
+            },
+        ])
+    }
+}
+
+impl Diarizer for MockDiarizer {
+    fn diarize(&self, _audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>> {
+        Ok(self.canned.clone())
+    }
+
+    fn id(&self) -> &'static str {
+        "mock"
     }
 }
