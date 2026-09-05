@@ -100,3 +100,28 @@ fn test_trim_silence_all_silence_degrades_gracefully() {
         "all-silence buffer should not be trimmed"
     );
 }
+
+#[test]
+fn test_trim_silence_too_short_buffer() {
+    // A buffer shorter than one window should be returned unchanged
+    let sample_rate = 16000u32;
+    let short_len = 50; // Much shorter than a window
+
+    let samples: Vec<f32> = (0..short_len).map(|i| (i as f32 * 0.01).sin()).collect();
+
+    let audio = AudioBuffer::new(samples.clone(), sample_rate);
+    let trimmed = trim_silence_default(&audio);
+
+    // Should return unchanged
+    assert_eq!(
+        trimmed.samples.len(),
+        short_len,
+        "short buffer should not be trimmed"
+    );
+    for (i, &sample) in trimmed.samples.iter().enumerate() {
+        assert!(
+            (sample - audio.samples[i]).abs() < 1e-6,
+            "short buffer should be unchanged"
+        );
+    }
+}
