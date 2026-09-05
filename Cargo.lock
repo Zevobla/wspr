@@ -2936,6 +2936,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
+ "serde_json",
  "tempfile",
  "toml",
  "whspr-config",
