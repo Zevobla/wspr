@@ -3,6 +3,7 @@
 //! collects every family into the single ordered `Vec` `main` hands to
 //! `report::print`.
 
+pub mod architecture;
 pub mod build;
 pub mod cli;
 pub mod config;
@@ -76,6 +77,8 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
 
     results.push(slop::check_stub_function_count(root));
     results.push(slop::check_unused_deps(root));
+
+    results.push(architecture::check_file_size_sanity(root));
 
     results
 }

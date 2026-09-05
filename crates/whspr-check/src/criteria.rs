@@ -111,6 +111,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AA",
         title: "cargo fmt --check is clean across the workspace",
     },
+    Criterion {
+        id: "AA-06",
+        group: "AA",
+        title: "No single source file has grown unreasonably large",
+    },
     // --- Z: Licenses/provenance ---
     Criterion {
         id: "Z-01",
