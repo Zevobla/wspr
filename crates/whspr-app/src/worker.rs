@@ -6,6 +6,13 @@
 //! recording, release it to stop, transcribe, refine, and inject the
 //! result into whatever has focus. Uses the `testkit` Mock/Noop backends,
 //! same as whspr-cli, so the whole loop works offline with no API keys.
+//!
+//! The raw press/release stream is run through `whspr_inject`'s
+//! `DebouncedHotkeyListener` before it ever reaches this loop, so a
+//! too-short tap is cancelled instead of producing an empty transcript
+//! (D-10) and a double-press doesn't start a second recording on top of
+//! the first (D-09) -- see `capture_decision` below for exactly how those
+//! debounced actions map onto capture start/stop/discard.
 
 use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
