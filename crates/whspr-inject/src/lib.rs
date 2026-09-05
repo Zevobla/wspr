@@ -11,8 +11,11 @@ use tokio::sync::mpsc;
 use whspr_core::{HotkeyEvent, HotkeyListener, Result, TextSink, WhsprError};
 
 mod clipboard;
+mod debounce;
 
 use clipboard::{stage_and_paste, ArboardClipboard, PasteOutcome};
+
+pub use debounce::DebounceAction;
 
 /// Listens for the configured global hotkey via the OS-level hotkey APIs.
 pub struct GlobalHotkeyListener {
