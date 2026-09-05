@@ -101,6 +101,19 @@ pub fn ensure_binary_built(root: &Path, package: &str, bin_name: &str) -> anyhow
     Ok(path)
 }
 
+/// Runs `cargo metadata --format-version 1` and parses its JSON. Shared by
+/// every check that needs the resolved dependency graph or per-package
+/// manifest fields (declared deps, license, ...) rather than just reading
+/// Cargo.toml files directly.
+pub fn cargo_metadata(root: &Path) -> anyhow::Result<serde_json::Value> {
+    let output = run(root, "cargo", &["metadata", "--format-version", "1"])?;
+    if !output.success {
+        anyhow::bail!("`cargo metadata` failed: {}", output.stderr);
+    }
+    serde_json::from_str(&output.stdout)
+        .map_err(|e| anyhow::anyhow!("could not parse cargo metadata JSON: {e}"))
+}
+
 /// Reads README.md from the repo root. Shared by every doc-content check
 /// (Z-04, W-06/07/08, AH-03/04, AC-03) so they don't each independently
 /// read-and-error-handle the same file.
