@@ -604,6 +604,27 @@ mod tests {
         assert_eq!(strip_special_tokens("a [MUSIC] b"), "a b");
     }
 
+    #[test]
+    fn strip_special_tokens_preserves_ordinary_bracketed_words() {
+        // Lowercase / non-ASCII / mixed-case bracketed words are real speech,
+        // not model tokens, and must survive verbatim.
+        assert_eq!(strip_special_tokens("[важно] текст"), "[важно] текст");
+        assert_eq!(strip_special_tokens("note [aside] here"), "note [aside] here");
+        assert_eq!(strip_special_tokens("plan [Name]"), "plan [Name]");
+    }
+
+    #[test]
+    fn strip_special_tokens_leaves_plain_and_unterminated_text_alone() {
+        assert_eq!(
+            strip_special_tokens("just normal text"),
+            "just normal text"
+        );
+        // Unterminated tokens are kept verbatim rather than eating the rest
+        // of the string.
+        assert_eq!(strip_special_tokens("unclosed [MUSIC"), "unclosed [MUSIC");
+        assert_eq!(strip_special_tokens("dangling <|foo"), "dangling <|foo");
+    }
+
     /// Real end-to-end WhisperLocal transcription against a small committed
     /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
     /// synthesized speech saying "one two three").
