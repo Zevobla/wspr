@@ -8,3 +8,16 @@ repository.workspace = true
 [[bin]]
 name = "whspr-app"
 path = "src/main.rs"
+
+[dependencies]
+# "tokio" enables iced's tokio-backed executor, so `Task`/`Subscription`
+# futures run on a real tokio runtime -- needed to bridge to the async
+# `whspr_core::Pipeline` and to tokio mpsc channels (hotkey events, pipeline
+# state callbacks) from within iced's async world.
+iced = { workspace = true, features = ["tokio"] }
+whspr-core = { workspace = true, features = ["testkit"] }
+whspr-inject.workspace = true
+whspr-audio.workspace = true
+whspr-config.workspace = true
+tokio.workspace = true
+tracing.workspace = true
