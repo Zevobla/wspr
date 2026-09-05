@@ -203,13 +203,23 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
 }
 
 /// Y-14: repeat run gives identical output (determinism).
+///
+/// Passes `--data-dir <tempdir>` (shared across both runs) so neither
+/// invocation pollutes the real platform history.jsonl.
 fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
         return CheckResult::fail("Y-14", "fixture WAV path isn't valid UTF-8");
     };
-    let first = run_whspr(bin, root, &["transcribe", fixture_str]);
-    let second = run_whspr(bin, root, &["transcribe", fixture_str]);
+    let Ok(data_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("Y-14", "could not create a temp data dir");
+    };
+    let Some(data_dir_str) = data_dir.path().to_str() else {
+        return CheckResult::fail("Y-14", "temp data dir path isn't valid UTF-8");
+    };
+    let args = ["transcribe", fixture_str, "--data-dir", data_dir_str];
+    let first = run_whspr(bin, root, &args);
+    let second = run_whspr(bin, root, &args);
     match (first, second) {
         (Ok(a), Ok(b)) if a.success && b.success && a.stdout == b.stdout => CheckResult::pass(
             "Y-14",
