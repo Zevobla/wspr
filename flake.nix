@@ -128,6 +128,11 @@
           # model (see nix/models.nix) so it has a working model without
           # anyone downloading one by hand.
           WHISPER_MODEL_PATH = "${whisper-model}";
+
+          # Points the diarizer at the pinned sherpa-onnx checkpoints (see
+          # nix/models.nix), a directory containing segmentation.onnx and
+          # embedding.onnx, so `whspr diarize` works with no manual download.
+          SPEAKER_MODEL_DIR = "${speaker-models}";
         };
       });
 }
