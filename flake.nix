@@ -103,7 +103,7 @@
         };
 
         checks = {
-          inherit whspr-cli;
+          inherit whspr-cli whspr-app;
 
           workspace-test = craneLib.cargoTest (commonArgs // {
             inherit cargoArtifacts;
