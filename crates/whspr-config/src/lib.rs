@@ -586,4 +586,37 @@ mod tests {
         assert!(!cfg.normalize.dates);
         assert!(cfg.normalize.times); // not set in the file - stays default
     }
+
+    #[test]
+    fn autostart_settings_defaults_to_disabled() {
+        assert_eq!(
+            Config::default().autostart,
+            AutostartSettings { enabled: false }
+        );
+    }
+
+    #[test]
+    fn autostart_settings_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.autostart.enabled = true;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(round_tripped.autostart, cfg.autostart);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_autostart_enabled() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[autostart]").expect("failed to write autostart header");
+        writeln!(file, "enabled = true").expect("failed to write enabled");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert!(cfg.autostart.enabled);
+    }
 }
