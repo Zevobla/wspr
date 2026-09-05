@@ -625,6 +625,20 @@ mod tests {
         assert_eq!(strip_special_tokens("dangling <|foo"), "dangling <|foo");
     }
 
+    /// AM-04: stripping a leading token must not swallow the first character
+    /// of the actual utterance, whether or not a space separates them.
+    #[test]
+    fn strip_special_tokens_keeps_the_leading_utterance_character() {
+        assert_eq!(strip_special_tokens("[_BEG_]One two three"), "One two three");
+        assert_eq!(strip_special_tokens("<|0.00|>One two"), "One two");
+        assert_eq!(strip_special_tokens("[_BEG_] Once upon"), "Once upon");
+        // A realistic whisper segment with a mix of leading tokens.
+        assert_eq!(
+            strip_special_tokens("<|0.00|> [_BEG_] Hello [MUSIC] world [BLANK_AUDIO]"),
+            "Hello world"
+        );
+    }
+
     /// Real end-to-end WhisperLocal transcription against a small committed
     /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
     /// synthesized speech saying "one two three").
