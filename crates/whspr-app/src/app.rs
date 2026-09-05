@@ -39,14 +39,25 @@ fn boot() -> (State, Task<Message>) {
         .map(|path| crate::history::read_history_file(&path))
         .unwrap_or_default();
 
-    let (_id, open) = window::open(window::Settings::default());
-    (state, open.map(Message::HubOpened))
+    let (_id, open_hub) = window::open(window::Settings::default());
+    let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
+
+    let open = Task::batch([
+        open_hub.map(Message::HubOpened),
+        open_flow_bar.map(Message::FlowBarOpened),
+    ]);
+
+    (state, open)
 }
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::HubOpened(id) => {
             state.hub_window = Some(id);
+            Task::none()
+        }
+        Message::FlowBarOpened(id) => {
+            state.flow_bar_window = Some(id);
             Task::none()
         }
         Message::AsrSelected(label) => {
@@ -104,6 +115,10 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
     }
 }
 
-fn view(state: &State, _window: window::Id) -> Element<'_, Message> {
-    crate::hub::view(state)
+fn view(state: &State, window: window::Id) -> Element<'_, Message> {
+    if Some(window) == state.flow_bar_window {
+        crate::flow_bar::view(state)
+    } else {
+        crate::hub::view(state)
+    }
 }

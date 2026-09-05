@@ -10,6 +10,8 @@ use crate::history::HistoryEntry;
 pub struct State {
     /// Window id of the Hub window, once it has finished opening.
     pub hub_window: Option<window::Id>,
+    /// Window id of the Flow Bar overlay, once it has finished opening.
+    pub flow_bar_window: Option<window::Id>,
     /// The effective config as of app start (defaults overlaid with the
     /// user's config file, per `whspr_config::load`). Edits made in the Hub
     /// only live in this in-memory copy for now -- see the module doc on
@@ -38,6 +40,10 @@ pub struct State {
     /// The active iced theme, toggled between `Theme::Light`/`Theme::Dark`
     /// by the Hub's theme button (see `crate::app`'s `.theme` wiring).
     pub theme: iced::Theme,
+    /// The dictation pipeline's current state, driven by
+    /// `crate::worker::pipeline_worker`'s `WorkerEvent::StateChanged` and
+    /// shown by the Flow Bar overlay.
+    pub pipeline_state: whspr_core::PipelineState,
 }
 
 impl State {
@@ -48,6 +54,7 @@ impl State {
         let language_input = config.language.clone().unwrap_or_default();
         Self {
             hub_window: None,
+            flow_bar_window: None,
             config,
             language_input,
             input_devices: Vec::new(),
@@ -56,6 +63,7 @@ impl State {
             captured_hotkey: None,
             history: Vec::new(),
             theme: iced::Theme::Light,
+            pipeline_state: whspr_core::PipelineState::Idle,
         }
     }
 }
@@ -65,6 +73,9 @@ impl State {
 pub enum Message {
     /// The Hub window finished opening; `window::open` resolves with its id.
     HubOpened(window::Id),
+    /// The Flow Bar overlay finished opening; `window::open` resolves with
+    /// its id.
+    FlowBarOpened(window::Id),
     /// The user picked a new ASR backend label in the Hub.
     AsrSelected(&'static str),
     /// The user picked a new refiner backend label in the Hub.
