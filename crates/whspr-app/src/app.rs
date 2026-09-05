@@ -62,6 +62,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.language_input = language;
             Task::none()
         }
+        Message::DeviceSelected(device) => {
+            state.selected_device = Some(device);
+            Task::none()
+        }
     }
 }
 

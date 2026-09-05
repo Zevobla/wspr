@@ -51,4 +51,6 @@ pub enum Message {
     RefineSelected(&'static str),
     /// The user edited the language override text input in the Hub.
     LanguageChanged(String),
+    /// The user picked a different input device in the Hub.
+    DeviceSelected(String),
 }
