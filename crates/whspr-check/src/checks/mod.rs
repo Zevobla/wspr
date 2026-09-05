@@ -4,6 +4,7 @@
 //! `report::print`.
 
 pub mod build;
+pub mod license;
 pub mod tests_isolation;
 
 use crate::report::CheckResult;
@@ -29,6 +30,9 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
         tests_passed,
     ));
     results.push(tests_isolation::check_ci_configured(root));
+
+    results.push(license::check_license_file_present(root));
+    results.extend(license::check_declared_license(root));
 
     results
 }
