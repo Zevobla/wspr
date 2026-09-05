@@ -400,6 +400,11 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
 
     let output = Command::cargo_bin("whspr")
         .unwrap()
+        // The dev shell sets SPEAKER_MODEL_DIR to a real, pinned model
+        // directory (see SherpaDiarizer::resolve_model_dir) -- clear it so
+        // this test exercises the MockDiarizer fallback it's named for,
+        // regardless of what environment `cargo test` happens to run in.
+        .env_remove("SPEAKER_MODEL_DIR")
         .args([
             "diarize",
             fixture_path.to_str().unwrap(),
@@ -444,9 +449,11 @@ fn diarize_persists_speaker_matches_across_runs() {
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
     let speakers_path = data_dir.path().join("speakers.json");
 
-    // First run
+    // First run (SPEAKER_MODEL_DIR cleared -- see the mock-backend test
+    // above for why -- both runs need the deterministic MockDiarizer).
     let output_1 = Command::cargo_bin("whspr")
         .unwrap()
+        .env_remove("SPEAKER_MODEL_DIR")
         .args([
             "diarize",
             fixture_path_1.to_str().unwrap(),
@@ -478,6 +485,7 @@ fn diarize_persists_speaker_matches_across_runs() {
     // Second run against a different file but same data_dir
     let output_2 = Command::cargo_bin("whspr")
         .unwrap()
+        .env_remove("SPEAKER_MODEL_DIR")
         .args([
             "diarize",
             fixture_path_2.to_str().unwrap(),
@@ -542,6 +550,42 @@ fn diarize_with_nonexistent_model_dir_fails_with_clear_error() {
         ])
         .assert()
         .failure();
+}
+
+#[test]
+fn diarize_falls_back_to_speaker_model_dir_env_var() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    let data_dir = tempfile::tempdir().expect("failed to create data dir");
+
+    // No --model-dir flag and no config file, but SPEAKER_MODEL_DIR is set
+    // to a bogus path: this should still attempt a real SherpaDiarizer
+    // (and fail on that nonexistent directory) rather than silently
+    // falling back to MockDiarizer, proving build_diarizer actually
+    // consults the env var (see SherpaDiarizer::resolve_model_dir).
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .env("SPEAKER_MODEL_DIR", "/nonexistent/from-env")
+        .args([
+            "diarize",
+            fixture_path.to_str().unwrap(),
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run whspr diarize");
+
+    assert!(
+        !output.status.success(),
+        "should fail since /nonexistent/from-env doesn't exist"
+    );
+    let stderr = String::from_utf8(output.stderr).expect("stderr was not valid UTF-8");
+    assert!(
+        stderr.contains("from-env"),
+        "expected the error to mention the SPEAKER_MODEL_DIR-sourced path, got: {stderr}"
+    );
 }
 
 #[test]
