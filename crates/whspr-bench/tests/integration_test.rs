@@ -74,7 +74,7 @@ fn test_integration_mock_backend() -> anyhow::Result<()> {
 
     // Run the benchmark with mock backend
     let output = std::process::Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "-p",
             "whspr-bench",
@@ -112,7 +112,7 @@ fn test_integration_json_output() -> anyhow::Result<()> {
     create_test_stand_set(&dir)?;
 
     let output = std::process::Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "-p",
             "whspr-bench",
@@ -205,7 +205,7 @@ fn test_integration_criterion_grouping() -> anyhow::Result<()> {
     )?;
 
     let output = std::process::Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "-p",
             "whspr-bench",
