@@ -12,6 +12,7 @@ reqwest = { version = "0.13", features = ["json", "rustls", "rustls-native-certs
 serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+llama-cpp-2.workspace = true
 
 [dev-dependencies]
 wiremock.workspace = true
