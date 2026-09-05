@@ -4,7 +4,7 @@ A desktop voice-dictation app — a functional [Wispr Flow](https://wispr.ai)
 clone: hold a hotkey, speak, and clean, LLM-refined text lands wherever your
 cursor is.
 
-**License:** [GNU AGPL-3.0](LICENSE)
+**License:** [Apache-2.0](LICENSE)
 
 ## Status
 
