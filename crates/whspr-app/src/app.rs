@@ -38,6 +38,9 @@ fn boot() -> (State, Task<Message>) {
     state.history = crate::history::history_file_path()
         .map(|path| crate::history::read_history_file(&path))
         .unwrap_or_default();
+    state.speaker_db = crate::speakers::speaker_db_path()
+        .map(|path| whspr_config::SpeakerDb::load(&path))
+        .unwrap_or_default();
 
     let (_id, open_hub) = window::open(window::Settings::default());
     let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
@@ -117,6 +120,62 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
+                }
+            }
+            Task::none()
+        }
+        Message::PickRecordingToDiarize => Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .add_filter("WAV audio", &["wav"])
+                    .pick_file()
+                    .await
+                    .map(|handle| handle.path().to_path_buf())
+            },
+            Message::RecordingPicked,
+        ),
+        Message::RecordingPicked(None) => Task::none(),
+        Message::RecordingPicked(Some(path)) => {
+            state.diarize_status = Some(format!("Diarizing {}...", path.display()));
+            match crate::speakers::speaker_db_path() {
+                Some(db_path) => Task::perform(
+                    crate::speakers::run_diarize_scan(
+                        path,
+                        state.config.speaker.model_dir.clone(),
+                        state.config.speaker.embedding_model,
+                        state.config.speaker.similarity_threshold,
+                        state.speaker_db.clone(),
+                        db_path,
+                    ),
+                    Message::DiarizeFinished,
+                ),
+                None => {
+                    state.diarize_status =
+                        Some("Could not determine the app data directory".to_string());
+                    Task::none()
+                }
+            }
+        }
+        Message::DiarizeFinished(Ok((db, count))) => {
+            state.speaker_db = db;
+            state.diarize_status = Some(format!("Diarization complete: {count} turn(s) found"));
+            Task::none()
+        }
+        Message::DiarizeFinished(Err(error)) => {
+            state.diarize_status = Some(format!("Diarization failed: {error}"));
+            Task::none()
+        }
+        Message::SpeakerRenameInputChanged(id, draft) => {
+            state.speaker_rename_drafts.insert(id, draft);
+            Task::none()
+        }
+        Message::SpeakerRenameSubmitted(id) => {
+            if let Some(draft) = state.speaker_rename_drafts.remove(&id) {
+                if !draft.trim().is_empty() {
+                    state.speaker_db.rename(&id, draft);
+                    if let Some(path) = crate::speakers::speaker_db_path() {
+                        let _ = state.speaker_db.save(&path);
+                    }
                 }
             }
             Task::none()
