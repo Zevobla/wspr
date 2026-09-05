@@ -13,10 +13,13 @@
 
 mod criteria;
 mod report;
+mod repo;
 
 use report::CheckResult;
 
 fn main() -> anyhow::Result<()> {
+    let root = repo::find_repo_root()?;
+
     // Placeholder result until the real checks land; proves `report` wires
     // into `main` and into the catalog.
     let placeholder = CheckResult::needs_bench(
@@ -24,7 +27,8 @@ fn main() -> anyhow::Result<()> {
         "checker not implemented yet".to_string(),
     );
     println!(
-        "whspr-check: {} criteria in catalog (of {} total in the acceptance matrix); e.g. {} -> {:?}",
+        "whspr-check: repo root = {}; {} criteria in catalog (of {} total in the acceptance matrix); e.g. {} -> {:?}",
+        root.display(),
         criteria::CATALOG.len(),
         criteria::TOTAL_CRITERIA,
         placeholder.id,
