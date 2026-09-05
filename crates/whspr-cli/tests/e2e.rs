@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
 /// Creates a minimal test WAV file with a given sample rate.
 fn create_test_wav(
@@ -254,6 +255,89 @@ fn transcribe_no_store_skips_history_entry() {
         !history_path.exists(),
         "--no-store must not create a history file"
     );
+}
+
+// The wiremock server's background listener task and the subprocess spawned
+// by assert_cmd both need to make progress at once: the subprocess call
+// blocks the calling OS thread synchronously, so a single-threaded runtime
+// would never get to poll the mock server. `flavor = "multi_thread"` puts
+// them on separate worker threads.
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcribe_with_asr_openai_succeeds_against_mock_server() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(matchers::method("POST"))
+        .and(matchers::path("/v1/audio/transcriptions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"text": "hello from openai mock"})),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // --asr-base-url and --asr-api-key are hidden, test-only overrides (see
+    // build_asr_backend in main.rs) that let a real cloud backend be
+    // exercised end-to-end against a local mock server instead of the
+    // network.
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "openai",
+            "--asr-base-url",
+            &mock_server.uri(),
+            "--asr-api-key",
+            "test-key",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello from openai mock"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcribe_with_asr_deepgram_succeeds_against_mock_server() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(matchers::method("POST"))
+        .and(matchers::path("/v1/listen"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "results": {
+                "channels": [
+                    {"alternatives": [{"transcript": "hello from deepgram mock"}]}
+                ]
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "deepgram",
+            "--asr-base-url",
+            &mock_server.uri(),
+            "--asr-api-key",
+            "test-key",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello from deepgram mock"));
 }
 
 #[test]
