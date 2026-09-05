@@ -186,6 +186,77 @@ fn transcribe_batch_succeeds_with_one_result_per_file() {
 }
 
 #[test]
+fn transcribe_appends_history_entry_when_stored() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // --data-dir is a hidden, test-only override (see resolve_data_dir in
+    // main.rs) that redirects history writes away from the real platform
+    // data directory.
+    let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let history_path = data_dir.path().join("history.jsonl");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(&history_path).expect("history.jsonl should exist");
+    let lines: Vec<&str> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(lines.len(), 1, "expected exactly one history line");
+
+    let entry: serde_json::Value =
+        serde_json::from_str(lines[0]).expect("history line should be valid JSON");
+    assert_eq!(
+        entry.get("text").and_then(|v| v.as_str()),
+        Some(MOCK_TRANSCRIPT)
+    );
+    assert_eq!(entry.get("asr").and_then(|v| v.as_str()), Some("mock"));
+    assert_eq!(entry.get("refine").and_then(|v| v.as_str()), Some("noop"));
+    assert_eq!(entry.get("source").and_then(|v| v.as_str()), Some("cli"));
+    assert!(entry.get("timestamp").and_then(|v| v.as_u64()).is_some());
+    assert!(entry.get("wpm").is_some());
+    assert_eq!(
+        entry.get("word_count").and_then(|v| v.as_u64()),
+        Some(MOCK_TRANSCRIPT.split_whitespace().count() as u64)
+    );
+}
+
+#[test]
+fn transcribe_no_store_skips_history_entry() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let history_path = data_dir.path().join("history.jsonl");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--no-store",
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(
+        !history_path.exists(),
+        "--no-store must not create a history file"
+    );
+}
+
+#[test]
 fn transcribe_help_mentions_asr_flag() {
     Command::cargo_bin("whspr")
         .unwrap()
