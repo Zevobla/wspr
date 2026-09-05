@@ -35,6 +35,9 @@ fn boot() -> (State, Task<Message>) {
     let mut state = State::new(config);
     state.input_devices = crate::devices::list_input_device_names();
     state.selected_device = crate::devices::default_input_device_name();
+    state.history = crate::history::history_file_path()
+        .map(|path| crate::history::read_history_file(&path))
+        .unwrap_or_default();
 
     let (_id, open) = window::open(window::Settings::default());
     (state, open.map(Message::HubOpened))

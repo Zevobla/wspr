@@ -3,6 +3,8 @@
 use iced::window;
 use whspr_config::Config;
 
+use crate::history::HistoryEntry;
+
 /// Top-level state for the whspr GUI daemon (Hub window + Flow Bar window).
 #[derive(Debug)]
 pub struct State {
@@ -28,6 +30,11 @@ pub struct State {
     pub hotkey_capturing: bool,
     /// The most recently captured hotkey preview, formatted for display.
     pub captured_hotkey: Option<String>,
+    /// Completed transcriptions: whatever was on disk at boot (see
+    /// `crate::history::read_history_file`), plus any the pipeline
+    /// completes during this session (session-only, not written back to
+    /// disk -- see `crate::app`'s persistence note).
+    pub history: Vec<HistoryEntry>,
 }
 
 impl State {
@@ -44,6 +51,7 @@ impl State {
             selected_device: None,
             hotkey_capturing: false,
             captured_hotkey: None,
+            history: Vec::new(),
         }
     }
 }
