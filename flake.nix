@@ -99,6 +99,7 @@
         packages = {
           whspr-cli = whspr-cli;
           whspr-app = whspr-app;
+          whisper-model = whisper-model;
           # whspr-app (the iced GUI) is the actual product; whspr-cli stays
           # available as `nix build .#whspr-cli` for the headless binary.
           default = whspr-app;
