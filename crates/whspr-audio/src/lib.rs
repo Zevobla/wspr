@@ -18,6 +18,60 @@ use rubato::{
 };
 use whspr_core::{AudioBuffer, Result, WhsprError};
 
+/// Trims leading and trailing silence from `audio`.
+///
+/// Classifies the audio in fixed ~20ms windows (the window length is
+/// derived from `audio.sample_rate`, so this is correct at any input rate,
+/// not just 16kHz) by RMS energy: a window is "silent" if its RMS is `<=
+/// threshold`. Whole silent windows are dropped from the very start and
+/// very end only; speech in the middle — including a pause *inside* an
+/// utterance — is never touched, because the scan from each end stops as
+/// soon as it hits one non-silent window.
+///
+/// `min_keep` is a floor, in samples, on the trimmed output's length: if
+/// trimming would leave fewer than `min_keep` samples — including the
+/// degenerate case of an entirely-silent buffer, where the forward and
+/// backward scans would otherwise meet in the middle and trim everything —
+/// the original `audio` is returned unchanged instead of over-trimming
+/// toward empty. This is what makes it safe to call unconditionally from
+/// `decode_wav`: it never hands a downstream ASR backend a surprise empty
+/// clip, and a buffer shorter than one window is also returned unchanged
+/// (there's nothing safe to window-classify).
+pub fn trim_silence(audio: &AudioBuffer, threshold: f32, min_keep: usize) -> AudioBuffer {
+    let window_len = ((audio.sample_rate as usize) / 50).max(1); // ~20ms
+    let samples = &audio.samples;
+    let n = samples.len();
+
+    if n < window_len {
+        return audio.clone();
+    }
+
+    let window_rms = |start: usize| -> f32 {
+        let end = (start + window_len).min(n);
+        let window = &samples[start..end];
+        (window.iter().map(|s| s * s).sum::<f32>() / window.len() as f32).sqrt()
+    };
+
+    let mut start = 0;
+    while start + window_len <= n && window_rms(start) <= threshold {
+        start += window_len;
+    }
+
+    let mut end = n;
+    while end >= window_len
+        && end - window_len >= start
+        && window_rms(end - window_len) <= threshold
+    {
+        end -= window_len;
+    }
+
+    if start >= end || end - start < min_keep {
+        return audio.clone();
+    }
+
+    AudioBuffer::new(samples[start..end].to_vec(), audio.sample_rate)
+}
+
 /// Decodes a WAV file into an `AudioBuffer` at its native sample rate/channel
 /// layout (resample separately with `resample_to_16k_mono`).
 ///
