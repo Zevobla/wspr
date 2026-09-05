@@ -169,3 +169,59 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_recording_with_no_active_capture_starts_one() {
+        assert_eq!(
+            capture_decision(DebounceAction::StartRecording, false),
+            CaptureDecision::Start
+        );
+    }
+
+    #[test]
+    fn stop_recording_with_active_capture_finalizes() {
+        assert_eq!(
+            capture_decision(DebounceAction::StopRecording, true),
+            CaptureDecision::Finalize
+        );
+    }
+
+    /// The whole reason this wiring exists: a too-short hold must discard
+    /// the capture, not finalize it -- no pipeline run, no empty transcript.
+    #[test]
+    fn cancel_recording_discards_without_finalizing() {
+        let decision = capture_decision(DebounceAction::CancelRecording, true);
+        assert_eq!(decision, CaptureDecision::Discard);
+        assert_ne!(decision, CaptureDecision::Finalize);
+    }
+
+    /// A Stop/Cancel with nothing active (a stray/duplicate event) must
+    /// never start a phantom pipeline run.
+    #[test]
+    fn stop_or_cancel_without_active_capture_is_ignored() {
+        assert_eq!(
+            capture_decision(DebounceAction::StopRecording, false),
+            CaptureDecision::Ignore
+        );
+        assert_eq!(
+            capture_decision(DebounceAction::CancelRecording, false),
+            CaptureDecision::Ignore
+        );
+    }
+
+    #[test]
+    fn debounced_ignore_action_is_ignored() {
+        assert_eq!(
+            capture_decision(DebounceAction::Ignore, true),
+            CaptureDecision::Ignore
+        );
+        assert_eq!(
+            capture_decision(DebounceAction::Ignore, false),
+            CaptureDecision::Ignore
+        );
+    }
+}
