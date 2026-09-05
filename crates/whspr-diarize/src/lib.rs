@@ -257,6 +257,30 @@ impl Diarizer for SherpaDiarizer {
 mod tests {
     use super::*;
 
+    /// Exercises all three precedence outcomes in one test (rather than
+    /// three separate `#[test]` fns) since `cargo test` runs tests in
+    /// parallel threads by default and mutating a shared env var from
+    /// multiple concurrently-running tests would race. Mirrors
+    /// `whspr_asr::WhisperLocal`'s identical `resolve_model_path` test.
+    #[test]
+    fn resolve_model_dir_precedence() {
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+        assert_eq!(SherpaDiarizer::resolve_model_dir(None), None);
+
+        std::env::set_var("SPEAKER_MODEL_DIR", "/from/env");
+        assert_eq!(
+            SherpaDiarizer::resolve_model_dir(None),
+            Some(PathBuf::from("/from/env")),
+            "should fall back to SPEAKER_MODEL_DIR when no explicit dir is given"
+        );
+        assert_eq!(
+            SherpaDiarizer::resolve_model_dir(Some(PathBuf::from("/explicit"))),
+            Some(PathBuf::from("/explicit")),
+            "an explicit dir should win over SPEAKER_MODEL_DIR"
+        );
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+    }
+
     #[test]
     fn segment_sample_range_normal() {
         assert_eq!(
