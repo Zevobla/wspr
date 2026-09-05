@@ -46,6 +46,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.asr = config_ui::asr_from_label(label);
             Task::none()
         }
+        Message::RefineSelected(label) => {
+            state.config.refine = config_ui::refine_from_label(label);
+            Task::none()
+        }
     }
 }
 
