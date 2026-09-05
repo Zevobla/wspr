@@ -1,0 +1,15 @@
+[package]
+name = "whspr-asr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+whspr-core.workspace = true
+async-trait.workspace = true
+
+[features]
+# Re-exports whspr-core's MockAsr for convenience; does not pull in any
+# heavy ASR backend (whisper-rs etc land as their own opt-in deps later).
+testkit = ["whspr-core/testkit"]
