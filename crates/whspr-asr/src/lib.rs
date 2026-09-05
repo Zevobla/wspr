@@ -81,6 +81,77 @@ impl AsrBackend for WhisperLocal {
     }
 }
 
+/// Whether the text inside a `[...]` pair is a whisper.cpp service token
+/// rather than ordinary bracketed speech.
+///
+/// Recognises two shapes: control tokens, whose inner text starts with `_`
+/// (e.g. `[_BEG_]`, `[_TT_123]`, `[_EOT_]`), and all-caps service tags
+/// (e.g. `[BLANK_AUDIO]`, `[MUSIC]`, `[NO SPEECH]`). Ordinary bracketed
+/// words a person might actually say — `[note]`, `[важно]`, `[Name]` — have
+/// lowercase or non-ASCII letters and are deliberately left alone.
+fn is_model_bracket_token(inner: &str) -> bool {
+    if inner.starts_with('_') {
+        return true;
+    }
+    // An all-caps tag: at least two chars, at least one A-Z, and nothing
+    // but uppercase letters, digits, spaces, and underscores.
+    let mut has_upper = false;
+    for c in inner.chars() {
+        if c.is_ascii_uppercase() {
+            has_upper = true;
+        } else if !(c.is_ascii_digit() || c == ' ' || c == '_') {
+            return false;
+        }
+    }
+    has_upper && inner.len() >= 2
+}
+
+/// Removes whisper.cpp model/service tokens that can leak into segment text
+/// (AM-19): `<|...|>` tokens (special tokens and `<|0.00|>`-style
+/// timestamps), `[_..._]` control tokens, and all-caps `[...]` service tags
+/// like `[BLANK_AUDIO]`/`[MUSIC]`. Ordinary bracketed words in real speech
+/// are preserved (see [`is_model_bracket_token`]). Whitespace left behind by
+/// a removed token is collapsed and the result is trimmed — only whitespace
+/// is dropped, never a content character (AM-04).
+fn strip_special_tokens(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("<|") {
+            // Drop the whole `<|...|>` token, including its delimiters.
+            if let Some(close) = after.find("|>") {
+                rest = &after[close + 2..];
+                continue;
+            }
+            // No closing delimiter: keep the stray `<|` verbatim.
+            out.push_str("<|");
+            rest = after;
+            continue;
+        }
+
+        if rest.starts_with('[') {
+            if let Some(close) = rest[1..].find(']') {
+                if is_model_bracket_token(&rest[1..1 + close]) {
+                    rest = &rest[1 + close + 1..];
+                    continue;
+                }
+            }
+            // Not a model token (or unterminated): keep the `[` verbatim.
+            out.push('[');
+            rest = &rest[1..];
+            continue;
+        }
+
+        let ch = rest.chars().next().expect("rest is non-empty");
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    // Collapse any whitespace the removals left behind, and trim the ends.
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Runs whisper.cpp inference synchronously. Called from inside
 /// `spawn_blocking` — never call this directly from an async context.
 fn transcribe_blocking(
@@ -112,24 +183,27 @@ fn transcribe_blocking(
 
     let mut segments = Vec::new();
     for segment in state.as_iter() {
-        let text = segment
+        let raw = segment
             .to_str_lossy()
             .map_err(|e| WhsprError::Asr(format!("failed to decode whisper segment: {}", e)))?;
         segments.push(TranscriptSegment {
-            text: text.trim().to_string(),
+            // Strip any service tokens the model emitted before they can
+            // leak into the transcript (AM-19).
+            text: strip_special_tokens(&raw),
             start_secs: segment.start_timestamp() as f32 / 100.0,
             end_secs: segment.end_timestamp() as f32 / 100.0,
             speaker: None,
         });
     }
 
-    let text = segments
+    // Join the (already-cleaned) segments and strip once more, which also
+    // collapses the spacing around any segment that was nothing but tokens.
+    let joined = segments
         .iter()
         .map(|s| s.text.as_str())
         .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string();
+        .join(" ");
+    let text = strip_special_tokens(&joined);
 
     Ok(Transcript {
         text,
