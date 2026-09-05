@@ -50,6 +50,15 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.refine = config_ui::refine_from_label(label);
             Task::none()
         }
+        Message::LanguageChanged(language) => {
+            state.config.language = if language.is_empty() {
+                None
+            } else {
+                Some(language.clone())
+            };
+            state.language_input = language;
+            Task::none()
+        }
     }
 }
 
