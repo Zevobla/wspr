@@ -6,14 +6,15 @@
 //! styled window and `daemon`'s `view`/`theme`/`title` all take a
 //! `window::Id` so each window can render its own content.
 //!
-//! ## Settings persistence (known gap)
-//! `whspr_config` only exposes `load`/`load_from` today -- there is no save
-//! path yet, and another in-flight branch may add first-run persistence
-//! around the same time this one lands. Rather than race that work by
-//! bolting a `save` function onto a shared crate, edits made in the Hub
-//! (backend pickers, language, device selection) are kept in the in-memory
-//! `State::config`/`State` fields only for this pass; they don't survive a
-//! restart. This is a deliberate, documented scope choice, not an oversight.
+//! ## Settings persistence (partial)
+//! `whspr_config::Config::save` now exists, but this pass only wires it up
+//! for the language and speaker-embedding-model pick_lists (see
+//! `persist_config`, called from their `update` arms) -- those are the two
+//! settings this branch's scope specifically asked to make config-driven
+//! and persisted. The ASR/refiner backend pickers and device selection
+//! still only live in the in-memory `State::config`/`State` fields and
+//! don't survive a restart; broadening persistence to those is a
+//! deliberately separate, not-yet-scoped follow-up, not an oversight.
 
 use iced::{window, Element, Task};
 
@@ -37,6 +38,9 @@ fn boot() -> (State, Task<Message>) {
     state.selected_device = crate::devices::default_input_device_name();
     state.history = crate::history::history_file_path()
         .map(|path| crate::history::read_history_file(&path))
+        .unwrap_or_default();
+    state.speaker_db = crate::speakers::speaker_db_path()
+        .map(|path| whspr_config::SpeakerDb::load(&path))
         .unwrap_or_default();
 
     let (_id, open_hub) = window::open(window::Settings::default());
@@ -68,13 +72,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.refine = config_ui::refine_from_label(label);
             Task::none()
         }
-        Message::LanguageChanged(language) => {
-            state.config.language = if language.is_empty() {
-                None
-            } else {
-                Some(language.clone())
-            };
-            state.language_input = language;
+        Message::LanguageChanged(label) => {
+            state.config.language = config_ui::language_from_label(&label);
+            persist_config(state);
+            Task::none()
+        }
+        Message::EmbeddingModelSelected(label) => {
+            state.config.speaker.embedding_model = config_ui::embedding_from_label(label);
+            persist_config(state);
             Task::none()
         }
         Message::DeviceSelected(device) => {
@@ -121,13 +126,83 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::PickRecordingToDiarize => Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .add_filter("WAV audio", &["wav"])
+                    .pick_file()
+                    .await
+                    .map(|handle| handle.path().to_path_buf())
+            },
+            Message::RecordingPicked,
+        ),
+        Message::RecordingPicked(None) => Task::none(),
+        Message::RecordingPicked(Some(path)) => {
+            state.diarize_status = Some(format!("Diarizing {}...", path.display()));
+            match crate::speakers::speaker_db_path() {
+                Some(db_path) => Task::perform(
+                    crate::speakers::run_diarize_scan(
+                        path,
+                        state.config.speaker.model_dir.clone(),
+                        state.config.speaker.embedding_model,
+                        state.config.speaker.similarity_threshold,
+                        state.speaker_db.clone(),
+                        db_path,
+                    ),
+                    Message::DiarizeFinished,
+                ),
+                None => {
+                    state.diarize_status =
+                        Some("Could not determine the app data directory".to_string());
+                    Task::none()
+                }
+            }
+        }
+        Message::DiarizeFinished(Ok((db, count))) => {
+            state.speaker_db = db;
+            state.diarize_status = Some(format!("Diarization complete: {count} turn(s) found"));
+            Task::none()
+        }
+        Message::DiarizeFinished(Err(error)) => {
+            state.diarize_status = Some(format!("Diarization failed: {error}"));
+            Task::none()
+        }
+        Message::SpeakerRenameInputChanged(id, draft) => {
+            state.speaker_rename_drafts.insert(id, draft);
+            Task::none()
+        }
+        Message::SpeakerRenameSubmitted(id) => {
+            if let Some(draft) = state.speaker_rename_drafts.remove(&id) {
+                if !draft.trim().is_empty() {
+                    state.speaker_db.rename(&id, draft);
+                    if let Some(path) = crate::speakers::speaker_db_path() {
+                        let _ = state.speaker_db.save(&path);
+                    }
+                }
+            }
+            Task::none()
+        }
+    }
+}
+
+/// Saves `state.config` to the platform config directory immediately,
+/// surfacing a failure via `state.last_error` (the same field the pipeline
+/// worker uses) rather than silently dropping it -- a `pick_list` selection
+/// that doesn't actually persist should be visible to the user, not just a
+/// log line nobody's watching.
+fn persist_config(state: &mut State) {
+    let Some(dirs) = directories::ProjectDirs::from("", "", "whspr") else {
+        state.last_error = Some("could not determine the app config directory".to_string());
+        return;
+    };
+    if let Err(e) = state.config.save(dirs.config_dir()) {
+        state.last_error = Some(format!("failed to save config: {e}"));
     }
 }
 
 /// Only listens for keyboard events while the Hub is actively capturing a
-/// hotkey preview, so normal typing (e.g. in the language text input)
-/// doesn't get swallowed or misread as a capture attempt the rest of the
-/// time.
+/// hotkey preview, so normal typing elsewhere in the Hub doesn't get
+/// swallowed or misread as a capture attempt the rest of the time.
 fn hotkey_capture_subscription(state: &State) -> iced::Subscription<Message> {
     if state.hotkey_capturing {
         iced::keyboard::listen().map(Message::HotkeyCaptureKeyEvent)

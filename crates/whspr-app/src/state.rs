@@ -13,14 +13,13 @@ pub struct State {
     /// Window id of the Flow Bar overlay, once it has finished opening.
     pub flow_bar_window: Option<window::Id>,
     /// The effective config as of app start (defaults overlaid with the
-    /// user's config file, per `whspr_config::load`). Edits made in the Hub
-    /// only live in this in-memory copy for now -- see the module doc on
-    /// `crate::app` for why persistence is out of scope for this pass.
+    /// user's config file, per `whspr_config::load`). Most edits made in the
+    /// Hub (ASR/refiner/device picks) only live in this in-memory copy for
+    /// now -- see the module doc on `crate::app` for why broader persistence
+    /// is still out of scope. The language and speaker-embedding-model
+    /// pick_lists are the exception: those two are saved back to the config
+    /// file immediately (see `crate::app::persist_config`).
     pub config: Config,
-    /// Live contents of the language `text_input`, kept separate from
-    /// `config.language: Option<String>` since a text widget needs a plain
-    /// `String` to bind to (an empty string means "no override", i.e. `None`).
-    pub language_input: String,
     /// Names of the audio input devices found at boot (see `crate::devices`).
     pub input_devices: Vec<String>,
     /// The currently selected input device name, if any. Defaults to the
@@ -47,6 +46,19 @@ pub struct State {
     /// The most recent error reported by the pipeline worker (hotkey
     /// listener startup, mic capture, or a pipeline run), if any.
     pub last_error: Option<String>,
+    /// The persisted speaker-enrollment database (see
+    /// `whspr_config::SpeakerDb`): every distinct speaker discovered across
+    /// past diarization scans. Loaded at boot, written back to
+    /// `speakers.json` on every rename or completed scan.
+    pub speaker_db: whspr_config::SpeakerDb,
+    /// Live contents of the rename `text_input` for whichever speaker
+    /// profile is currently being edited, keyed by `SpeakerProfile::id` so
+    /// different rows' drafts don't clobber each other.
+    pub speaker_rename_drafts: std::collections::HashMap<String, String>,
+    /// Status/progress text for an in-flight or just-finished diarization
+    /// scan (e.g. "Diarizing recording.wav..." or an error), shown in the
+    /// Speakers section. `None` when nothing is happening.
+    pub diarize_status: Option<String>,
 }
 
 impl State {
@@ -54,12 +66,10 @@ impl State {
     /// fields start empty; `crate::app::boot` fills them in separately since
     /// enumerating devices is its own concern from loading config.
     pub fn new(config: Config) -> Self {
-        let language_input = config.language.clone().unwrap_or_default();
         Self {
             hub_window: None,
             flow_bar_window: None,
             config,
-            language_input,
             input_devices: Vec::new(),
             selected_device: None,
             hotkey_capturing: false,
@@ -68,6 +78,9 @@ impl State {
             theme: iced::Theme::Light,
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
+            speaker_db: whspr_config::SpeakerDb::default(),
+            speaker_rename_drafts: std::collections::HashMap::new(),
+            diarize_status: None,
         }
     }
 }
@@ -84,8 +97,13 @@ pub enum Message {
     AsrSelected(&'static str),
     /// The user picked a new refiner backend label in the Hub.
     RefineSelected(&'static str),
-    /// The user edited the language override text input in the Hub.
+    /// The user picked a language override label in the Hub's `pick_list`
+    /// ("auto" means no override, i.e. `config.language = None`). Persisted
+    /// immediately -- see `crate::app::persist_config`.
     LanguageChanged(String),
+    /// The user picked a new speaker-embedding-model label in the Hub.
+    /// Persisted immediately -- see `crate::app::persist_config`.
+    EmbeddingModelSelected(&'static str),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
     /// The user asked to preview a new hotkey by pressing it.
@@ -99,4 +117,16 @@ pub enum Message {
     /// An event from the background pipeline worker (see `crate::worker`):
     /// a pipeline state change, a completed dictation turn, or a failure.
     Worker(crate::worker::WorkerEvent),
+    /// The user clicked "Diarize a recording" -- opens a native file picker.
+    PickRecordingToDiarize,
+    /// The file picker resolved (`None` if the user cancelled).
+    RecordingPicked(Option<std::path::PathBuf>),
+    /// A background diarization run finished: the updated speaker db and
+    /// how many turns were found, or an error message.
+    DiarizeFinished(Result<(whspr_config::SpeakerDb, usize), String>),
+    /// The user edited a speaker's rename `text_input`: (speaker id, new
+    /// draft text).
+    SpeakerRenameInputChanged(String, String),
+    /// The user pressed "Save" on a speaker's rename: speaker id.
+    SpeakerRenameSubmitted(String),
 }
