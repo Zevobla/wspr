@@ -279,20 +279,25 @@ genuine speaker-turn segmentation and voice-based re-identification.
 
 All of the above run under `cargo test --workspace` and stay green with no model files, no network, and no GPU.
 
-### Config toggle — honest gap
+### Config toggle
 
 `whspr-config::SpeakerSettings` has an `enabled: bool` field (default
-`true`), meant to let a user turn the whole feature off. It's real as a
-config value — it round-trips through `config.toml` and has test
-coverage — but **nothing currently reads it**: neither `whspr-cli`'s
-`diarize_cmd::run` nor `whspr-app`'s `speakers::run_diarize_scan` checks
-`config.speaker.enabled` before running. Setting `enabled = false` in
-`config.toml` today has no effect; `whspr diarize` still runs regardless.
-This is a real gap, not something claimed to work here.
+`true`) that turns the whole feature off. Both entry points check it
+before doing anything else: `whspr-cli`'s `diarize_cmd::run` bails out
+with a clear, non-zero-exit error ("speaker fingerprinting is disabled
+([speaker].enabled = false in config); enable it to run `whspr
+diarize`") before decoding any audio, and `whspr-app`'s
+`speakers::run_diarize_scan` refuses the same way before ever spawning
+the blocking diarization task, surfacing the failure through the Hub's
+existing "Diarization failed: ..." status line. Setting `enabled =
+false` in `config.toml` genuinely disables `whspr diarize` end to end,
+in both the CLI and the GUI — covered by a dedicated unit test in each
+crate (`diarize_cmd::tests::run_refuses_when_speaker_disabled`,
+`speakers::tests::run_diarize_scan_refuses_when_disabled`).
 
 ### Doesn't touch base dictation
 
-Even without that toggle wired up, the feature is structurally isolated:
+The feature is also structurally isolated, independent of that toggle:
 `whspr transcribe` builds its `Pipeline` from an `AsrBackend` and a
 `TextRefiner` only — it never constructs a `Diarizer`, never touches
 `whspr-diarize` or `SpeakerDb`, and has no code path into either.
