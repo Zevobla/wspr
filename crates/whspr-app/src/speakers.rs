@@ -25,14 +25,29 @@ pub fn speaker_db_path() -> Option<PathBuf> {
 /// the updated db plus how many turns were found. Runs entirely on a
 /// blocking thread since decoding, resampling, and diarization are all
 /// synchronous/CPU-bound.
+///
+/// `enabled` should be `config.speaker.enabled`: when `false`, refuses
+/// before touching `file` or spawning the blocking task at all, mirroring
+/// `whspr-cli`'s `diarize_cmd::run`'s identical check -- the caller (the
+/// Hub's `RecordingPicked` handler) surfaces the returned `Err` through
+/// `state.diarize_status`, the same field every other diarize outcome
+/// goes through.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_diarize_scan(
     file: PathBuf,
+    enabled: bool,
     model_dir: Option<PathBuf>,
     embedding_choice: SpeakerEmbeddingChoice,
     threshold: f32,
     mut speaker_db: SpeakerDb,
     db_path: PathBuf,
 ) -> Result<(SpeakerDb, usize), String> {
+    if !enabled {
+        return Err(
+            "speaker fingerprinting is disabled ([speaker].enabled = false in config)".to_string(),
+        );
+    }
+
     tokio::task::spawn_blocking(move || {
         let audio = whspr_audio::decode_wav(&file).map_err(|e| e.to_string())?;
         let audio = whspr_audio::resample_to_16k_mono(&audio).map_err(|e| e.to_string())?;
@@ -103,6 +118,7 @@ mod tests {
         let db_path = dir.path().join("speakers.json");
         let (db, count) = run_diarize_scan(
             wav_path.clone(),
+            true,
             None,
             SpeakerEmbeddingChoice::default(),
             0.7,
@@ -121,6 +137,7 @@ mod tests {
         std::env::set_var("SPEAKER_MODEL_DIR", "/nonexistent/from-env");
         let err = run_diarize_scan(
             wav_path,
+            true,
             None,
             SpeakerEmbeddingChoice::default(),
             0.7,
