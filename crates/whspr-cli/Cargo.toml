@@ -11,10 +11,20 @@ path = "src/main.rs"
 
 [dependencies]
 whspr-core = { workspace = true, features = ["testkit"] }
+whspr-audio.workspace = true
+whspr-asr.workspace = true
+whspr-refine.workspace = true
+whspr-config.workspace = true
 clap.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
+serde_json.workspace = true
+directories.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
 predicates.workspace = true
+wiremock.workspace = true
+tempfile.workspace = true
+hound.workspace = true
