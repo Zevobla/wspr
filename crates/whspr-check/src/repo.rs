@@ -81,6 +81,15 @@ pub fn run_env(
     })
 }
 
+/// Reads README.md from the repo root. Shared by every doc-content check
+/// (Z-04, W-06/07/08, AH-03/04, AC-03) so they don't each independently
+/// read-and-error-handle the same file.
+pub fn read_readme(root: &Path) -> anyhow::Result<String> {
+    let path = root.join("README.md");
+    std::fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("could not read {}: {e}", path.display()))
+}
+
 /// Lists every git-tracked file path (relative to `root`). Several checks
 /// care specifically about what's *committed*, not what happens to be
 /// lying around in the working tree (stray local files, build output,

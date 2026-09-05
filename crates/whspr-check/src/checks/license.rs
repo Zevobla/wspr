@@ -244,10 +244,9 @@ const README_FIRST_SCREEN_LINES: usize = 20;
 
 /// Z-04: license is named on the README's first screen.
 pub fn check_readme_names_license(root: &Path) -> CheckResult {
-    let path = root.join("README.md");
-    let text = match std::fs::read_to_string(&path) {
+    let text = match repo::read_readme(root) {
         Ok(t) => t,
-        Err(e) => return CheckResult::fail("Z-04", format!("could not read {}: {e}", path.display())),
+        Err(e) => return CheckResult::fail("Z-04", e.to_string()),
     };
 
     let first_screen: String = text
