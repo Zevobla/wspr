@@ -8,3 +8,19 @@ repository.workspace = true
 [dependencies]
 whspr-core.workspace = true
 async-trait.workspace = true
+reqwest = { version = "0.13", features = ["json", "rustls", "rustls-native-certs"] }
+serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[dependencies.llama-cpp-2]
+workspace = true
+optional = true
+
+[dev-dependencies]
+wiremock.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[features]
+default = []
+llama = ["llama-cpp-2"]
