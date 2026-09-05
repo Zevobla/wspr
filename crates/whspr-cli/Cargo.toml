@@ -19,6 +19,7 @@ whspr-diarize = { path = "../whspr-diarize" }
 clap.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 directories.workspace = true
 tempfile.workspace = true
