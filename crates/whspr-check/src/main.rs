@@ -15,6 +15,7 @@ mod checks;
 mod criteria;
 mod report;
 mod repo;
+mod util;
 
 fn main() -> anyhow::Result<()> {
     let root = repo::find_repo_root()?;
