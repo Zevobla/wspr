@@ -111,6 +111,10 @@ pub enum Message {
     /// The user picked a new speaker-embedding-model label in the Hub.
     /// Persisted immediately -- see `crate::app::persist_config`.
     EmbeddingModelSelected(&'static str),
+    /// The user toggled "Launch at login" in the Hub. Persisted
+    /// immediately and also writes/removes the OS-level autostart entry
+    /// -- see `crate::app`'s `AutostartToggled` handler.
+    AutostartToggled(bool),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
     /// The user asked to preview a new hotkey by pressing it.
