@@ -2,8 +2,8 @@
 //! SPDX id, whether it's named up front in the README, and whether model
 //! weights/secrets ever made it into the tracked tree or git history.
 
-use crate::report::CheckResult;
 use crate::repo;
+use crate::report::CheckResult;
 use crate::util::MODEL_WEIGHT_EXTENSIONS;
 use std::path::Path;
 
@@ -122,7 +122,9 @@ pub fn check_model_weights_ignored_and_absent(root: &Path) -> CheckResult {
         .into_iter()
         .filter(|p| {
             let lower = p.to_lowercase();
-            MODEL_WEIGHT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+            MODEL_WEIGHT_EXTENSIONS
+                .iter()
+                .any(|ext| lower.ends_with(ext))
         })
         .collect();
 
@@ -159,11 +161,18 @@ pub fn check_model_weights_ignored_and_absent(root: &Path) -> CheckResult {
 /// they'd drown in false positives. Not exhaustive - a pattern-based scan
 /// like this one is a heuristic tripwire, not a guarantee.
 const SECRET_PATTERNS: &[&str] = &[
-    "AKIA",     // AWS access key id
-    "ghp_", "gho_", "ghu_", "ghs_", "ghr_", // GitHub tokens
-    "sk-proj-", "sk-ant-", // OpenAI project / Anthropic key prefixes
-    "AIzaSy",   // Google API key
-    "xoxb-", "xoxp-", "xoxa-", // Slack tokens
+    "AKIA", // AWS access key id
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_", // GitHub tokens
+    "sk-proj-",
+    "sk-ant-", // OpenAI project / Anthropic key prefixes
+    "AIzaSy",  // Google API key
+    "xoxb-",
+    "xoxp-",
+    "xoxa-", // Slack tokens
     "-----BEGIN RSA PRIVATE KEY-----",
     "-----BEGIN OPENSSH PRIVATE KEY-----",
     "-----BEGIN EC PRIVATE KEY-----",
@@ -175,7 +184,14 @@ const SECRET_PATTERNS: &[&str] = &[
 /// whspr-config's own tests write `openai = "redacted-example-key"` to a temp
 /// config file) - skip it rather than cry wolf.
 const BENIGN_MARKERS: &[&str] = &[
-    "test", "example", "dummy", "fake", "xxx", "placeholder", "redacted", "sample",
+    "test",
+    "example",
+    "dummy",
+    "fake",
+    "xxx",
+    "placeholder",
+    "redacted",
+    "sample",
 ];
 
 /// Z-16: no obvious secrets/API keys committed anywhere in git history.
@@ -232,7 +248,10 @@ pub fn check_no_secrets_in_history(root: &Path) -> CheckResult {
     } else {
         CheckResult::fail(
             "Z-16",
-            format!("possible secret(s) found in git history: {}", findings.join(" | ")),
+            format!(
+                "possible secret(s) found in git history: {}",
+                findings.join(" | ")
+            ),
         )
     }
 }

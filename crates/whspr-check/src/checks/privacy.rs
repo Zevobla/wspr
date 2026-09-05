@@ -1,8 +1,8 @@
 //! Autonomy/privacy checks: does the mock/local path avoid the network,
 //! and is the default backend selection local/offline rather than cloud.
 
-use crate::report::CheckResult;
 use crate::repo;
+use crate::report::CheckResult;
 use std::path::Path;
 
 /// Same poisoned-proxy trick as `tests_isolation`'s network-isolation

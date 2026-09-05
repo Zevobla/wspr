@@ -13,8 +13,8 @@
 
 mod checks;
 mod criteria;
-mod report;
 mod repo;
+mod report;
 mod util;
 
 fn main() -> anyhow::Result<()> {

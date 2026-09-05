@@ -2,8 +2,8 @@
 //! workspace dependency of this crate) rather than statically reading its
 //! source, so these are dynamic behavioral checks, not text scans.
 
-use crate::report::CheckResult;
 use crate::repo;
+use crate::report::CheckResult;
 use std::path::Path;
 
 /// B-03: config file is created on first run.
@@ -23,7 +23,10 @@ pub fn check_config_created_on_first_run() -> CheckResult {
     if config_path.is_file() {
         CheckResult::pass(
             "B-03",
-            format!("{} was created by load_from() on a fresh directory", config_path.display()),
+            format!(
+                "{} was created by load_from() on a fresh directory",
+                config_path.display()
+            ),
         )
     } else {
         CheckResult::fail(
@@ -94,12 +97,16 @@ pub fn check_config_in_platform_dir(root: &Path) -> CheckResult {
         &["*.rs"],
     ) {
         Ok(matches) => !matches.is_empty(),
-        Err(e) => return CheckResult::fail("B-14", format!("could not grep whspr-config source: {e}")),
+        Err(e) => {
+            return CheckResult::fail("B-14", format!("could not grep whspr-config source: {e}"))
+        }
     };
 
-    let looks_like_whspr_dir = config_dir
-        .components()
-        .any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("whspr"));
+    let looks_like_whspr_dir = config_dir.components().any(|c| {
+        c.as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case("whspr")
+    });
 
     if config_dir.is_absolute() && looks_like_whspr_dir && uses_project_dirs {
         CheckResult::pass(

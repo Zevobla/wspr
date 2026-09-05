@@ -1,8 +1,8 @@
 //! Slop-meter checks: stub-function census and (when the tool is
 //! available) unused-dependency detection.
 
-use crate::report::CheckResult;
 use crate::repo;
+use crate::report::CheckResult;
 use std::path::Path;
 
 /// Given a `git grep -n` result line (`path:lineno:content`), returns just
@@ -31,7 +31,9 @@ pub fn check_stub_function_count(root: &Path) -> CheckResult {
     for pattern in ["todo!()", "unimplemented!()"] {
         let matches = match repo::git_grep(root, &["-F"], pattern, &["*.rs"]) {
             Ok(m) => m,
-            Err(e) => return CheckResult::fail("AC-02", format!("could not grep for {pattern}: {e}")),
+            Err(e) => {
+                return CheckResult::fail("AC-02", format!("could not grep for {pattern}: {e}"))
+            }
         };
         for line in matches {
             if is_comment_line(grep_line_content(&line)) {
@@ -86,9 +88,10 @@ pub fn check_unused_deps(root: &Path) -> CheckResult {
     }
 
     match repo::run(root, "cargo", &["+nightly", "udeps", "--workspace"]) {
-        Ok(out) if out.success => {
-            CheckResult::pass("AC-07", "`cargo +nightly udeps --workspace` reported no unused dependencies")
-        }
+        Ok(out) if out.success => CheckResult::pass(
+            "AC-07",
+            "`cargo +nightly udeps --workspace` reported no unused dependencies",
+        ),
         Ok(out) => CheckResult::fail(
             "AC-07",
             format!(
