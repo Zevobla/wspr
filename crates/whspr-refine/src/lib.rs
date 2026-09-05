@@ -12,6 +12,45 @@ use serde::{Deserialize, Serialize};
 
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
+/// Builds the shared "clean up speech-to-text" instructions used as the
+/// prompt body for every refiner backend (cloud or local), so the same
+/// cleanup rules apply regardless of which LLM ends up executing them.
+fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
+    let mut prompt = String::from(
+        "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
+        You must:\n\
+        - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
+        - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
+        - Add proper punctuation and capitalization\n\
+        - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
+        - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
+    );
+
+    if let Some(ref app_name) = ctx.app_name {
+        prompt.push_str(&format!(
+            "\nNote: This text is being dictated into {}. Format accordingly.\n",
+            app_name
+        ));
+    }
+
+    if let Some(ref instructions) = ctx.instructions {
+        prompt.push_str(&format!(
+            "\nAdditional formatting instructions: {}\n",
+            instructions
+        ));
+    }
+
+    if let Some(ref prior_text) = ctx.prior_text {
+        prompt.push_str(&format!(
+            "\nPrior text for context (do NOT include this in your output): {}\n",
+            prior_text
+        ));
+    }
+
+    prompt.push_str(&format!("\nRaw text to clean up:\n{}", raw));
+    prompt
+}
+
 /// Passes text through unchanged. The default `RefineChoice`.
 pub struct NoopRefiner;
 
@@ -47,42 +86,6 @@ impl OpenAiRefiner {
         self.base_url = base_url.into();
         self
     }
-
-    fn build_cleanup_prompt(&self, raw: &str, ctx: &RefineContext) -> String {
-        let mut prompt = String::from(
-            "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
-            You must:\n\
-            - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
-            - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
-            - Add proper punctuation and capitalization\n\
-            - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
-            - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
-        );
-
-        if let Some(ref app_name) = ctx.app_name {
-            prompt.push_str(&format!(
-                "\nNote: This text is being dictated into {}. Format accordingly.\n",
-                app_name
-            ));
-        }
-
-        if let Some(ref instructions) = ctx.instructions {
-            prompt.push_str(&format!(
-                "\nAdditional formatting instructions: {}\n",
-                instructions
-            ));
-        }
-
-        if let Some(ref prior_text) = ctx.prior_text {
-            prompt.push_str(&format!(
-                "\nPrior text for context (do NOT include this in your output): {}\n",
-                prior_text
-            ));
-        }
-
-        prompt.push_str(&format!("\nRaw text to clean up:\n{}", raw));
-        prompt
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -117,7 +120,7 @@ struct OpenAiResponseMessage {
 #[async_trait]
 impl TextRefiner for OpenAiRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        let cleanup_prompt = self.build_cleanup_prompt(raw, ctx);
+        let cleanup_prompt = build_cleanup_prompt(raw, ctx);
 
         let request = OpenAiRequest {
             model: self.model.clone(),
@@ -188,42 +191,6 @@ impl AnthropicRefiner {
         self.base_url = base_url.into();
         self
     }
-
-    fn build_cleanup_prompt(&self, raw: &str, ctx: &RefineContext) -> String {
-        let mut prompt = String::from(
-            "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
-            You must:\n\
-            - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
-            - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
-            - Add proper punctuation and capitalization\n\
-            - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
-            - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
-        );
-
-        if let Some(ref app_name) = ctx.app_name {
-            prompt.push_str(&format!(
-                "\nNote: This text is being dictated into {}. Format accordingly.\n",
-                app_name
-            ));
-        }
-
-        if let Some(ref instructions) = ctx.instructions {
-            prompt.push_str(&format!(
-                "\nAdditional formatting instructions: {}\n",
-                instructions
-            ));
-        }
-
-        if let Some(ref prior_text) = ctx.prior_text {
-            prompt.push_str(&format!(
-                "\nPrior text for context (do NOT include this in your output): {}\n",
-                prior_text
-            ));
-        }
-
-        prompt.push_str(&format!("\nRaw text to clean up:\n{}", raw));
-        prompt
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -256,7 +223,7 @@ struct AnthropicContent {
 #[async_trait]
 impl TextRefiner for AnthropicRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        let cleanup_prompt = self.build_cleanup_prompt(raw, ctx);
+        let cleanup_prompt = build_cleanup_prompt(raw, ctx);
 
         let system_message = "You are a text cleanup assistant for speech-to-text output. \
             Remove filler words, resolve self-corrections, add punctuation and capitalization. \
