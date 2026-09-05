@@ -110,10 +110,29 @@ pub fn load_from(config_dir: Option<&Path>) -> Config {
                     config = file_config;
                 }
             }
+        } else {
+            // First run: persist the defaults so there's a real, editable
+            // file waiting for the user, instead of only ever living in
+            // memory until someone creates one by hand.
+            write_defaults(dir, &config_path, &config);
         }
     }
 
     config
+}
+
+/// Writes `config` as TOML to `config_path`, creating `dir` (and any
+/// missing parent directories) first. Best-effort: a read-only or
+/// otherwise uncreatable config directory must never crash `load_from`,
+/// so failures here are swallowed and the in-memory defaults are used
+/// regardless.
+fn write_defaults(dir: &Path, config_path: &Path, config: &Config) {
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    if let Ok(toml_string) = toml::to_string_pretty(config) {
+        let _ = std::fs::write(config_path, toml_string);
+    }
 }
 
 /// Looks up an API key for a cloud backend by id (e.g. "openai") from the
@@ -182,6 +201,26 @@ mod tests {
         assert_eq!(cfg.asr, AsrChoice::WhisperLocal);
         assert_eq!(cfg.refine, RefineChoice::Noop);
         assert_eq!(cfg.language, None);
+    }
+
+    #[test]
+    fn load_from_creates_config_file_on_first_run() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        assert!(!config_path.exists(), "precondition: no file yet");
+
+        let _first_run = load_from(Some(temp_dir.path()));
+        assert!(
+            config_path.is_file(),
+            "load_from() should have written a default config.toml"
+        );
+
+        // A second load reads back exactly what got written, with no
+        // further changes.
+        let second_run = load_from(Some(temp_dir.path()));
+        assert_eq!(second_run.asr, AsrChoice::WhisperLocal);
+        assert_eq!(second_run.refine, RefineChoice::Noop);
+        assert_eq!(second_run.language, None);
     }
 
     #[test]
