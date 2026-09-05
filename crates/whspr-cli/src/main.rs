@@ -70,6 +70,13 @@ enum Command {
         /// --asr deepgram at a wiremock::MockServer instead of the real API.
         #[arg(long, hide = true)]
         asr_base_url: Option<String>,
+
+        /// Override the API key for cloud ASR backends, bypassing config's
+        /// [api_keys] table. Hidden: test-only, so the e2e suite can drive
+        /// --asr openai/deepgram without depending on a real config file
+        /// being present on the machine running `cargo test`.
+        #[arg(long, hide = true)]
+        asr_api_key: Option<String>,
     },
 
     /// Transcribe all .wav files in a directory.
@@ -108,6 +115,13 @@ enum Command {
         /// --asr deepgram at a wiremock::MockServer instead of the real API.
         #[arg(long, hide = true)]
         asr_base_url: Option<String>,
+
+        /// Override the API key for cloud ASR backends, bypassing config's
+        /// [api_keys] table. Hidden: test-only, so the e2e suite can drive
+        /// --asr openai/deepgram without depending on a real config file
+        /// being present on the machine running `cargo test`.
+        #[arg(long, hide = true)]
+        asr_api_key: Option<String>,
     },
 }
 
@@ -132,6 +146,7 @@ fn build_asr_backend(
     config: &whspr_config::Config,
     asr_id: Option<&str>,
     asr_base_url: Option<&str>,
+    asr_api_key: Option<&str>,
 ) -> anyhow::Result<Box<dyn AsrBackend>> {
     let choice = match asr_id {
         Some(id) => AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?,
@@ -141,9 +156,14 @@ fn build_asr_backend(
     match choice {
         AsrChoice::WhisperLocal => Ok(Box::new(WhisperLocal::new("model.bin"))),
         AsrChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai").ok_or_else(|| {
-                anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
-            })?;
+            let api_key = match asr_api_key {
+                Some(key) => key.to_string(),
+                None => api_key_for(config, "openai").ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "OpenAI API key not configured (set [api_keys].openai in config)"
+                    )
+                })?,
+            };
             let backend: Box<dyn AsrBackend> = match asr_base_url {
                 Some(url) => Box::new(OpenAiAsr::with_base_url(api_key, url)),
                 None => Box::new(OpenAiAsr::new(api_key)),
@@ -151,11 +171,14 @@ fn build_asr_backend(
             Ok(backend)
         }
         AsrChoice::Deepgram => {
-            let api_key = api_key_for(config, "deepgram").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Deepgram API key not configured (set [api_keys].deepgram in config)"
-                )
-            })?;
+            let api_key = match asr_api_key {
+                Some(key) => key.to_string(),
+                None => api_key_for(config, "deepgram").ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Deepgram API key not configured (set [api_keys].deepgram in config)"
+                    )
+                })?,
+            };
             let backend: Box<dyn AsrBackend> = match asr_base_url {
                 Some(url) => Box::new(DeepgramAsr::with_base_url(api_key, url)),
                 None => Box::new(DeepgramAsr::new(api_key)),
@@ -288,12 +311,18 @@ async fn main() -> anyhow::Result<()> {
             no_store,
             data_dir,
             asr_base_url,
+            asr_api_key,
         }) => {
             eprintln!("Loading audio...");
             let audio = load_audio(&file).await?;
 
             eprintln!("Building pipeline...");
-            let asr_backend = build_asr_backend(&config, asr.as_deref(), asr_base_url.as_deref())?;
+            let asr_backend = build_asr_backend(
+                &config,
+                asr.as_deref(),
+                asr_base_url.as_deref(),
+                asr_api_key.as_deref(),
+            )?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
             let asr_id = asr_backend.id();
@@ -342,12 +371,18 @@ async fn main() -> anyhow::Result<()> {
             no_store,
             data_dir,
             asr_base_url,
+            asr_api_key,
         }) => {
             if !dir.is_dir() {
                 anyhow::bail!("{} is not a directory", dir.display());
             }
 
-            let asr_backend = build_asr_backend(&config, asr.as_deref(), asr_base_url.as_deref())?;
+            let asr_backend = build_asr_backend(
+                &config,
+                asr.as_deref(),
+                asr_base_url.as_deref(),
+                asr_api_key.as_deref(),
+            )?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
             let asr_id = asr_backend.id();
