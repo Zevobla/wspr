@@ -82,3 +82,21 @@ fn test_trim_silence_pause_in_middle_preserved() {
         "middle silence should not be trimmed"
     );
 }
+
+#[test]
+fn test_trim_silence_all_silence_degrades_gracefully() {
+    // Build a buffer of all silence, longer than DEFAULT_MIN_KEEP_SAMPLES
+    let sample_rate = 16000u32;
+    let silence_samples = 6400; // Well over DEFAULT_MIN_KEEP_SAMPLES (1600)
+
+    let samples = vec![0.0; silence_samples];
+    let audio = AudioBuffer::new(samples, sample_rate);
+    let trimmed = trim_silence_default(&audio);
+
+    // Should NOT panic and should return the original buffer unchanged
+    assert_eq!(
+        trimmed.samples.len(),
+        silence_samples,
+        "all-silence buffer should not be trimmed"
+    );
+}
