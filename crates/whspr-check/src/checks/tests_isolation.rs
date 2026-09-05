@@ -4,6 +4,7 @@
 use crate::repo::{self, CmdOutput};
 use crate::report::CheckResult;
 use crate::util::{tail, MODEL_WEIGHT_EXTENSIONS};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Bogus proxy env vars that make any HTTP client routing through a system
@@ -74,7 +75,10 @@ pub fn check_ci_configured(root: &Path) -> CheckResult {
 /// static facts that make a passing suite *mean* "doesn't need a mic or
 /// model": no model-weight file is tracked in the repo, and the one real
 /// microphone entry point (`whspr_audio::start_capture`) is never called
-/// anywhere except its own definition (i.e. not from a test).
+/// from test code (its own definition, or real application code like
+/// whspr-app's worker calling it when a user is actually recording, don't
+/// count - only a call reachable from `cargo test` would mean the suite
+/// needs a live mic).
 pub fn check_mic_model_independence(root: &Path, tests_passed: bool) -> CheckResult {
     if !tests_passed {
         return CheckResult::fail(
@@ -116,16 +120,46 @@ pub fn check_mic_model_independence(root: &Path, tests_passed: bool) -> CheckRes
             return CheckResult::fail("AB-06", format!("could not grep for start_capture(: {e}"))
         }
     };
+    // What this check actually cares about is whether the *unit test suite*
+    // needs a live mic - not whether any application code ever calls
+    // start_capture() at all (whspr-app's worker legitimately does, when a
+    // user is actually recording; that's the whole point of the function).
+    // So beyond excluding the definition itself, only keep hits that are
+    // genuine test code: a file under any `tests/` directory (always
+    // test-only), or - for an inline unit-test module - a line at or past
+    // that same file's own `#[cfg(test)]` marker (every test module in this
+    // repo is a trailing block, matching AA-16's identical convention).
+    let mut test_marker_line_by_path: HashMap<String, usize> = HashMap::new();
     let call_sites: Vec<&String> = capture_refs
         .iter()
         .filter(|line| !line.contains("fn start_capture"))
+        .filter(|line| {
+            let mut parts = line.splitn(3, ':');
+            let (Some(path), Some(lineno_str)) = (parts.next(), parts.next()) else {
+                return true; // malformed line - don't silently drop a possible finding
+            };
+            if path.split('/').any(|component| component == "tests") {
+                return true; // e.g. crates/*/tests/*.rs - always test code
+            }
+            let Ok(lineno) = lineno_str.parse::<usize>() else {
+                return true;
+            };
+            let test_line = *test_marker_line_by_path
+                .entry(path.to_string())
+                .or_insert_with(|| {
+                    repo::git_grep(root, &["-F", "-m", "1"], "#[cfg(test)]", &[path])
+                        .ok()
+                        .and_then(|m| m.first()?.split(':').nth(1)?.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX)
+                });
+            lineno >= test_line
+        })
         .collect();
     if !call_sites.is_empty() {
         return CheckResult::fail(
             "AB-06",
             format!(
-                "start_capture() is invoked outside its own definition (possible live-mic \
-                 dependency): {}",
+                "start_capture() is invoked from test code (possible live-mic dependency): {}",
                 call_sites
                     .iter()
                     .map(|s| s.as_str())
@@ -139,8 +173,9 @@ pub fn check_mic_model_independence(root: &Path, tests_passed: bool) -> CheckRes
         "AB-06",
         format!(
             "suite passes; 0 tracked model-weight files ({} extensions checked); \
-             start_capture() has {} tracked reference(s), all at its own definition (no test \
-             invokes it)",
+             start_capture() has {} tracked reference(s), none of them from test code (any \
+             non-definition call sites are real application code, e.g. whspr-app's worker \
+             calling it while actually recording)",
             MODEL_WEIGHT_EXTENSIONS.len(),
             capture_refs.len()
         ),
