@@ -13,14 +13,6 @@ serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
-[dependencies.llama-cpp-2]
-workspace = true
-optional = true
-
 [dev-dependencies]
 wiremock.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
-
-[features]
-default = []
-llama = ["llama-cpp-2"]

@@ -1,9 +1,11 @@
 //! Text refiner implementations. Everything here implements
 //! `whspr_core::TextRefiner`. `NoopRefiner` is real and always available
-//! (it's the "no LLM cleanup" choice, not just a test double); the LLM-backed
-//! refiners are `todo!()` until the refine team wires up the real HTTP/local
-//! inference calls — this crate must keep compiling without llama-cpp-2 in
-//! the meantime.
+//! (it's the "no LLM cleanup" choice, not just a test double). `OpenAiRefiner`
+//! and `AnthropicRefiner` are real cloud-backed implementations. `LlamaLocal`
+//! returns a runtime error: llama-cpp-2 requires `cmake` to build its native
+//! sources, and `cmake` is not present in this project's nix devShell, so
+//! wiring it up isn't possible from this crate alone (see the `refine` method
+//! below for details).
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -305,9 +307,15 @@ impl TextRefiner for AnthropicRefiner {
     }
 }
 
-/// Local cleanup via a small llama.cpp model (llama-cpp-2). Opt in the
-/// `llama-cpp-2` workspace dep from this crate's own Cargo.toml when
-/// implementing.
+/// Local cleanup via a small llama.cpp model (llama-cpp-2).
+///
+/// Blocked: llama-cpp-2 builds llama.cpp's native C/C++ sources via `cmake`,
+/// and `cmake` is not available in this project's nix devShell
+/// (`nix develop -c which cmake` fails; `cargo build --features llama` dies
+/// in the `llama-cpp-sys-2` build script with "is `cmake` not installed?").
+/// Adding `cmake` requires editing `flake.nix`, which is out of scope for
+/// this crate. `refine` below returns a clear runtime error instead of
+/// pretending this backend works.
 pub struct LlamaLocal {
     pub model_path: std::path::PathBuf,
 }
@@ -318,77 +326,16 @@ impl LlamaLocal {
             model_path: model_path.into(),
         }
     }
-
-    #[allow(dead_code)]
-    fn build_cleanup_prompt(&self, raw: &str, ctx: &RefineContext) -> String {
-        let mut prompt = String::from(
-            "You are a text cleanup assistant. Clean up this speech-to-text output:\n\
-            - Remove filler words (um, uh, like, you know, etc.)\n\
-            - Fix spoken corrections (keep only the corrected version)\n\
-            - Add punctuation and capitalization\n\
-            - Preserve meaning, do not paraphrase\n",
-        );
-
-        if let Some(ref app_name) = ctx.app_name {
-            prompt.push_str(&format!("Format for: {}\n", app_name));
-        }
-
-        if let Some(ref instructions) = ctx.instructions {
-            prompt.push_str(&format!("Instructions: {}\n", instructions));
-        }
-
-        if let Some(ref prior_text) = ctx.prior_text {
-            prompt.push_str(&format!("Prior context: {}\n", prior_text));
-        }
-
-        prompt.push_str(&format!("Text: {}\nCleaned:\n", raw));
-        prompt
-    }
 }
 
 #[async_trait]
 impl TextRefiner for LlamaLocal {
-    async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        #[cfg(feature = "llama")]
-        {
-            use llama_cpp_2::llama_backend::LlamaBackend;
-            use llama_cpp_2::LlamaModel;
-
-            let prompt = self.build_cleanup_prompt(raw, ctx);
-
-            // Initialize the backend
-            LlamaBackend::init();
-
-            // Load the model
-            let model = LlamaModel::load_from_file(&self.model_path, Default::default())
-                .map_err(|e| WhsprError::Refine(format!("Failed to load llama model: {}", e)))?;
-
-            // Create a context for generation
-            let mut llama_ctx = model.create_context(Default::default()).map_err(|e| {
-                WhsprError::Refine(format!("Failed to create llama context: {}", e))
-            })?;
-
-            // Generate completion
-            let tokens = llama_ctx
-                .complete_prompt(&prompt, 256)
-                .map_err(|e| WhsprError::Refine(format!("Llama generation failed: {}", e)))?;
-
-            // Collect all tokens into a single string
-            let mut output = String::new();
-            for token in tokens {
-                output.push_str(&model.decode_single(token).unwrap_or_default());
-            }
-
-            Ok(output.trim().to_string())
-        }
-
-        #[cfg(not(feature = "llama"))]
-        {
-            let _ = (raw, ctx);
-            Err(WhsprError::Refine(
-                "LlamaLocal is not available (feature 'llama' not enabled)".to_string(),
-            ))
-        }
+    async fn refine(&self, _raw: &str, _ctx: &RefineContext) -> Result<String> {
+        Err(WhsprError::Refine(
+            "LlamaLocal not available: llama-cpp-2 build requires cmake in the nix devShell. \
+             See the project flake.nix to add cmake to the build environment."
+                .to_string(),
+        ))
     }
 
     fn id(&self) -> &'static str {
