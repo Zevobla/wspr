@@ -501,9 +501,11 @@ mod tests {
     /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
     /// synthesized speech saying "one two three").
     ///
-    /// Requires a real GGML model on disk, which this repo deliberately
-    /// never ships or downloads automatically. Get one and run this
-    /// explicitly with:
+    /// Requires a real GGML model on disk. Inside `nix develop`, one is
+    /// already available for free via `WHISPER_MODEL_PATH` (see
+    /// `WhisperLocal::resolve_model_path`), so `cargo test -p whspr-asr --
+    /// --ignored` Just Works there with no setup. Outside the devShell,
+    /// fall back to a manual download:
     ///
     /// ```sh
     /// mkdir -p ~/.cache/whspr
@@ -514,16 +516,20 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn whisper_local_transcribes_real_speech_fixture() {
-        let model_path = PathBuf::from(std::env::var("HOME").expect("HOME not set"))
+        let cache_fallback = PathBuf::from(std::env::var("HOME").expect("HOME not set"))
             .join(".cache/whspr/ggml-base.bin");
-        if !model_path.exists() {
+        let model_path = WhisperLocal::resolve_model_path(None)
+            .filter(|p| p.exists())
+            .or_else(|| Some(cache_fallback.clone()).filter(|p| p.exists()));
+        let Some(model_path) = model_path else {
             eprintln!(
-                "skipping whisper_local_transcribes_real_speech_fixture: no model at {} \
-                 (see this test's doc comment for the download command)",
-                model_path.display()
+                "skipping whisper_local_transcribes_real_speech_fixture: no model found via \
+                 WHISPER_MODEL_PATH (set automatically inside `nix develop`) or at {} \
+                 (see this test's doc comment for the manual download command)",
+                cache_fallback.display()
             );
             return;
-        }
+        };
 
         let fixture_path = std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
