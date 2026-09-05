@@ -220,4 +220,14 @@ mod tests {
             HotkeyEvent::Released
         );
     }
+
+    #[test]
+    fn use_clipboard_paste_switches_at_the_length_threshold() {
+        let at_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD);
+        let over_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
+
+        assert!(!EnigoTextSink::use_clipboard_paste(""));
+        assert!(!EnigoTextSink::use_clipboard_paste(&at_threshold));
+        assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
+    }
 }
