@@ -486,6 +486,18 @@ mod tests {
         assert!(clipboard.writes.is_empty());
     }
 
+    /// If the clipboard started empty (nothing to save), restoring means
+    /// clearing it, so our injected text isn't left behind.
+    #[test]
+    fn stage_and_paste_clears_clipboard_that_started_empty() {
+        let mut clipboard = MockClipboard::with_content(None);
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || Ok(()));
+
+        assert!(matches!(outcome, PasteOutcome::Pasted(Ok(()))));
+        assert_eq!(clipboard.content, None);
+    }
+
     /// Verifies the arboard integration is real: setting text actually
     /// round-trips through the system clipboard, including non-ASCII text
     /// (the case `paste_from_clipboard` exists for). This is the one piece
