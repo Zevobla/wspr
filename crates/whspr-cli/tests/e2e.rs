@@ -416,7 +416,11 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
     let parsed: Vec<serde_json::Value> =
         serde_json::from_str(stdout.trim()).expect("stdout was not valid JSON array");
 
-    assert_eq!(parsed.len(), 2, "MockDiarizer should return exactly 2 turns");
+    assert_eq!(
+        parsed.len(),
+        2,
+        "MockDiarizer should return exactly 2 turns"
+    );
     assert_eq!(
         parsed[0].get("speaker").and_then(|v| v.as_str()),
         Some("Speaker 1"),
@@ -453,7 +457,10 @@ fn diarize_persists_speaker_matches_across_runs() {
         .output()
         .expect("failed to run whspr diarize (run 1)");
 
-    assert!(output_1.status.success(), "first diarize run should succeed");
+    assert!(
+        output_1.status.success(),
+        "first diarize run should succeed"
+    );
 
     let stdout_1 = String::from_utf8(output_1.stdout).expect("stdout 1 was not valid UTF-8");
     let parsed_1: Vec<serde_json::Value> =
@@ -481,7 +488,10 @@ fn diarize_persists_speaker_matches_across_runs() {
         .output()
         .expect("failed to run whspr diarize (run 2)");
 
-    assert!(output_2.status.success(), "second diarize run should succeed");
+    assert!(
+        output_2.status.success(),
+        "second diarize run should succeed"
+    );
 
     let stdout_2 = String::from_utf8(output_2.stdout).expect("stdout 2 was not valid UTF-8");
     let parsed_2: Vec<serde_json::Value> =
@@ -506,7 +516,10 @@ fn diarize_persists_speaker_matches_across_runs() {
         "second speaker should match across runs"
     );
 
-    assert!(speakers_path.exists(), "speakers.json should exist after runs");
+    assert!(
+        speakers_path.exists(),
+        "speakers.json should exist after runs"
+    );
 }
 
 #[test]
