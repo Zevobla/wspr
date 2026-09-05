@@ -88,11 +88,18 @@ pub struct EnigoTextSink;
 impl EnigoTextSink {
     /// The threshold (in characters) above which we switch from keystrokes to clipboard paste
     const LONG_TEXT_THRESHOLD: usize = 200;
+
+    /// Decides which injection strategy `insert` should use for `text`.
+    /// Split out as a pure function so the branching can be unit tested
+    /// without actually driving enigo or the clipboard.
+    fn use_clipboard_paste(text: &str) -> bool {
+        text.len() > Self::LONG_TEXT_THRESHOLD
+    }
 }
 
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
-        if text.len() > Self::LONG_TEXT_THRESHOLD {
+        if Self::use_clipboard_paste(text) {
             // For long text, use clipboard paste
             self.paste_from_clipboard(text)
         } else {
