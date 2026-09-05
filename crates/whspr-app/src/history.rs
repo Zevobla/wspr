@@ -7,6 +7,8 @@
 //! compatible with whatever shape another tool (e.g. whspr-cli) eventually
 //! settles on, as long as it keeps a `text` field.
 
+use std::path::{Path, PathBuf};
+
 use serde_json::Value;
 
 /// One completed transcription, either read from the on-disk history file
@@ -43,6 +45,23 @@ pub fn parse_history_jsonl(contents: &str) -> Vec<HistoryEntry> {
             Some(HistoryEntry { text, duration_secs })
         })
         .collect()
+}
+
+/// The whspr history file's path in the platform data dir, if determinable
+/// on this platform. Whether the file actually exists yet is a separate
+/// question -- see `read_history_file`.
+pub fn history_file_path() -> Option<PathBuf> {
+    let dirs = directories::ProjectDirs::from("", "", "whspr")?;
+    Some(dirs.data_dir().join("history.jsonl"))
+}
+
+/// Reads and parses the history file at `path`, tolerating a missing file
+/// (returns empty, not an error) since a fresh install won't have one yet.
+pub fn read_history_file(path: &Path) -> Vec<HistoryEntry> {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => parse_history_jsonl(&contents),
+        Err(_) => Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -90,5 +109,25 @@ mod tests {
         };
 
         assert_eq!(entry.word_count(), 4);
+    }
+
+    #[test]
+    fn read_history_file_returns_empty_for_missing_file() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let missing = dir.path().join("does-not-exist.jsonl");
+
+        assert!(read_history_file(&missing).is_empty());
+    }
+
+    #[test]
+    fn read_history_file_parses_an_existing_file() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        std::fs::write(&path, "{\"text\": \"from disk\"}\n").expect("failed to write history file");
+
+        let entries = read_history_file(&path);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].text, "from disk");
     }
 }
