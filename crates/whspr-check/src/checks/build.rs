@@ -56,6 +56,44 @@ pub fn check_build_and_lock(root: &Path) -> Vec<CheckResult> {
     out
 }
 
+/// AA-13: `cargo clippy --workspace --all-targets -- -D warnings` is clean.
+pub fn check_clippy(root: &Path) -> CheckResult {
+    match crate::repo::run(
+        root,
+        "cargo",
+        &["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
+    ) {
+        Ok(output) if output.success => {
+            CheckResult::pass("AA-13", "`cargo clippy --workspace --all-targets -- -D warnings` exited 0")
+        }
+        Ok(output) => CheckResult::fail(
+            "AA-13",
+            format!(
+                "clippy reported warnings/errors; last 800 chars of stderr: {}",
+                tail(&output.stderr, 800)
+            ),
+        ),
+        Err(e) => CheckResult::fail("AA-13", format!("could not run cargo clippy: {e}")),
+    }
+}
+
+/// AA-14: `cargo fmt --all -- --check` is clean.
+pub fn check_fmt(root: &Path) -> CheckResult {
+    match crate::repo::run(root, "cargo", &["fmt", "--all", "--", "--check"]) {
+        Ok(output) if output.success => {
+            CheckResult::pass("AA-14", "`cargo fmt --all -- --check` exited 0 (no diff)")
+        }
+        Ok(output) => CheckResult::fail(
+            "AA-14",
+            format!(
+                "formatting differs from rustfmt's; first 800 chars of stdout diff: {}",
+                head(&output.stdout, 800)
+            ),
+        ),
+        Err(e) => CheckResult::fail("AA-14", format!("could not run cargo fmt: {e}")),
+    }
+}
+
 /// Last `n` bytes of `s`, snapped forward to the nearest UTF-8 char
 /// boundary so this never panics on a multi-byte character straddling the
 /// cut point.
@@ -68,4 +106,18 @@ fn tail(s: &str, n: usize) -> &str {
         idx += 1;
     }
     &s[idx..]
+}
+
+/// First `n` bytes of `s`, snapped backward to the nearest UTF-8 char
+/// boundary so this never panics on a multi-byte character straddling the
+/// cut point.
+fn head(s: &str, n: usize) -> &str {
+    if s.len() <= n {
+        return s;
+    }
+    let mut idx = n;
+    while !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    &s[..idx]
 }
