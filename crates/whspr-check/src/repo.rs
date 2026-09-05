@@ -38,9 +38,12 @@ pub fn find_repo_root() -> anyhow::Result<PathBuf> {
 
 /// The result of running a subprocess to completion: captured stdout/stderr
 /// (lossily decoded, since we only ever grep/compare these, never round-trip
-/// bytes) and whether it exited zero.
+/// bytes), whether it exited zero, and the raw exit code for callers that
+/// need to distinguish exit codes more finely (e.g. `git grep` uses exit 1
+/// for "ran fine, no matches" rather than an actual error).
 pub struct CmdOutput {
     pub success: bool,
+    pub code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
 }
@@ -72,7 +75,50 @@ pub fn run_env(
         .map_err(|e| anyhow::anyhow!("failed to spawn `{program} {}`: {e}", args.join(" ")))?;
     Ok(CmdOutput {
         success: output.status.success(),
+        code: output.status.code(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
+}
+
+/// Lists every git-tracked file path (relative to `root`). Several checks
+/// care specifically about what's *committed*, not what happens to be
+/// lying around in the working tree (stray local files, build output,
+/// etc.), so this is the primary way checks enumerate "the repo's content".
+pub fn git_ls_files(root: &Path) -> anyhow::Result<Vec<String>> {
+    let output = run(root, "git", &["ls-files"])?;
+    if !output.success {
+        anyhow::bail!("`git ls-files` failed: {}", output.stderr);
+    }
+    Ok(output.stdout.lines().map(str::to_string).collect())
+}
+
+/// Runs `git grep -n <extra_args> <pattern>` against the tracked working
+/// tree and returns matching lines (`path:lineno:content`). Git uses exit
+/// code 1 for "ran fine, found nothing" - that's mapped to an empty `Vec`
+/// here, not an error; only a real git failure (any other nonzero code)
+/// becomes an `Err`.
+///
+/// Always excludes `crates/whspr-check` itself: several checks grep the
+/// tree for the very string literals (`todo!()`, `start_capture(`, ...)
+/// that this checker's own source necessarily contains in order to search
+/// for them, which would otherwise make a check flag itself.
+pub fn git_grep(root: &Path, extra_args: &[&str], pattern: &str) -> anyhow::Result<Vec<String>> {
+    let mut args = vec!["grep", "-n"];
+    args.extend_from_slice(extra_args);
+    args.push(pattern);
+    args.push("--");
+    args.push(".");
+    args.push(":!crates/whspr-check");
+    let output = run(root, "git", &args)?;
+    match output.code {
+        Some(0) => Ok(output.stdout.lines().map(str::to_string).collect()),
+        Some(1) => Ok(Vec::new()),
+        _ => anyhow::bail!(
+            "`git grep -n {} {pattern}` failed (exit {:?}): {}",
+            extra_args.join(" "),
+            output.code,
+            output.stderr
+        ),
+    }
 }
