@@ -12,12 +12,23 @@
 //! bucket — never guessed at or marked PASS on faith.
 
 mod criteria;
+mod report;
+
+use report::CheckResult;
 
 fn main() -> anyhow::Result<()> {
+    // Placeholder result until the real checks land; proves `report` wires
+    // into `main` and into the catalog.
+    let placeholder = CheckResult::needs_bench(
+        criteria::CATALOG[0].id,
+        "checker not implemented yet".to_string(),
+    );
     println!(
-        "whspr-check: {} criteria in catalog (of {} total in the acceptance matrix)",
+        "whspr-check: {} criteria in catalog (of {} total in the acceptance matrix); e.g. {} -> {:?}",
         criteria::CATALOG.len(),
-        criteria::TOTAL_CRITERIA
+        criteria::TOTAL_CRITERIA,
+        placeholder.id,
+        placeholder.verdict
     );
     Ok(())
 }
