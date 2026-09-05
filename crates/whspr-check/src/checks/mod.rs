@@ -75,6 +75,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(config::check_config_in_platform_dir(root));
 
     results.push(slop::check_stub_function_count(root));
+    results.push(slop::check_unused_deps(root));
 
     results
 }

@@ -64,3 +64,38 @@ pub fn check_stub_function_count(root: &Path) -> CheckResult {
         )
     }
 }
+
+/// AC-07: no unused workspace dependencies, per `cargo-udeps`.
+///
+/// `cargo-udeps` requires a nightly toolchain and isn't installed in every
+/// environment this checker might run in. When it's missing, this reports
+/// `Skipped` (not `Pass` or `Fail`) - unlike `NeedsBench` criteria (which
+/// need a human/hardware/multi-OS and can't be automated by this tool at
+/// all), this one *is* automatable, just not on this machine right now.
+pub fn check_unused_deps(root: &Path) -> CheckResult {
+    let probe = repo::run(root, "cargo", &["udeps", "--version"]);
+    let available = matches!(probe, Ok(ref out) if out.success);
+    if !available {
+        return CheckResult::skipped(
+            "AC-07",
+            "cargo-udeps is not installed in this environment (`cargo udeps --version` \
+             failed) - install it (`cargo install cargo-udeps`) with a nightly toolchain to \
+             actually run this check; not treated as pass or fail since the criterion itself \
+             is automatable, just not verified here",
+        );
+    }
+
+    match repo::run(root, "cargo", &["+nightly", "udeps", "--workspace"]) {
+        Ok(out) if out.success => {
+            CheckResult::pass("AC-07", "`cargo +nightly udeps --workspace` reported no unused dependencies")
+        }
+        Ok(out) => CheckResult::fail(
+            "AC-07",
+            format!(
+                "`cargo +nightly udeps --workspace` reported unused dependencies: {}",
+                crate::util::tail(&out.stdout, 800)
+            ),
+        ),
+        Err(e) => CheckResult::fail("AC-07", format!("could not run cargo udeps: {e}")),
+    }
+}
