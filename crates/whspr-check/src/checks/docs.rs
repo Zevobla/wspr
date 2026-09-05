@@ -81,6 +81,68 @@ pub fn check_readme_settings_table(root: &Path) -> CheckResult {
     }
 }
 
+/// AH-03: README documents system dependencies (a "Dependencies" section
+/// naming at least a couple of the real system libs the build needs).
+pub fn check_readme_dependencies_documented(root: &Path) -> CheckResult {
+    let text = match repo::read_readme(root) {
+        Ok(t) => t,
+        Err(e) => return CheckResult::fail("AH-03", e.to_string()),
+    };
+    let lower = text.to_lowercase();
+
+    let has_heading = lower.contains("## dependencies") || lower.contains("# dependencies");
+    let known_deps = ["ffmpeg", "cmake", "clang", "alsa", "apple-sdk", "audiounit"];
+    let mentioned: Vec<&str> = known_deps.iter().filter(|d| lower.contains(*d)).copied().collect();
+
+    if has_heading && mentioned.len() >= 2 {
+        CheckResult::pass(
+            "AH-03",
+            format!(
+                "README has a Dependencies heading and names {} known system deps ({})",
+                mentioned.len(),
+                mentioned.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "AH-03",
+            format!(
+                "README dependency docs incomplete (Dependencies heading: {has_heading}, \
+                 known deps named: {})",
+                mentioned.len()
+            ),
+        )
+    }
+}
+
+/// AH-04: README documents build steps (a build-related heading with a
+/// fenced code block invoking `cargo build` or `nix build`).
+pub fn check_readme_build_steps_documented(root: &Path) -> CheckResult {
+    let text = match repo::read_readme(root) {
+        Ok(t) => t,
+        Err(e) => return CheckResult::fail("AH-04", e.to_string()),
+    };
+    let lower = text.to_lowercase();
+
+    let has_heading = lower.contains("build");
+    let has_build_command = text.contains("cargo build") || text.contains("nix build");
+
+    if has_heading && has_build_command {
+        CheckResult::pass(
+            "AH-04",
+            "README mentions \"build\" and shows a `cargo build` or `nix build` command",
+        )
+    } else {
+        CheckResult::fail(
+            "AH-04",
+            format!(
+                "README build docs incomplete (mentions build: {has_heading}, shows a build \
+                 command: {has_build_command})"
+            ),
+        )
+    }
+}
+
 /// W-08: README documents how to swap models/backends.
 pub fn check_readme_swap_docs(root: &Path) -> CheckResult {
     let text = match repo::read_readme(root) {
