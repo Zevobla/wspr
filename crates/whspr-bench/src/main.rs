@@ -28,9 +28,13 @@ async fn main() -> Result<()> {
     let backend: Box<dyn AsrBackend> = match args.asr.as_str() {
         "mock" => Box::new(MockAsr::default()),
         "whisper-local" => {
-            let model_path = args
-                .model
-                .ok_or_else(|| anyhow::anyhow!("model path required for whisper-local backend"))?;
+            let model_path =
+                WhisperLocal::resolve_model_path(args.model.clone()).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--asr whisper-local requires a model: pass --model <path>, or run inside \
+                     `nix develop` where WHISPER_MODEL_PATH is set automatically"
+                    )
+                })?;
             Box::new(WhisperLocal::new(model_path))
         }
         other => {
