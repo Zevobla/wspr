@@ -108,3 +108,36 @@ impl HotkeyDebouncer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_real_hold_uses_the_min_hold_threshold() {
+        assert!(!is_real_hold(Duration::ZERO));
+        assert!(!is_real_hold(MIN_HOLD - Duration::from_millis(1)));
+        assert!(is_real_hold(MIN_HOLD));
+        assert!(is_real_hold(MIN_HOLD + Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn is_double_press_flags_only_presses_within_the_window() {
+        let base = Instant::now();
+
+        // No previous press can't be a double-press.
+        assert!(!is_double_press(None, base));
+        // A press just after the previous one is a double-press.
+        assert!(is_double_press(Some(base), base + Duration::from_millis(10)));
+        assert!(is_double_press(
+            Some(base),
+            base + DOUBLE_PRESS_WINDOW - Duration::from_millis(1)
+        ));
+        // At or beyond the window it's a separate, intentional press.
+        assert!(!is_double_press(Some(base), base + DOUBLE_PRESS_WINDOW));
+        assert!(!is_double_press(
+            Some(base),
+            base + DOUBLE_PRESS_WINDOW + Duration::from_millis(1)
+        ));
+    }
+}
