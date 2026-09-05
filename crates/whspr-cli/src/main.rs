@@ -272,11 +272,14 @@ fn build_refiner(
 }
 
 /// Builds a diarization backend from config and command-line flags, falling
-/// back to `MockDiarizer` when neither `--model-dir` nor the config file's
-/// `[speaker].model_dir` is set -- mirrors `build_asr_backend`'s "explicit
-/// opt-in, else a deterministic default" reasoning: a real `SherpaDiarizer`
-/// needs model files that aren't guaranteed present, so it's never
-/// constructed unless the user pointed at a model directory somehow.
+/// back to `MockDiarizer` when no model directory is available from
+/// `--model-dir`, the config file's `[speaker].model_dir`, or the
+/// `SPEAKER_MODEL_DIR` environment variable the project's Nix devShell/
+/// package sets (see `SherpaDiarizer::resolve_model_dir`) -- mirrors
+/// `build_asr_backend`'s "explicit opt-in, else a deterministic default"
+/// reasoning: a real `SherpaDiarizer` needs model files that aren't
+/// guaranteed present, so it's never constructed unless a model directory
+/// is available from *some* source.
 ///
 /// The embedding model itself is never hardcoded either: `--embedding`
 /// (falling back to `config.speaker.embedding_model`) picks a
@@ -286,9 +289,11 @@ fn build_diarizer(
     model_dir_flag: Option<&Path>,
     embedding_flag: Option<&str>,
 ) -> anyhow::Result<Box<dyn Diarizer>> {
-    let model_dir = model_dir_flag
-        .map(PathBuf::from)
-        .or_else(|| config.speaker.model_dir.clone());
+    let model_dir = SherpaDiarizer::resolve_model_dir(
+        model_dir_flag
+            .map(PathBuf::from)
+            .or_else(|| config.speaker.model_dir.clone()),
+    );
 
     match model_dir {
         Some(dir) => {
