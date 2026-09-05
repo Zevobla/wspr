@@ -12,9 +12,12 @@
 //! cases. Timestamps are passed in rather than read from the clock inside,
 //! so the logic is deterministic and unit-testable.
 
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
-use whspr_core::HotkeyEvent;
+use tokio::sync::mpsc;
+use whspr_core::{HotkeyEvent, HotkeyListener};
 
 /// Minimum press-to-release duration for a hold to count as a real
 /// recording. Anything shorter is treated as an accidental tap. (D-10)
@@ -106,6 +109,62 @@ impl HotkeyDebouncer {
                 }
             }
         }
+    }
+}
+
+/// A source of "now", injectable so the wrapper's timing is deterministic
+/// under test.
+type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
+
+/// Wraps a [`HotkeyListener`] and runs its events through a
+/// [`HotkeyDebouncer`], exposing debounced [`DebounceAction`]s instead of
+/// raw press/release events.
+///
+/// This is the drop-in seam for the recording loop: subscribe to
+/// [`subscribe_actions`](Self::subscribe_actions) and act on
+/// `StartRecording` / `StopRecording` / `CancelRecording`; short taps and
+/// double-presses never reach you.
+pub struct DebouncedHotkeyListener<L: HotkeyListener> {
+    inner: L,
+    clock: Clock,
+}
+
+impl<L: HotkeyListener> DebouncedHotkeyListener<L> {
+    /// Wraps `inner`, timestamping each event with the system clock as it
+    /// arrives.
+    pub fn new(inner: L) -> Self {
+        Self {
+            inner,
+            clock: Arc::new(Instant::now),
+        }
+    }
+
+    /// Subscribes to the inner listener and returns a stream of debounced
+    /// actions. `Ignore` outcomes (duplicate presses, stray releases) are
+    /// filtered out and never forwarded.
+    pub fn subscribe_actions(&self) -> mpsc::Receiver<DebounceAction> {
+        let mut raw = self.inner.subscribe();
+        let clock = Arc::clone(&self.clock);
+        let (tx, rx) = mpsc::channel(16);
+
+        // The inner listener delivers events on its own thread over a tokio
+        // channel; bridge them synchronously through the debouncer.
+        // `blocking_recv`/`blocking_send` need no ambient runtime here.
+        thread::spawn(move || {
+            let mut debouncer = HotkeyDebouncer::new();
+            while let Some(event) = raw.blocking_recv() {
+                match debouncer.on_event(event, (*clock)()) {
+                    DebounceAction::Ignore => continue,
+                    action => {
+                        if tx.blocking_send(action).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        rx
     }
 }
 
