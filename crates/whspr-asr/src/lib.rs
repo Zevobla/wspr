@@ -28,11 +28,16 @@ impl WhisperLocal {
 #[async_trait]
 impl AsrBackend for WhisperLocal {
     async fn transcribe(&self, _audio: &AudioBuffer, _opts: &AsrOptions) -> Result<Transcript> {
-        Err(WhsprError::Asr(
-            "WhisperLocal not available: whisper-rs build requires cmake in the nix devShell. \
-             See the project flake.nix to add cmake to the build environment."
-                .to_string(),
-        ))
+        if !self.model_path.exists() {
+            return Err(WhsprError::Asr(format!(
+                "WhisperLocal model file not found at {}; download a GGML model (e.g. \
+                 ggml-base.bin from https://huggingface.co/ggerganov/whisper.cpp) and point \
+                 `model_path` at it.",
+                self.model_path.display()
+            )));
+        }
+
+        todo!("load the model and run inference")
     }
 
     fn id(&self) -> &'static str {
