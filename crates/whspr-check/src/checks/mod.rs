@@ -47,6 +47,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(docs::check_readme_honesty(root));
 
     results.push(git_growth::check_commit_count(root));
+    results.extend(git_growth::check_commit_timing(root));
 
     results
 }
