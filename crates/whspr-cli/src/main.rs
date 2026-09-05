@@ -35,7 +35,7 @@ use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
 use whspr_config::{api_key_for, load as load_config, AsrChoice, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, AudioBuffer, Pipeline, RefineContext, TextRefiner};
-use whspr_refine::{AnthropicRefiner, LlamaLocal, OpenAiRefiner};
+use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner};
 
 #[derive(Parser)]
 #[command(name = "whspr", version, about = "whspr voice dictation CLI")]
@@ -270,6 +270,12 @@ fn build_asr_backend(
 }
 
 /// Builds a text refiner backend from config and command-line flags.
+///
+/// The chosen backend is always wrapped in `NormalizingRefiner`, which layers
+/// rule-based number/date/time normalization (toggled per-rule by
+/// `config.normalize`) on top of whatever the backend itself returns — see
+/// `NormalizingRefiner`'s own doc comment: it's meant to wrap any refiner,
+/// `NoopRefiner` included, not replace one.
 fn build_refiner(
     config: &whspr_config::Config,
     refine_id: Option<&str>,
@@ -280,13 +286,13 @@ fn build_refiner(
         config.refine
     };
 
-    match choice {
-        RefineChoice::Noop => Ok(Box::new(NoopRefiner)),
+    let inner: Box<dyn TextRefiner> = match choice {
+        RefineChoice::Noop => Box::new(NoopRefiner),
         RefineChoice::OpenAi => {
             let api_key = api_key_for(config, "openai").ok_or_else(|| {
                 anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
             })?;
-            Ok(Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini")))
+            Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini"))
         }
         RefineChoice::Anthropic => {
             let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
@@ -294,13 +300,15 @@ fn build_refiner(
                     "Anthropic API key not configured (set [api_keys].anthropic in config)"
                 )
             })?;
-            Ok(Box::new(AnthropicRefiner::new(
+            Box::new(AnthropicRefiner::new(
                 api_key,
                 "claude-3-5-sonnet-20241022",
-            )))
+            ))
         }
-        RefineChoice::LlamaLocal => Ok(Box::new(LlamaLocal::new("model.gguf"))),
-    }
+        RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
+    };
+
+    Ok(Box::new(NormalizingRefiner::new(inner, config.normalize)))
 }
 
 /// Decodes an audio file from a path, or reads from stdin if path is "-".
