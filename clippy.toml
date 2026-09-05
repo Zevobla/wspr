@@ -1,0 +1,10 @@
+# Project-wide clippy config (AN-01). Slightly tighter than clippy's
+# built-in defaults so functions/types don't quietly grow past what's easy
+# to review; CI runs `cargo clippy --workspace --all-targets -- -D warnings`
+# against these thresholds.
+too-many-arguments-threshold = 6
+type-complexity-threshold = 200
+# `clippy::cognitive_complexity` is allow-by-default, so this threshold only
+# takes effect where a crate/module opts the lint in; kept here so that's a
+# one-line opt-in rather than also needing a threshold decision at the time.
+cognitive-complexity-threshold = 20

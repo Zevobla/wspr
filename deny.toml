@@ -1,0 +1,60 @@
+# cargo-deny config (AN-05). CI runs `cargo deny check licenses bans`; run
+# `cargo deny check licenses` locally to regenerate this list if a new
+# dependency brings in a license not already covered here.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[licenses]
+# Every SPDX license actually present across the full dependency tree
+# (verified via `cargo deny list`), other than copyleft licenses that only
+# ever show up as one option of a permissive OR (e.g. self_cell's
+# "Apache-2.0 OR GPL-2.0-only", r-efi's "MIT OR Apache-2.0 OR
+# LGPL-2.1-or-later") -- those are already satisfied by the permissive
+# option below, so the copyleft alternative doesn't need to be allowed too.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    # option-ext (pulled in via `directories`/`dirs-sys`) ships under
+    # MPL-2.0 only, with no permissive alternative.
+    "MPL-2.0",
+    # webpki-roots/webpki-root-certs (pulled in via the rustls stack) ship
+    # under CDLA-Permissive-2.0 only, with no permissive alternative.
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+# "deny" would also flag this workspace's own internal path dependencies
+# (whspr-core, whspr-config, ...), which have no version requirement by
+# design -- that's not the sloppy-external-wildcard case this lint targets.
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow-workspace = false
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
