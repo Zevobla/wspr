@@ -123,21 +123,31 @@ pub fn git_ls_files(root: &Path) -> anyhow::Result<Vec<String>> {
 }
 
 /// Runs `git grep -n <extra_args> <pattern>` against the tracked working
-/// tree and returns matching lines (`path:lineno:content`). Git uses exit
-/// code 1 for "ran fine, found nothing" - that's mapped to an empty `Vec`
-/// here, not an error; only a real git failure (any other nonzero code)
-/// becomes an `Err`.
+/// tree, restricted to `pathspecs` (an empty slice means "the whole tree"),
+/// and returns matching lines (`path:lineno:content`). Git uses exit code 1
+/// for "ran fine, found nothing" - that's mapped to an empty `Vec` here,
+/// not an error; only a real git failure (any other nonzero code) becomes
+/// an `Err`.
 ///
 /// Always excludes `crates/whspr-check` itself: several checks grep the
 /// tree for the very string literals (`todo!()`, `start_capture(`, ...)
 /// that this checker's own source necessarily contains in order to search
 /// for them, which would otherwise make a check flag itself.
-pub fn git_grep(root: &Path, extra_args: &[&str], pattern: &str) -> anyhow::Result<Vec<String>> {
+pub fn git_grep(
+    root: &Path,
+    extra_args: &[&str],
+    pattern: &str,
+    pathspecs: &[&str],
+) -> anyhow::Result<Vec<String>> {
     let mut args = vec!["grep", "-n"];
     args.extend_from_slice(extra_args);
     args.push(pattern);
     args.push("--");
-    args.push(".");
+    if pathspecs.is_empty() {
+        args.push(".");
+    } else {
+        args.extend_from_slice(pathspecs);
+    }
     args.push(":!crates/whspr-check");
     let output = run(root, "git", &args)?;
     match output.code {
