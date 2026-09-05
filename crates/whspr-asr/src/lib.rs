@@ -43,7 +43,6 @@ impl AsrBackend for WhisperLocal {
 #[cfg(feature = "testkit")]
 pub use whspr_core::testkit::MockAsr;
 
-
 /// Cloud transcription via the OpenAI API (e.g. `whisper-1` / `gpt-4o-transcribe`).
 pub struct OpenAiAsr {
     pub api_key: String,
@@ -377,4 +376,3 @@ mod tests {
         assert!(wav_data.len() >= 44 + samples.len() * 2);
     }
 }
-
