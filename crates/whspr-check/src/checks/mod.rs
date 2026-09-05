@@ -60,6 +60,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.extend(git_growth::check_commit_timing(root));
     results.push(git_growth::check_single_authorship(root));
     results.extend(git_growth::check_rs_commit_shape(root));
+    results.push(git_growth::check_commit_distribution(root));
 
     match crate::repo::ensure_binary_built(root, "whspr-cli", "whspr") {
         Ok(bin) => {
