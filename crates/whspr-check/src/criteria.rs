@@ -121,6 +121,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AA",
         title: "Logging goes through one interface, not scattered println!/eprintln!",
     },
+    Criterion {
+        id: "AA-02",
+        group: "AA",
+        title: "Domain crate (whspr-core) is free of heavy framework deps",
+    },
     // --- Z: Licenses/provenance ---
     Criterion {
         id: "Z-01",
