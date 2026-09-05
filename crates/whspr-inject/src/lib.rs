@@ -230,4 +230,39 @@ mod tests {
         assert!(!EnigoTextSink::use_clipboard_paste(&at_threshold));
         assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
     }
+
+    /// Verifies the arboard integration is real: setting text actually
+    /// round-trips through the system clipboard, including non-ASCII text
+    /// (the case `paste_from_clipboard` exists for). This is the one piece
+    /// of `EnigoTextSink` that's exercisable without synthesizing keystrokes,
+    /// since it only touches the clipboard, not the focused window.
+    ///
+    /// Side effect: this overwrites the real system clipboard. We save and
+    /// best-effort restore whatever was there before.
+    #[test]
+    fn clipboard_round_trip_preserves_unicode_text() {
+        let mut clipboard = match arboard::Clipboard::new() {
+            Ok(c) => c,
+            Err(e) => {
+                // No clipboard/display server available (e.g. headless CI).
+                eprintln!("skipping test: no clipboard access in this environment: {e}");
+                return;
+            }
+        };
+
+        let previous = clipboard.get_text().ok();
+
+        let payload = "hello, world — café ☕ 日本語";
+        clipboard
+            .set_text(payload)
+            .expect("set_text should succeed once clipboard access is available");
+        let read_back = clipboard
+            .get_text()
+            .expect("get_text should succeed right after set_text");
+        assert_eq!(read_back, payload);
+
+        if let Some(previous) = previous {
+            let _ = clipboard.set_text(previous);
+        }
+    }
 }
