@@ -320,6 +320,12 @@ mod tests {
     }
 
     #[test]
+    fn asr_choice_from_str_accepts_mock() {
+        assert_eq!(AsrChoice::from_str("mock"), Ok(AsrChoice::Mock));
+        assert_eq!(AsrChoice::from_str("MOCK"), Ok(AsrChoice::Mock));
+    }
+
+    #[test]
     fn load_from_missing_file_returns_defaults() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let cfg = load_from(Some(temp_dir.path()));
