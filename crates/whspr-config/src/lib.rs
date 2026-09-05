@@ -66,6 +66,51 @@ impl FromStr for RefineChoice {
     }
 }
 
+/// Which speaker-embedding model `whspr-diarize` should load, out of
+/// however many the sherpa-onnx model zoo provides pinned Nix derivations
+/// for. Mirrors `AsrChoice`'s pattern: a user-facing menu choice that maps
+/// to a concrete filename, never a single hardcoded model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpeakerEmbeddingChoice {
+    /// WeSpeaker CAM++ (VoxCeleb-trained). The current default: broad
+    /// English coverage and the first embedding model this feature shipped
+    /// with (see `whspr-diarize`'s crate docs).
+    #[default]
+    CamPlusPlus,
+    /// 3D-Speaker ERes2Net.
+    Eres2Net,
+}
+
+impl SpeakerEmbeddingChoice {
+    /// The filename this choice maps to inside `SpeakerSettings::model_dir`.
+    /// `whspr-diarize`'s `SherpaDiarizer` loads exactly this file, never a
+    /// hardcoded name.
+    pub fn filename(&self) -> &'static str {
+        match self {
+            SpeakerEmbeddingChoice::CamPlusPlus => "embedding-campplus.onnx",
+            SpeakerEmbeddingChoice::Eres2Net => "embedding-eres2net.onnx",
+        }
+    }
+}
+
+impl FromStr for SpeakerEmbeddingChoice {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Normalize "_"/"+" to "-" first so "cam++"/"cam_plus_plus" and
+        // friends collapse onto the same few match arms as the canonical
+        // "cam-plus-plus" spelling.
+        match s.to_lowercase().replace(['_', '+'], "-").as_str() {
+            "cam-plus-plus" | "camplusplus" | "campplus" | "cam--" => {
+                Ok(SpeakerEmbeddingChoice::CamPlusPlus)
+            }
+            "eres2net" | "eres2-net" => Ok(SpeakerEmbeddingChoice::Eres2Net),
+            _ => Err(format!("unknown speaker embedding choice: {}", s)),
+        }
+    }
+}
+
 /// Settings for the speaker-fingerprinting (diarization) feature.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
@@ -82,6 +127,8 @@ pub struct SpeakerSettings {
     /// Minimum cosine similarity to match a turn to an already-enrolled
     /// speaker rather than creating a new one. See `SpeakerDb::match_or_enroll`.
     pub similarity_threshold: f32,
+    /// Which speaker-embedding model to use (see `SpeakerEmbeddingChoice`).
+    pub embedding_model: SpeakerEmbeddingChoice,
 }
 
 impl Default for SpeakerSettings {
@@ -90,6 +137,7 @@ impl Default for SpeakerSettings {
             enabled: true,
             model_dir: None,
             similarity_threshold: 0.7,
+            embedding_model: SpeakerEmbeddingChoice::default(),
         }
     }
 }
