@@ -7,6 +7,7 @@
 //!                                  Diarize a multi-speaker audio file: find
 //!                                  speaker turns and match them against the
 //!                                  persisted speaker database
+//!   whspr stats [--csv]            Print per-utterance stats from the history journal
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
@@ -17,8 +18,10 @@
 //!   --format FORMAT                 `transcribe`: timecoded export (srt, vtt); overrides --json
 //!   --json                          Output JSON object instead of plain text
 //!   --no-store                      Don't save result to history file
+//!   --csv                           `stats`: output CSV instead of a human-readable table
 
 mod diarize_cmd;
+mod stats_cmd;
 mod subtitles;
 
 use std::io::Write;
@@ -176,6 +179,20 @@ enum Command {
 
         /// Override the data directory (speakers.json lives here). Hidden:
         /// test-only, so the e2e suite can redirect writes to a tempdir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
+    },
+
+    /// Print per-utterance statistics (wpm, word count, ...) from the
+    /// history journal (`history.jsonl`, written by `save_to_history`).
+    Stats {
+        /// Output as CSV instead of a human-readable table.
+        #[arg(long)]
+        csv: bool,
+
+        /// Override the history data directory. Hidden: test-only, so the
+        /// e2e suite can point at a tempdir instead of the real platform
+        /// data dir.
         #[arg(long, hide = true)]
         data_dir: Option<PathBuf>,
     },
@@ -543,6 +560,10 @@ async fn main() -> anyhow::Result<()> {
             data_dir,
         }) => {
             diarize_cmd::run(&config, file, model_dir, embedding, data_dir, output_json).await?;
+        }
+
+        Some(Command::Stats { csv, data_dir }) => {
+            stats_cmd::run(data_dir, csv).await?;
         }
 
         None => {
