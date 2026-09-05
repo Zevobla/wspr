@@ -15,12 +15,16 @@ const POISON_ENV: &[(&str, &str)] = &[
 
 /// P-01: `transcribe` runs with no network reachability for the
 /// mock/local path. Runs the real binary against a poisoned proxy and
-/// confirms it still produces the same transcript - if the default
+/// confirms it still produces the same transcript - if the mock/local
 /// pipeline (MockAsr + NoopRefiner) ever started making a real HTTP call,
 /// this would fail fast against the unreachable proxy address instead.
 ///
-/// Passes `--data-dir <tempdir>` so this smoke run doesn't pollute the
-/// real platform history.jsonl.
+/// Passes `--asr mock` so this stays offline and deterministic regardless
+/// of whether a real whisper model is configured on the machine running
+/// this check (the CLI's no-flag default now builds a real `WhisperLocal`
+/// backend - see `whspr-cli`'s `build_asr_backend`). Also passes
+/// `--data-dir <tempdir>` so this smoke run doesn't pollute the real
+/// platform history.jsonl.
 pub fn check_transcribe_offline(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
@@ -35,15 +39,22 @@ pub fn check_transcribe_offline(bin: &Path, root: &Path) -> CheckResult {
     let output = repo::run_env(
         root,
         bin.to_str().unwrap_or("whspr"),
-        &["transcribe", fixture_str, "--data-dir", data_dir_str],
+        &[
+            "transcribe",
+            fixture_str,
+            "--asr",
+            "mock",
+            "--data-dir",
+            data_dir_str,
+        ],
         POISON_ENV,
     );
     match output {
         Ok(out) if out.success && out.stdout.contains("the quick brown fox") => CheckResult::pass(
             "P-01",
-            "`whspr transcribe` on a real WAV fixture still succeeds with HTTP_PROXY/HTTPS_PROXY/\
-             ALL_PROXY pointed at an unreachable address - the default mock/local pipeline makes \
-             no network call",
+            "`whspr transcribe --asr mock` on a real WAV fixture still succeeds with \
+             HTTP_PROXY/HTTPS_PROXY/ALL_PROXY pointed at an unreachable address - the mock/local \
+             pipeline makes no network call",
         ),
         Ok(out) => CheckResult::fail(
             "P-01",

@@ -103,8 +103,11 @@ fn check_nonzero_exit_on_error(bin: &Path, root: &Path) -> CheckResult {
 /// which is what this looked like against `/dev/null` before whspr-cli's
 /// `decode_wav` was wired up for real.
 ///
-/// Passes `--data-dir <tempdir>` so this smoke run's mock transcript never
-/// gets appended to the real platform history.jsonl.
+/// Passes `--asr mock` so this stays offline and deterministic regardless
+/// of whether a real whisper model is configured (the CLI's no-flag
+/// default now builds a real `WhisperLocal` backend), and `--data-dir
+/// <tempdir>` so this smoke run's mock transcript never gets appended to
+/// the real platform history.jsonl.
 fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
@@ -119,7 +122,14 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
     match run_whspr(
         bin,
         root,
-        &["transcribe", fixture_str, "--data-dir", data_dir_str],
+        &[
+            "transcribe",
+            fixture_str,
+            "--asr",
+            "mock",
+            "--data-dir",
+            data_dir_str,
+        ],
     ) {
         Ok(out) if out.success => {
             let stdout_lines: Vec<&str> = out.stdout.lines().collect();
@@ -163,8 +173,9 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
 /// (rather than setting them empty, which some toolkits still treat as
 /// "present") and confirms the mock/local transcribe path is unaffected.
 ///
-/// Passes `--data-dir <tempdir>` so this smoke run doesn't pollute the
-/// real platform history.jsonl.
+/// Passes `--asr mock` (offline/deterministic regardless of whether a real
+/// whisper model is configured) and `--data-dir <tempdir>` so this smoke
+/// run doesn't pollute the real platform history.jsonl.
 fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     let Some(bin_str) = bin.to_str() else {
         return CheckResult::fail("Y-13", "binary path isn't valid UTF-8");
@@ -182,7 +193,14 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     match repo::run_without_envs(
         root,
         bin_str,
-        &["transcribe", fixture_str, "--data-dir", data_dir_str],
+        &[
+            "transcribe",
+            fixture_str,
+            "--asr",
+            "mock",
+            "--data-dir",
+            data_dir_str,
+        ],
         &["DISPLAY", "WAYLAND_DISPLAY"],
     ) {
         Ok(out) if out.success && out.stdout.contains("the quick brown fox") => CheckResult::pass(
@@ -204,8 +222,10 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
 
 /// Y-14: repeat run gives identical output (determinism).
 ///
-/// Passes `--data-dir <tempdir>` (shared across both runs) so neither
-/// invocation pollutes the real platform history.jsonl.
+/// Passes `--asr mock` so this check isn't itself a source of
+/// nondeterminism (real whisper inference isn't guaranteed bit-identical
+/// across runs) and `--data-dir <tempdir>` (shared across both runs) so
+/// neither invocation pollutes the real platform history.jsonl.
 fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
@@ -217,7 +237,14 @@ fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
     let Some(data_dir_str) = data_dir.path().to_str() else {
         return CheckResult::fail("Y-14", "temp data dir path isn't valid UTF-8");
     };
-    let args = ["transcribe", fixture_str, "--data-dir", data_dir_str];
+    let args = [
+        "transcribe",
+        fixture_str,
+        "--asr",
+        "mock",
+        "--data-dir",
+        data_dir_str,
+    ];
     let first = run_whspr(bin, root, &args);
     let second = run_whspr(bin, root, &args);
     match (first, second) {
