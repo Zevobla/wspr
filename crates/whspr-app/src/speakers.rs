@@ -152,4 +152,29 @@ mod tests {
             "expected the error to mention the SPEAKER_MODEL_DIR-sourced path, got: {err}"
         );
     }
+
+    /// `enabled = false` refuses before `file` is ever touched, so a
+    /// nonexistent path is fine here -- mirrors `whspr-cli`'s identically
+    /// reasoned `diarize_cmd::tests::run_refuses_when_speaker_disabled`.
+    #[tokio::test]
+    async fn run_diarize_scan_refuses_when_disabled() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+
+        let err = run_diarize_scan(
+            PathBuf::from("/nonexistent/whspr-speakers-test.wav"),
+            false,
+            None,
+            SpeakerEmbeddingChoice::default(),
+            0.7,
+            SpeakerDb::default(),
+            dir.path().join("speakers.json"),
+        )
+        .await
+        .expect_err("run_diarize_scan should refuse when disabled");
+
+        assert!(
+            err.contains("disabled"),
+            "expected a disabled-feature error, got: {err}"
+        );
+    }
 }
