@@ -8,3 +8,28 @@ repository.workspace = true
 [[bin]]
 name = "whspr-app"
 path = "src/main.rs"
+
+[dependencies]
+# "tokio" enables iced's tokio-backed executor, so `Task`/`Subscription`
+# futures run on a real tokio runtime -- needed to bridge to the async
+# `whspr_core::Pipeline` and to tokio mpsc channels (hotkey events, pipeline
+# state callbacks) from within iced's async world.
+iced = { workspace = true, features = ["tokio"] }
+whspr-core = { workspace = true, features = ["testkit"] }
+whspr-inject.workspace = true
+whspr-audio.workspace = true
+whspr-config.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+# whspr-audio doesn't expose a device-listing helper (it only starts capture
+# on the default input device), so the Hub's mic device list talks to cpal
+# directly rather than growing whspr-audio's public API for one small list
+# call. See the final report for the reasoning.
+cpal.workspace = true
+# Tolerant parsing of the (schema-less-to-us) JSONL history file.
+serde_json.workspace = true
+# Locates the platform data dir the history file would live in.
+directories.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

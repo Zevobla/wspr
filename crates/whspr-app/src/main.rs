@@ -1,7 +1,14 @@
-// The iced-based Hub + Flow Bar GUI lands with the app team. This trivial
-// entry point exists so the binary target (and its place in the workspace,
-// packaging, etc.) is settled before then. Do not add `iced` here yet — it
-// would slow down `cargo build --workspace` for everyone until it's needed.
-fn main() {
-    println!("whspr gui (todo)");
+mod app;
+mod config_ui;
+mod devices;
+mod flow_bar;
+mod history;
+mod hotkey_capture;
+mod hub;
+mod state;
+mod stats;
+mod worker;
+
+fn main() -> iced::Result {
+    app::run()
 }
