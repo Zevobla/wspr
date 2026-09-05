@@ -73,7 +73,7 @@
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
         };
 
-        inherit (import ./nix/models.nix { inherit pkgs; }) whisper-model;
+        inherit (import ./nix/models.nix { inherit pkgs; }) whisper-model speaker-models;
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -100,6 +100,7 @@
           whspr-cli = whspr-cli;
           whspr-app = whspr-app;
           whisper-model = whisper-model;
+          speaker-models = speaker-models;
           # whspr-app (the iced GUI) is the actual product; whspr-cli stays
           # available as `nix build .#whspr-cli` for the headless binary.
           default = whspr-app;
