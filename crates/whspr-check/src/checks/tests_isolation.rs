@@ -24,6 +24,51 @@ fn run_tests_with_poisoned_network(root: &Path) -> anyhow::Result<CmdOutput> {
 
 const MODEL_WEIGHT_EXTENSIONS: &[&str] = &[".gguf", ".bin", ".ggml"];
 
+/// Known CI config locations across common providers. Presence of any one
+/// of these is treated as "tests run in CI" - we don't attempt to verify
+/// the workflow actually runs the test suite (that would mean parsing
+/// arbitrary YAML/pipeline DSLs), only that some CI is wired up at all.
+const CI_CONFIG_PATHS: &[&str] = &[
+    ".github/workflows",
+    ".gitlab-ci.yml",
+    ".circleci/config.yml",
+    "azure-pipelines.yml",
+    ".travis.yml",
+    "Jenkinsfile",
+];
+
+/// AB-15: tests run in CI.
+pub fn check_ci_configured(root: &Path) -> CheckResult {
+    let found: Vec<&str> = CI_CONFIG_PATHS
+        .iter()
+        .filter(|p| {
+            let path = root.join(p);
+            if path.is_dir() {
+                // A workflows/ dir only counts if it actually has a
+                // workflow file in it, not just an empty directory.
+                path.read_dir()
+                    .map(|mut entries| entries.next().is_some())
+                    .unwrap_or(false)
+            } else {
+                path.is_file()
+            }
+        })
+        .copied()
+        .collect();
+
+    if found.is_empty() {
+        CheckResult::fail(
+            "AB-15",
+            format!(
+                "no CI config found at any of: {}",
+                CI_CONFIG_PATHS.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::pass("AB-15", format!("found CI config at: {}", found.join(", ")))
+    }
+}
+
 /// AB-06: unit tests run without a mic or model files present.
 ///
 /// `tests_passed` is threaded in from `check_test_suite` rather than
