@@ -204,4 +204,13 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn map_hotkey_state_translates_pressed_and_released() {
+        assert_eq!(map_hotkey_state(HotKeyState::Pressed), HotkeyEvent::Pressed);
+        assert_eq!(
+            map_hotkey_state(HotKeyState::Released),
+            HotkeyEvent::Released
+        );
+    }
 }
