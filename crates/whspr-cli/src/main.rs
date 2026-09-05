@@ -21,7 +21,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
 use whspr_config::{api_key_for, load as load_config, AsrChoice, RefineChoice};
-use whspr_core::testkit::NoopRefiner;
+use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, AudioBuffer, Pipeline, RefineContext, TextRefiner};
 use whspr_refine::{AnthropicRefiner, LlamaLocal, OpenAiRefiner};
 
@@ -87,15 +87,30 @@ enum Command {
     },
 }
 
-/// Builds an ASR backend from config and command-line flags.
+/// Builds an ASR backend from command-line flags, falling back to `MockAsr`
+/// when `--asr` is not explicitly passed.
+///
+/// This deliberately does *not* fall back to `config.asr` the way
+/// `build_refiner` falls back to `config.refine`. `RefineChoice`'s default
+/// (`Noop`, via `NoopRefiner`) is a real, always-available backend, so
+/// honoring it as an implicit default is safe. `AsrChoice`'s default
+/// (`WhisperLocal`) is not: it's indistinguishable from "nothing configured"
+/// (there's no `AsrChoice::Unset`, and no way to tell "the user's config
+/// file explicitly said whisper-local" apart from "no config file at all"),
+/// and `WhisperLocal` requires a whisper-rs build (cmake) that isn't
+/// available in the default dev environment. If we honored `config.asr`
+/// here, the CLI's most basic invocation — `whspr transcribe <file>` with no
+/// flags at all — would silently try to build a real `WhisperLocal` backend
+/// and fail immediately. Defaulting to `MockAsr` keeps the no-flag path
+/// deterministic and always available offline; a real backend is only
+/// constructed when the user explicitly opts in via `--asr <id>`.
 fn build_asr_backend(
     config: &whspr_config::Config,
     asr_id: Option<&str>,
 ) -> anyhow::Result<Box<dyn AsrBackend>> {
-    let choice = if let Some(id) = asr_id {
-        AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?
-    } else {
-        config.asr
+    let choice = match asr_id {
+        Some(id) => AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?,
+        None => return Ok(Box::new(MockAsr::default())),
     };
 
     match choice {
