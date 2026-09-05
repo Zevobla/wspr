@@ -20,5 +20,8 @@ jobs:
       - name: clippy
         run: nix develop -c -- cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: rustfmt
+        run: nix develop -c -- cargo fmt --all -- --check
+
       - name: nix flake check
         run: nix flake check --print-build-logs
