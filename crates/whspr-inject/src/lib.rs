@@ -15,7 +15,7 @@ mod debounce;
 
 use clipboard::{stage_and_paste, ArboardClipboard, PasteOutcome};
 
-pub use debounce::{DebounceAction, HotkeyDebouncer};
+pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
 
 /// Listens for the configured global hotkey via the OS-level hotkey APIs.
 pub struct GlobalHotkeyListener {
