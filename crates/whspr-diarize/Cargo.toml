@@ -1,0 +1,20 @@
+[package]
+name = "whspr-diarize"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+whspr-core.workspace = true
+# Not in [workspace.dependencies] (see root Cargo.toml's protocol for adding
+# new deps) — declared directly here. CPU-only: default features minus
+# `tts` (we don't need text-to-speech) and no `cuda`/`directml`.
+# `download-binaries` pulls prebuilt sherpa-onnx native libs instead of
+# compiling the C++ library from source.
+sherpa-rs = { version = "0.6.8", default-features = false, features = [
+    "download-binaries",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
