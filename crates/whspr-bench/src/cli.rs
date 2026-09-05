@@ -27,14 +27,23 @@ pub struct Args {
 }
 
 impl Args {
-    /// Validate the arguments: if using whisper-local, model must be provided.
+    /// Fails fast on structural argument problems before any work (loading
+    /// the stand set, decoding audio, ...) begins.
+    ///
+    /// Deliberately does NOT check model availability for `--asr
+    /// whisper-local` here: a model path can come from `--model` or, inside
+    /// the Nix devShell, from the `WHISPER_MODEL_PATH` env var that points
+    /// at the project's pinned model (see `WhisperLocal::resolve_model_path`
+    /// in `whspr-asr`). That resolution only makes sense at the point the
+    /// backend is actually constructed in `main`, not here.
     pub fn validate(&self) -> Result<(), String> {
-        if self.asr == "whisper-local" && self.model.is_none() {
-            return Err(
-                "error: --asr whisper-local requires --model <path> to be specified".to_string(),
-            );
+        match self.asr.as_str() {
+            "mock" | "whisper-local" => Ok(()),
+            other => Err(format!(
+                "unknown ASR backend: {} (supported: mock, whisper-local)",
+                other
+            )),
         }
-        Ok(())
     }
 }
 
@@ -43,10 +52,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_args_validate_whisper_local_without_model() {
+    fn test_args_validate_whisper_local_without_model_is_structurally_ok() {
+        // No --model is fine at the Args level: WhisperLocal::resolve_model_path
+        // may still find one via WHISPER_MODEL_PATH at construction time in
+        // main(). Missing-model failure is surfaced there, not here.
         let args = Args {
             stand_set: PathBuf::from("/tmp/stand"),
             asr: "whisper-local".to_string(),
+            model: None,
+            language: "ru".to_string(),
+            json: false,
+        };
+        assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_args_validate_unknown_backend() {
+        let args = Args {
+            stand_set: PathBuf::from("/tmp/stand"),
+            asr: "carrier-pigeon".to_string(),
             model: None,
             language: "ru".to_string(),
             json: false,
