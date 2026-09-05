@@ -498,17 +498,18 @@ mod tests {
         assert_eq!(clipboard.content, None);
     }
 
-    /// Verifies the arboard integration is real: setting text actually
-    /// round-trips through the system clipboard, including non-ASCII text
-    /// (the case `paste_from_clipboard` exists for). This is the one piece
-    /// of `EnigoTextSink` that's exercisable without synthesizing keystrokes,
-    /// since it only touches the clipboard, not the focused window.
+    /// Verifies the real [`ArboardClipboard`] seam is genuine: text set
+    /// through it actually round-trips through the system clipboard,
+    /// including non-ASCII text (the case `paste_from_clipboard` exists
+    /// for). This exercises the same trait impl the save/restore path uses,
+    /// but only the clipboard — not the focused window — so it needs no
+    /// synthesized keystrokes.
     ///
     /// Side effect: this overwrites the real system clipboard. We save and
     /// best-effort restore whatever was there before.
     #[test]
     fn clipboard_round_trip_preserves_unicode_text() {
-        let mut clipboard = match arboard::Clipboard::new() {
+        let mut clipboard = match ArboardClipboard::new() {
             Ok(c) => c,
             Err(e) => {
                 // No clipboard/display server available (e.g. headless CI).
@@ -528,8 +529,14 @@ mod tests {
             .expect("get_text should succeed right after set_text");
         assert_eq!(read_back, payload);
 
-        if let Some(previous) = previous {
-            let _ = clipboard.set_text(previous);
+        // Restore, or clear if the clipboard was empty before.
+        match previous {
+            Some(previous) => {
+                let _ = clipboard.set_text(&previous);
+            }
+            None => {
+                let _ = clipboard.clear();
+            }
         }
     }
 
