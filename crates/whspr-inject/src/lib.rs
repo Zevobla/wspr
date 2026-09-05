@@ -98,6 +98,38 @@ trait Clipboard {
     fn clear(&mut self) -> Result<()>;
 }
 
+/// The real [`Clipboard`], backed by the system clipboard via `arboard`.
+struct ArboardClipboard(arboard::Clipboard);
+
+impl ArboardClipboard {
+    /// Opens a handle to the system clipboard.
+    fn new() -> Result<Self> {
+        arboard::Clipboard::new()
+            .map(ArboardClipboard)
+            .map_err(|e| WhsprError::Inject(format!("failed to access clipboard: {}", e)))
+    }
+}
+
+impl Clipboard for ArboardClipboard {
+    fn get_text(&mut self) -> Result<String> {
+        self.0
+            .get_text()
+            .map_err(|e| WhsprError::Inject(format!("failed to read clipboard: {}", e)))
+    }
+
+    fn set_text(&mut self, text: &str) -> Result<()> {
+        self.0
+            .set_text(text)
+            .map_err(|e| WhsprError::Inject(format!("failed to set clipboard: {}", e)))
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        self.0
+            .clear()
+            .map_err(|e| WhsprError::Inject(format!("failed to clear clipboard: {}", e)))
+    }
+}
+
 /// Delivers text to the focused application via synthetic keystrokes
 /// (falling back to clipboard paste for long text).
 pub struct EnigoTextSink;
