@@ -5,6 +5,7 @@ use iced::{Element, Length};
 
 use crate::config_ui::{self, ASR_LABELS, REFINE_LABELS};
 use crate::state::{Message, State};
+use crate::stats;
 
 /// Renders the Hub window's content for the current state.
 pub fn view(state: &State) -> Element<'_, Message> {
@@ -15,6 +16,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             device_section(state),
             hotkey_section(state),
             history_section(state),
+            stats_section(state),
         ]
         .spacing(20)
         .padding(20)
@@ -81,6 +83,19 @@ fn history_section(state: &State) -> Element<'_, Message> {
     };
 
     column![text("History").size(20), content].spacing(8).into()
+}
+
+fn stats_section(state: &State) -> Element<'_, Message> {
+    let count_line = text(format!("Transcriptions this session: {}", state.history.len()));
+
+    let wpm_line = match stats::average_wpm(&state.history) {
+        Some(wpm) => text(format!("Average speed: {wpm:.0} wpm")),
+        None => text("Average speed: not enough data yet"),
+    };
+
+    column![text("Stats").size(20), count_line, wpm_line]
+        .spacing(6)
+        .into()
 }
 
 fn settings_section(state: &State) -> Element<'_, Message> {
