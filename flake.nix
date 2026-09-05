@@ -73,6 +73,8 @@
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
         };
 
+        inherit (import ./nix/models.nix { inherit pkgs; }) whisper-model;
+
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
         whspr-cli = craneLib.buildPackage (commonArgs // {
@@ -80,16 +82,31 @@
           pname = "whspr-cli";
           cargoExtraArgs = "-p whspr-cli";
           doCheck = false;
+          # The crate's [[bin]] is named `whspr`, not `whspr-cli`; without
+          # this, `nix run .#whspr-cli` tries to exec a `whspr-cli` binary
+          # that doesn't exist.
+          meta.mainProgram = "whspr";
+        });
+
+        whspr-app = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+          pname = "whspr-app";
+          cargoExtraArgs = "-p whspr-app";
+          doCheck = false;
         });
       in
       {
         packages = {
           whspr-cli = whspr-cli;
-          default = whspr-cli;
+          whspr-app = whspr-app;
+          whisper-model = whisper-model;
+          # whspr-app (the iced GUI) is the actual product; whspr-cli stays
+          # available as `nix build .#whspr-cli` for the headless binary.
+          default = whspr-app;
         };
 
         checks = {
-          inherit whspr-cli;
+          inherit whspr-cli whspr-app;
 
           workspace-test = craneLib.cargoTest (commonArgs // {
             inherit cargoArtifacts;
@@ -105,6 +122,11 @@
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
+
+          # Points WhisperLocal at the pinned, reproducibly-fetched ggml
+          # model (see nix/models.nix) so it has a working model without
+          # anyone downloading one by hand.
+          WHISPER_MODEL_PATH = "${whisper-model}";
         };
       });
 }
