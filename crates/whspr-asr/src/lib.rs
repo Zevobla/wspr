@@ -101,6 +101,7 @@ fn transcribe_blocking(
             text: text.trim().to_string(),
             start_secs: segment.start_timestamp() as f32 / 100.0,
             end_secs: segment.end_timestamp() as f32 / 100.0,
+            speaker: None,
         });
     }
 
