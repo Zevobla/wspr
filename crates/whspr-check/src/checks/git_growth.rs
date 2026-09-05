@@ -149,6 +149,38 @@ pub fn check_commit_timing(root: &Path) -> Vec<CheckResult> {
     vec![ad02, ad03]
 }
 
+/// AD-11: commit authorship is a single consistent identity.
+pub fn check_single_authorship(root: &Path) -> CheckResult {
+    let git_ref = match target_ref(root) {
+        Ok(r) => r,
+        Err(e) => return CheckResult::fail("AD-11", e.to_string()),
+    };
+    let commits = match log_all_commits(root, &git_ref) {
+        Ok(c) => c,
+        Err(e) => return CheckResult::fail("AD-11", e.to_string()),
+    };
+
+    let mut authors: Vec<&str> = commits.iter().map(|c| c.author_email.as_str()).collect();
+    authors.sort_unstable();
+    authors.dedup();
+
+    if authors.len() == 1 {
+        CheckResult::pass(
+            "AD-11",
+            format!("all {} commits on {git_ref} are authored by {}", commits.len(), authors[0]),
+        )
+    } else {
+        CheckResult::fail(
+            "AD-11",
+            format!(
+                "{} distinct author identities on {git_ref}: {}",
+                authors.len(),
+                authors.join(", ")
+            ),
+        )
+    }
+}
+
 /// AD-01: commit count reflects incremental history.
 pub fn check_commit_count(root: &Path) -> CheckResult {
     let git_ref = match target_ref(root) {
