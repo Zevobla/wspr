@@ -26,6 +26,7 @@ pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
         .theme(Theme::Light)
+        .subscription(subscription)
         .run()
 }
 
@@ -66,6 +67,30 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.selected_device = Some(device);
             Task::none()
         }
+        Message::StartHotkeyCapture => {
+            state.hotkey_capturing = true;
+            Task::none()
+        }
+        Message::HotkeyCaptureKeyEvent(event) => {
+            if let iced::keyboard::Event::KeyPressed { key, modifiers, .. } = event {
+                state.captured_hotkey =
+                    Some(crate::hotkey_capture::format_key_combo(modifiers, &key));
+                state.hotkey_capturing = false;
+            }
+            Task::none()
+        }
+    }
+}
+
+/// Only listens for keyboard events while the Hub is actively capturing a
+/// hotkey preview, so normal typing (e.g. in the language text input)
+/// doesn't get swallowed or misread as a capture attempt the rest of the
+/// time.
+fn subscription(state: &State) -> iced::Subscription<Message> {
+    if state.hotkey_capturing {
+        iced::keyboard::listen().map(Message::HotkeyCaptureKeyEvent)
+    } else {
+        iced::Subscription::none()
     }
 }
 

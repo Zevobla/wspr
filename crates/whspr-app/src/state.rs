@@ -22,6 +22,12 @@ pub struct State {
     /// The currently selected input device name, if any. Defaults to the
     /// host's default input device.
     pub selected_device: Option<String>,
+    /// Whether the Hub is currently listening for the next keypress to
+    /// preview as a hotkey (see `crate::hotkey_capture` for why this is a
+    /// preview only, not something that gets applied).
+    pub hotkey_capturing: bool,
+    /// The most recently captured hotkey preview, formatted for display.
+    pub captured_hotkey: Option<String>,
 }
 
 impl State {
@@ -36,6 +42,8 @@ impl State {
             language_input,
             input_devices: Vec::new(),
             selected_device: None,
+            hotkey_capturing: false,
+            captured_hotkey: None,
         }
     }
 }
@@ -53,4 +61,10 @@ pub enum Message {
     LanguageChanged(String),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
+    /// The user asked to preview a new hotkey by pressing it.
+    StartHotkeyCapture,
+    /// A keyboard event arrived while capturing; only `KeyPressed` is acted
+    /// on (see `update`), but the subscription hands over every event since
+    /// `Subscription` has no `filter_map` combinator to narrow it upstream.
+    HotkeyCaptureKeyEvent(iced::keyboard::Event),
 }
