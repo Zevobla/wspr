@@ -571,6 +571,30 @@ mod tests {
         assert!(wav_data.len() >= 44 + samples.len() * 2);
     }
 
+    #[test]
+    fn strip_special_tokens_removes_angle_bracket_tokens() {
+        // Special tokens and `<|0.00|>`-style timestamps both use `<|...|>`.
+        assert_eq!(
+            strip_special_tokens(
+                "<|startoftranscript|><|en|><|transcribe|> hello world<|endoftext|>"
+            ),
+            "hello world"
+        );
+        assert_eq!(
+            strip_special_tokens("<|0.00|> one two three <|5.00|>"),
+            "one two three"
+        );
+    }
+
+    #[test]
+    fn strip_special_tokens_removes_underscore_control_tokens() {
+        assert_eq!(
+            strip_special_tokens("[_BEG_] hello [_TT_123] world"),
+            "hello world"
+        );
+        assert_eq!(strip_special_tokens("[_EOT_]"), "");
+    }
+
     /// Real end-to-end WhisperLocal transcription against a small committed
     /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
     /// synthesized speech saying "one two three").
