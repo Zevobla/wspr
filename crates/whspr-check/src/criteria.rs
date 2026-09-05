@@ -148,6 +148,11 @@ pub const CATALOG: &[Criterion] = &[
         title: "License is named on the README's first screen",
     },
     Criterion {
+        id: "Z-07",
+        group: "Z",
+        title: "Dependency-license inventory: every resolved dep reports a license",
+    },
+    Criterion {
         id: "Z-12",
         group: "Z",
         title: "Model weights are gitignored and absent from the tracked tree",
