@@ -9,6 +9,7 @@ pub mod color;
 pub mod motion;
 pub mod shape;
 pub mod spacing;
+pub mod styles;
 pub mod type_scale;
 
 pub use color::Scheme;
