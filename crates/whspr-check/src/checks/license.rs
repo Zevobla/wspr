@@ -154,6 +154,89 @@ pub fn check_model_weights_ignored_and_absent(root: &Path) -> CheckResult {
     }
 }
 
+/// Prefixes/markers distinctive enough to a real secret that they're worth
+/// flagging, without being so generic (a bare "sk-", "key =", ...) that
+/// they'd drown in false positives. Not exhaustive - a pattern-based scan
+/// like this one is a heuristic tripwire, not a guarantee.
+const SECRET_PATTERNS: &[&str] = &[
+    "AKIA",     // AWS access key id
+    "ghp_", "gho_", "ghu_", "ghs_", "ghr_", // GitHub tokens
+    "sk-proj-", "sk-ant-", // OpenAI project / Anthropic key prefixes
+    "AIzaSy",   // Google API key
+    "xoxb-", "xoxp-", "xoxa-", // Slack tokens
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "-----BEGIN EC PRIVATE KEY-----",
+    "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+];
+
+/// If a matched line also contains one of these (case-insensitive), it's
+/// almost certainly a test fixture rather than a real credential (e.g.
+/// whspr-config's own tests write `openai = "sk-test-123"` to a temp
+/// config file) - skip it rather than cry wolf.
+const BENIGN_MARKERS: &[&str] = &[
+    "test", "example", "dummy", "fake", "xxx", "placeholder", "redacted", "sample",
+];
+
+/// Z-16: no obvious secrets/API keys committed anywhere in git history.
+///
+/// Scans `git log --all -p` (every added line, across every ref, not just
+/// the current branch) for the patterns above. This is a pattern-based
+/// heuristic, not an exhaustive secret scanner (that's a whole product
+/// category on its own) - documented as such in the evidence either way.
+pub fn check_no_secrets_in_history(root: &Path) -> CheckResult {
+    let output = match repo::run(root, "git", &["log", "--all", "-p"]) {
+        Ok(o) => o,
+        Err(e) => return CheckResult::fail("Z-16", format!("could not run git log: {e}")),
+    };
+    if !output.success {
+        return CheckResult::fail(
+            "Z-16",
+            format!("`git log --all -p` failed: {}", output.stderr),
+        );
+    }
+
+    let mut current_commit = "?";
+    let mut findings: Vec<String> = Vec::new();
+    for line in output.stdout.lines() {
+        if let Some(hash) = line.strip_prefix("commit ") {
+            current_commit = hash.get(..10).unwrap_or(hash);
+            continue;
+        }
+        // Added lines only (skip the "+++ b/path" diff header, which also
+        // starts with '+').
+        if !line.starts_with('+') || line.starts_with("+++") {
+            continue;
+        }
+        let lower = line.to_lowercase();
+        if BENIGN_MARKERS.iter().any(|m| lower.contains(m)) {
+            continue;
+        }
+        if let Some(pattern) = SECRET_PATTERNS.iter().find(|p| line.contains(**p)) {
+            findings.push(format!(
+                "{current_commit}: matched \"{pattern}\" in: {}",
+                crate::util::head(line.trim(), 120)
+            ));
+        }
+    }
+
+    if findings.is_empty() {
+        CheckResult::pass(
+            "Z-16",
+            format!(
+                "0 matches across {} known secret-prefix patterns in `git log --all -p` \
+                 (heuristic scan, not exhaustive)",
+                SECRET_PATTERNS.len()
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "Z-16",
+            format!("possible secret(s) found in git history: {}", findings.join(" | ")),
+        )
+    }
+}
+
 /// How many lines of the README count as its "first screen" for Z-04 - a
 /// generous approximation of what's visible without scrolling on GitHub's
 /// rendered view.
