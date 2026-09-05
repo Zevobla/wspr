@@ -81,6 +81,23 @@ impl HotkeyListener for GlobalHotkeyListener {
     }
 }
 
+/// A minimal system-clipboard abstraction.
+///
+/// The clipboard-paste path needs to *save* the user's current clipboard,
+/// stage our own text, paste, then *restore* what was there before. Hiding
+/// the real `arboard` behind this trait lets that save/set/restore sequence
+/// be unit-tested with an in-memory fake, without a display server or a
+/// live system clipboard.
+trait Clipboard {
+    /// Returns the current clipboard text, or an error if there is no text
+    /// on the clipboard (e.g. it's empty or holds a non-text payload).
+    fn get_text(&mut self) -> Result<String>;
+    /// Replaces the clipboard contents with `text`.
+    fn set_text(&mut self, text: &str) -> Result<()>;
+    /// Empties the clipboard.
+    fn clear(&mut self) -> Result<()>;
+}
+
 /// Delivers text to the focused application via synthetic keystrokes
 /// (falling back to clipboard paste for long text).
 pub struct EnigoTextSink;
