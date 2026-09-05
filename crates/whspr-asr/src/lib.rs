@@ -1,18 +1,23 @@
 //! ASR backend implementations. Everything here implements
 //! `whspr_core::AsrBackend`; the pipeline never knows or cares which one it
-//! got. Bodies are `todo!()` until the ASR team wires up the real
-//! dependencies (whisper-rs, HTTP clients, ...) — this crate must keep
-//! compiling without those heavy deps in the meantime.
+//! got. `WhisperLocal` (whisper-rs), `OpenAiAsr`, and `DeepgramAsr` are all
+//! real implementations now.
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::io::Write;
 use std::path::PathBuf;
 
-use whspr_core::{AsrBackend, AsrOptions, AudioBuffer, Result, Transcript, WhsprError};
+use whspr_core::{
+    AsrBackend, AsrOptions, AudioBuffer, Result, Transcript, TranscriptSegment, WhsprError,
+};
 
-/// Local transcription via whisper.cpp (whisper-rs). Opt in the `whisper-rs`
-/// workspace dep from this crate's own Cargo.toml when implementing.
+/// Local transcription via whisper.cpp (whisper-rs).
+///
+/// `transcribe` assumes the `AudioBuffer` it receives is already 16kHz mono
+/// f32 PCM, per the contract documented on `whspr_core::AudioBuffer` (capture/
+/// decode/resample all normalize to that shape before anything touches an
+/// `AsrBackend`) — no resampling happens in here.
 pub struct WhisperLocal {
     pub model_path: PathBuf,
 }
@@ -27,17 +32,91 @@ impl WhisperLocal {
 
 #[async_trait]
 impl AsrBackend for WhisperLocal {
-    async fn transcribe(&self, _audio: &AudioBuffer, _opts: &AsrOptions) -> Result<Transcript> {
-        Err(WhsprError::Asr(
-            "WhisperLocal not available: whisper-rs build requires cmake in the nix devShell. \
-             See the project flake.nix to add cmake to the build environment."
-                .to_string(),
-        ))
+    async fn transcribe(&self, audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript> {
+        if !self.model_path.exists() {
+            return Err(WhsprError::Asr(format!(
+                "WhisperLocal model file not found at {}; download a GGML model (e.g. \
+                 ggml-base.bin from https://huggingface.co/ggerganov/whisper.cpp) and point \
+                 `model_path` at it.",
+                self.model_path.display()
+            )));
+        }
+
+        let model_path = self.model_path.clone();
+        let samples = audio.samples.clone();
+        let language = opts.language.clone();
+
+        // whisper.cpp inference is CPU-bound and can take real wall-clock
+        // seconds; run it on a blocking-pool thread rather than blocking the
+        // async runtime directly. WhisperContext/WhisperState/FullParams are
+        // all `Send + Sync` (whisper-rs marks them so explicitly), so moving
+        // them into the closure and running synchronously in there is sound.
+        tokio::task::spawn_blocking(move || {
+            transcribe_blocking(&model_path, &samples, language.as_deref())
+        })
+        .await
+        .map_err(|e| WhsprError::Asr(format!("WhisperLocal worker thread panicked: {}", e)))?
     }
 
     fn id(&self) -> &'static str {
         "whisper-local"
     }
+}
+
+/// Runs whisper.cpp inference synchronously. Called from inside
+/// `spawn_blocking` — never call this directly from an async context.
+fn transcribe_blocking(
+    model_path: &std::path::Path,
+    samples: &[f32],
+    language: Option<&str>,
+) -> Result<Transcript> {
+    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+    let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
+        .map_err(|e| WhsprError::Asr(format!("failed to load whisper model: {}", e)))?;
+    let mut state = ctx
+        .create_state()
+        .map_err(|e| WhsprError::Asr(format!("failed to create whisper state: {}", e)))?;
+
+    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+        beam_size: 5,
+        patience: -1.0,
+    });
+    params.set_language(language);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+
+    state
+        .full(params, samples)
+        .map_err(|e| WhsprError::Asr(format!("whisper inference failed: {}", e)))?;
+
+    let mut segments = Vec::new();
+    for segment in state.as_iter() {
+        let text = segment
+            .to_str_lossy()
+            .map_err(|e| WhsprError::Asr(format!("failed to decode whisper segment: {}", e)))?;
+        segments.push(TranscriptSegment {
+            text: text.trim().to_string(),
+            start_secs: segment.start_timestamp() as f32 / 100.0,
+            end_secs: segment.end_timestamp() as f32 / 100.0,
+        });
+    }
+
+    let text = segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string();
+
+    Ok(Transcript {
+        text,
+        language: language.map(str::to_string),
+        segments,
+    })
 }
 
 #[cfg(feature = "testkit")]
@@ -374,5 +453,61 @@ mod tests {
         assert!(wav_data.windows(4).any(|w| w == b"data"));
         // Total size should be 44 byte header + samples.len() * 2 bytes for i16 PCM data
         assert!(wav_data.len() >= 44 + samples.len() * 2);
+    }
+
+    /// Real end-to-end WhisperLocal transcription against a small committed
+    /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
+    /// synthesized speech saying "one two three").
+    ///
+    /// Requires a real GGML model on disk, which this repo deliberately
+    /// never ships or downloads automatically. Get one and run this
+    /// explicitly with:
+    ///
+    /// ```sh
+    /// mkdir -p ~/.cache/whspr
+    /// curl -L -o ~/.cache/whspr/ggml-base.bin \
+    ///   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+    /// cargo test -p whspr-asr -- --ignored
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn whisper_local_transcribes_real_speech_fixture() {
+        let model_path = PathBuf::from(std::env::var("HOME").expect("HOME not set"))
+            .join(".cache/whspr/ggml-base.bin");
+        if !model_path.exists() {
+            eprintln!(
+                "skipping whisper_local_transcribes_real_speech_fixture: no model at {} \
+                 (see this test's doc comment for the download command)",
+                model_path.display()
+            );
+            return;
+        }
+
+        let fixture_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/one-two-three.wav"
+        ));
+        let mut reader = hound::WavReader::open(fixture_path).expect("failed to open fixture WAV");
+        let samples: Vec<f32> = reader
+            .samples::<i16>()
+            .map(|s| s.expect("failed to read WAV sample") as f32 / 32768.0)
+            .collect();
+        let audio = AudioBuffer::new(samples, 16000);
+
+        let asr = WhisperLocal::new(model_path);
+        let opts = AsrOptions {
+            language: Some("en".to_string()),
+        };
+
+        let transcript = asr
+            .transcribe(&audio, &opts)
+            .await
+            .expect("transcription failed");
+
+        assert!(
+            !transcript.text.trim().is_empty(),
+            "expected a non-empty transcript, got: {:?}",
+            transcript.text
+        );
     }
 }
