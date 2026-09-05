@@ -30,7 +30,25 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use whspr_core::{Result, WhsprError};
+
+/// Whether whspr should launch automatically at login. `enabled` is just
+/// the persisted *intent* -- toggling it in the GUI also writes/removes
+/// the actual OS-level entry via `install_autostart`/`remove_autostart`
+/// below, but this field alone doesn't prove that entry exists (e.g. it
+/// could have been deleted out from under whspr by the user or the OS).
+///
+/// Defined here rather than alongside `Config`'s other settings structs in
+/// `lib.rs` (like `SpeakerSettings`/`NormalizeSettings`) so that crate's
+/// file stays under this project's 600-line-per-file guideline (AA-06) --
+/// same reasoning `speaker.rs` already follows for `SpeakerDb`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct AutostartSettings {
+    pub enabled: bool,
+}
 
 /// Reverse-DNS-style identifier used for the macOS LaunchAgent's `Label`
 /// and plist filename -- stable across installs so a repeat
@@ -228,5 +246,45 @@ mod tests {
         let base = directories::BaseDirs::new().expect("should resolve a home dir in test env");
         assert_ne!(plist_path(&base), desktop_entry_path(&base));
         assert!(plist_path(&base).starts_with(base.home_dir()));
+    }
+
+    // `Config`/`load_from` live in the crate root, not this module, but
+    // these three exercise `AutostartSettings` through them the same way
+    // `lib.rs`'s test module does for `SpeakerSettings`/`NormalizeSettings`.
+    use crate::{load_from, Config};
+
+    #[test]
+    fn autostart_settings_defaults_to_disabled() {
+        assert_eq!(
+            Config::default().autostart,
+            AutostartSettings { enabled: false }
+        );
+    }
+
+    #[test]
+    fn autostart_settings_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.autostart.enabled = true;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(round_tripped.autostart, cfg.autostart);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_autostart_enabled() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[autostart]").expect("failed to write autostart header");
+        writeln!(file, "enabled = true").expect("failed to write enabled");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert!(cfg.autostart.enabled);
     }
 }
