@@ -71,7 +71,7 @@ use std::sync::Mutex;
 use sherpa_rs::diarize::{Diarize, DiarizeConfig};
 use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
 
-use whspr_core::{Result, WhsprError};
+use whspr_core::{AudioBuffer, Diarizer, Result, SpeakerTurn, WhsprError};
 
 /// Filename `model_dir` must contain for the pyannote segmentation model.
 pub const SEGMENTATION_MODEL_FILENAME: &str = "segmentation.onnx";
@@ -139,5 +139,88 @@ impl SherpaDiarizer {
             diarize: Mutex::new(diarize),
             embedder: Mutex::new(embedder),
         })
+    }
+}
+
+/// Clamps a turn's `[start_secs, end_secs)` span to a valid sample range
+/// within `total_samples` at `sample_rate`. Pure/deterministic so it can be
+/// unit-tested without touching the sherpa FFI boundary.
+fn segment_sample_range(
+    start_secs: f32,
+    end_secs: f32,
+    sample_rate: u32,
+    total_samples: usize,
+) -> (usize, usize) {
+    let to_sample = |secs: f32| -> usize {
+        if secs <= 0.0 {
+            0
+        } else {
+            (secs * sample_rate as f32).round() as usize
+        }
+    };
+    let start = to_sample(start_secs).min(total_samples);
+    let end = to_sample(end_secs).min(total_samples).max(start);
+    (start, end)
+}
+
+impl Diarizer for SherpaDiarizer {
+    fn diarize(&self, audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>> {
+        let sample_rate = audio.sample_rate;
+
+        // `Diarize::compute` takes ownership of the sample buffer, so clone
+        // it up front; we still need the original samples afterwards to
+        // slice out each segment's audio for the embedding re-extract.
+        let segments = {
+            let mut diarize = self
+                .diarize
+                .lock()
+                .map_err(|_| WhsprError::Diarize("diarization pipeline lock poisoned".into()))?;
+            diarize
+                .compute(audio.samples.clone(), None)
+                .map_err(|e| WhsprError::Diarize(format!("diarization failed: {e}")))?
+        };
+
+        let mut embedder = self
+            .embedder
+            .lock()
+            .map_err(|_| WhsprError::Diarize("embedding extractor lock poisoned".into()))?;
+
+        let mut turns = Vec::with_capacity(segments.len());
+        for segment in segments {
+            let (start_sample, end_sample) =
+                segment_sample_range(segment.start, segment.end, sample_rate, audio.samples.len());
+            if start_sample >= end_sample {
+                // Degenerate segment (e.g. clamped entirely outside the
+                // audio, or a zero-duration segment) — nothing to embed, so
+                // drop it rather than emit a `SpeakerTurn` with an empty
+                // (dimension-0) embedding that would look inconsistent to
+                // downstream consumers.
+                continue;
+            }
+            let slice = audio.samples[start_sample..end_sample].to_vec();
+
+            let embedding = embedder
+                .compute_speaker_embedding(slice, sample_rate)
+                .map_err(|e| {
+                    WhsprError::Diarize(format!(
+                        "embedding extraction failed for segment [{:.2}, {:.2}]: {e}",
+                        segment.start, segment.end
+                    ))
+                })?;
+
+            turns.push(SpeakerTurn {
+                start_secs: segment.start,
+                end_secs: segment.end,
+                embedding,
+                speaker: None,
+                score: 1.0,
+            });
+        }
+
+        Ok(turns)
+    }
+
+    fn id(&self) -> &'static str {
+        "sherpa"
     }
 }
