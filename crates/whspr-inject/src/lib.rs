@@ -209,6 +209,12 @@ impl EnigoTextSink {
     /// The threshold (in characters) above which we switch from keystrokes to clipboard paste
     const LONG_TEXT_THRESHOLD: usize = 200;
 
+    /// How long to wait after sending the paste keystroke before restoring
+    /// the user's clipboard. The synthesized Cmd+V/Ctrl+V is delivered
+    /// asynchronously by the OS, so we give the target app a moment to read
+    /// the clipboard before putting the original contents back.
+    const PASTE_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
+
     /// Decides which injection strategy `insert` should use for `text`.
     /// Split out as a pure function so the branching can be unit tested
     /// without actually driving enigo or the clipboard.
@@ -292,6 +298,9 @@ impl EnigoTextSink {
                 .key(Key::Control, Direction::Release)
                 .map_err(|e| WhsprError::Inject(format!("failed to release control key: {}", e)))?;
         }
+
+        // Let the target consume the clipboard before the caller restores it.
+        thread::sleep(Self::PASTE_SETTLE_DELAY);
 
         Ok(())
     }
