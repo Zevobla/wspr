@@ -153,6 +153,11 @@ pub const CATALOG: &[Criterion] = &[
         title: "Dependency-license inventory: every resolved dep reports a license",
     },
     Criterion {
+        id: "Z-08",
+        group: "Z",
+        title: "No copyleft dependency licenses under our permissive license",
+    },
+    Criterion {
         id: "Z-12",
         group: "Z",
         title: "Model weights are gitignored and absent from the tracked tree",
