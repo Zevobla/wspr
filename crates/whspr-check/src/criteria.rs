@@ -267,6 +267,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "Y",
         title: "Progress/log output goes to stderr, not stdout",
     },
+    Criterion {
+        id: "Y-13",
+        group: "Y",
+        title: "CLI works headless (no display-server env vars present)",
+    },
     // --- P: Autonomy/privacy ---
     Criterion {
         id: "P-01",
