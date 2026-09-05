@@ -17,6 +17,9 @@ pub enum WhsprError {
     #[error("injection error: {0}")]
     Inject(String),
 
+    #[error("diarize backend error: {0}")]
+    Diarize(String),
+
     #[error("config error: {0}")]
     Config(String),
 

@@ -24,6 +24,19 @@ impl AudioBuffer {
     }
 }
 
+/// One detected speaker turn from a `Diarizer` pass over an audio buffer:
+/// its timing, an embedding vector for matching against an
+/// enrolled-speaker database, an optional provisional speaker label (if
+/// the backend does its own coarse clustering), and a confidence score.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpeakerTurn {
+    pub start_secs: f32,
+    pub end_secs: f32,
+    pub embedding: Vec<f32>,
+    pub speaker: Option<String>,
+    pub score: f32,
+}
+
 /// One timed span of a transcript, as produced by ASR backends that support
 /// word/segment-level timing. Backends that don't may leave this empty.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,6 +44,12 @@ pub struct TranscriptSegment {
     pub text: String,
     pub start_secs: f32,
     pub end_secs: f32,
+    /// Speaker label for this segment, if diarization has been run and
+    /// matched against it. `None` for plain transcription — the live
+    /// dictation pipeline never sets this; it's populated by the separate
+    /// offline diarization analysis flow (see `whspr-diarize`).
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

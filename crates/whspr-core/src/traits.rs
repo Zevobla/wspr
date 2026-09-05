@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::error::Result;
-use crate::types::{AsrOptions, AudioBuffer, RefineContext, Transcript};
+use crate::types::{AsrOptions, AudioBuffer, RefineContext, SpeakerTurn, Transcript};
 
 /// Turns audio into text. Implemented by local (whisper.cpp) and cloud
 /// (OpenAI, Deepgram, ...) backends in `whspr-asr`.
@@ -43,4 +43,21 @@ pub trait HotkeyListener: Send + Sync {
 /// `whspr-inject` via synthetic keystrokes / clipboard paste.
 pub trait TextSink: Send + Sync {
     fn insert(&self, text: &str) -> Result<()>;
+}
+
+/// Detects and separates distinct speakers in an audio recording, returning
+/// each speaker turn's timing and embedding vector for later matching
+/// against an enrolled-speaker database. Implemented by a sherpa-onnx-backed
+/// VAD/segmentation/embedding pipeline in `whspr-diarize`.
+///
+/// Unlike `AsrBackend`/`TextRefiner`, this is deliberately *not* `async`:
+/// diarization backends are CPU-bound native inference calls (sherpa-onnx
+/// FFI), not I/O-bound network calls — there's nothing to `.await` on.
+/// Callers that need this off the async runtime's thread should wrap a call
+/// in `tokio::task::spawn_blocking` themselves.
+pub trait Diarizer: Send + Sync {
+    fn diarize(&self, audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>>;
+
+    /// Stable identifier used for config/CLI backend selection.
+    fn id(&self) -> &'static str;
 }
