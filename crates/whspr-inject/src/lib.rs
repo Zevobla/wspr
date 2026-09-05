@@ -242,17 +242,24 @@ impl EnigoTextSink {
         Ok(())
     }
 
-    /// Copies text to clipboard and simulates a paste keystroke.
+    /// Copies text to the clipboard and simulates a paste keystroke,
+    /// restoring the user's previous clipboard contents afterward.
+    ///
+    /// If the clipboard can't be used (no display, permission denied, a
+    /// non-text payload we can't stage over, etc.) this falls back to
+    /// typing the text directly rather than failing the injection outright.
     fn paste_from_clipboard(&self, text: &str) -> Result<()> {
-        // Set clipboard content
-        let mut clipboard = arboard::Clipboard::new()
-            .map_err(|e| WhsprError::Inject(format!("failed to access clipboard: {}", e)))?;
+        // If we can't even open the clipboard, type the text instead.
+        let mut clipboard = match ArboardClipboard::new() {
+            Ok(clipboard) => clipboard,
+            Err(_) => return self.type_text(text),
+        };
 
-        clipboard
-            .set_text(text)
-            .map_err(|e| WhsprError::Inject(format!("failed to set clipboard: {}", e)))?;
-
-        self.send_paste_keystroke()
+        match stage_and_paste(&mut clipboard, text, || self.send_paste_keystroke()) {
+            PasteOutcome::Pasted(result) => result,
+            // Couldn't stage our text on the clipboard; type it instead.
+            PasteOutcome::Unstaged => self.type_text(text),
+        }
     }
 
     /// Simulates the platform paste shortcut (Cmd+V on macOS, Ctrl+V
