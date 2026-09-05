@@ -139,7 +139,60 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
     }
 }
 
-const CLI_CRITERIA: &[&str] = &["Y-11", "Y-03", "Y-12", "Y-04", "Y-15"];
+/// Y-13: CLI works headless - removes display-server env vars entirely
+/// (rather than setting them empty, which some toolkits still treat as
+/// "present") and confirms the mock/local transcribe path is unaffected.
+fn check_headless(bin: &Path, root: &Path) -> CheckResult {
+    let Some(bin_str) = bin.to_str() else {
+        return CheckResult::fail("Y-13", "binary path isn't valid UTF-8");
+    };
+    match repo::run_without_envs(
+        root,
+        bin_str,
+        &["transcribe", "/dev/null"],
+        &["DISPLAY", "WAYLAND_DISPLAY"],
+    ) {
+        Ok(out) if out.success && out.stdout.contains("the quick brown fox") => CheckResult::pass(
+            "Y-13",
+            "`whspr transcribe /dev/null` still succeeds with DISPLAY and WAYLAND_DISPLAY \
+             removed from its environment - no GUI/display-server dependency in this path",
+        ),
+        Ok(out) => CheckResult::fail(
+            "Y-13",
+            format!(
+                "headless run: success={}, stdout={:?}",
+                out.success, out.stdout
+            ),
+        ),
+        Err(e) => CheckResult::fail("Y-13", format!("could not run whspr headless: {e}")),
+    }
+}
+
+/// Y-14: repeat run gives identical output (determinism).
+fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
+    let first = run_whspr(bin, root, &["transcribe", "/dev/null"]);
+    let second = run_whspr(bin, root, &["transcribe", "/dev/null"]);
+    match (first, second) {
+        (Ok(a), Ok(b)) if a.success && b.success && a.stdout == b.stdout => CheckResult::pass(
+            "Y-14",
+            format!(
+                "two consecutive `whspr transcribe /dev/null` runs produced identical stdout: \
+                 {:?}",
+                a.stdout.trim()
+            ),
+        ),
+        (Ok(a), Ok(b)) => CheckResult::fail(
+            "Y-14",
+            format!(
+                "outputs differ between two consecutive runs: run1={:?} run2={:?}",
+                a.stdout, b.stdout
+            ),
+        ),
+        _ => CheckResult::fail("Y-14", "could not run whspr twice to compare"),
+    }
+}
+
+const CLI_CRITERIA: &[&str] = &["Y-11", "Y-03", "Y-12", "Y-04", "Y-15", "Y-13", "Y-14"];
 
 /// Runs every CLI-behavior check against an already-built `whspr` binary
 /// (built once by the caller via `repo::ensure_binary_built`, and shared
@@ -149,6 +202,8 @@ pub fn run_cli_checks(bin: &Path, root: &Path) -> Vec<CheckResult> {
     results.push(check_help(bin, root));
     results.push(check_nonzero_exit_on_error(bin, root));
     results.push(check_progress_output_discipline(bin, root));
+    results.push(check_headless(bin, root));
+    results.push(check_repeat_run_deterministic(bin, root));
     results
 }
 

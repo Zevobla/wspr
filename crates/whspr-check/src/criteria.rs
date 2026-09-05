@@ -111,6 +111,26 @@ pub const CATALOG: &[Criterion] = &[
         group: "AA",
         title: "cargo fmt --check is clean across the workspace",
     },
+    Criterion {
+        id: "AA-06",
+        group: "AA",
+        title: "No single source file has grown unreasonably large",
+    },
+    Criterion {
+        id: "AA-16",
+        group: "AA",
+        title: "Logging goes through one interface, not scattered println!/eprintln!",
+    },
+    Criterion {
+        id: "AA-02",
+        group: "AA",
+        title: "Domain crate (whspr-core) is free of heavy framework deps",
+    },
+    Criterion {
+        id: "AA-10",
+        group: "AA",
+        title: "No circular dependencies between workspace crates",
+    },
     // --- Z: Licenses/provenance ---
     Criterion {
         id: "Z-01",
@@ -126,6 +146,16 @@ pub const CATALOG: &[Criterion] = &[
         id: "Z-04",
         group: "Z",
         title: "License is named on the README's first screen",
+    },
+    Criterion {
+        id: "Z-07",
+        group: "Z",
+        title: "Dependency-license inventory: every resolved dep reports a license",
+    },
+    Criterion {
+        id: "Z-08",
+        group: "Z",
+        title: "No copyleft dependency licenses under our permissive license",
     },
     Criterion {
         id: "Z-12",
@@ -180,6 +210,16 @@ pub const CATALOG: &[Criterion] = &[
         group: "AB",
         title: "Tests run in CI",
     },
+    Criterion {
+        id: "AB-05",
+        group: "AB",
+        title: "Test-suite runtime is bounded",
+    },
+    Criterion {
+        id: "AB-12",
+        group: "AB",
+        title: "Tests give identical outcomes across repeat runs",
+    },
     // --- AD: Growth-monotonicity(git) ---
     Criterion {
         id: "AD-01",
@@ -211,6 +251,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AD",
         title: "Commit authorship is a single consistent identity",
     },
+    Criterion {
+        id: "AD-06",
+        group: "AD",
+        title: "Commits are distributed over time, not clustered into one burst",
+    },
     // --- Y: CLI/batch ---
     Criterion {
         id: "Y-03",
@@ -236,6 +281,16 @@ pub const CATALOG: &[Criterion] = &[
         id: "Y-15",
         group: "Y",
         title: "Progress/log output goes to stderr, not stdout",
+    },
+    Criterion {
+        id: "Y-13",
+        group: "Y",
+        title: "CLI works headless (no display-server env vars present)",
+    },
+    Criterion {
+        id: "Y-14",
+        group: "Y",
+        title: "Repeat run gives identical output (determinism)",
     },
     // --- P: Autonomy/privacy ---
     Criterion {
@@ -279,5 +334,10 @@ pub const CATALOG: &[Criterion] = &[
         id: "AC-07",
         group: "AC",
         title: "No unused workspace dependencies (cargo-udeps)",
+    },
+    Criterion {
+        id: "AC-06",
+        group: "AC",
+        title: "Dead code absent (clippy -D warnings, dead_code lint)",
     },
 ];
