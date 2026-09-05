@@ -75,17 +75,18 @@ fn transcribe_with_json_flag_parses() {
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
-    // This will fail at the ASR stage (whisper-local isn't available), but verifies
-    // that the --json flag is parsed and doesn't cause a syntax error
+    // With no --asr flag, the default backend is MockAsr (see build_asr_backend),
+    // so this now succeeds; verifies --json is parsed without a syntax error.
     Command::cargo_bin("whspr")
         .unwrap()
-        .args(["transcribe", fixture_path.to_str().unwrap(), "--json"])
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--json",
+            "--no-store",
+        ])
         .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("WhisperLocal not available")
-                .or(predicate::str::contains("Error")),
-        );
+        .success();
 }
 
 #[test]
