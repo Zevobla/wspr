@@ -95,6 +95,20 @@ pub(super) fn split_punct(word: &str) -> (&str, &str, &str) {
     (core, prefix, suffix)
 }
 
+/// Whether `core` (any case) is a recognized top-level domain. Used by the
+/// email and URL passes to decide that a dotted word run really is a domain
+/// - a curated list rather than a "2..=6 letters" shape test, so an ordinary
+/// phrase like "john dot doe" isn't mistaken for `john.doe`.
+pub(super) fn is_tld(core: &str) -> bool {
+    const TLDS: &[&str] = &[
+        "com", "org", "net", "edu", "gov", "mil", "int", "io", "co", "ai", "dev", "app", "me",
+        "info", "biz", "name", "pro", "xyz", "site", "tech", "store", "blog", "ru", "us", "uk",
+        "ca", "de", "fr", "es", "it", "nl", "jp", "cn", "in", "br", "au", "eu", "tv", "cc", "ly",
+        "рф",
+    ];
+    TLDS.contains(&core.to_lowercase().as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
