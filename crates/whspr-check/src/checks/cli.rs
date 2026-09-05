@@ -103,7 +103,51 @@ fn check_nonzero_exit_on_error(bin: &Path, root: &Path) -> CheckResult {
     }
 }
 
-const CLI_CRITERIA: &[&str] = &["Y-11", "Y-03", "Y-12", "Y-04"];
+/// Y-15: progress/log output goes to stderr, not stdout.
+///
+/// `whspr transcribe` doesn't emit any progress/state-transition output
+/// today (`whspr-cli`'s `main.rs` never wires a `StateCallback` into the
+/// `Pipeline`) - so this can't yet verify "progress goes to stderr" in the
+/// strong sense of *checking a progress line's destination*. What it does
+/// check, honestly: stdout carries exactly the one final transcript line
+/// and nothing else, i.e. today's total absence of progress output at
+/// least isn't leaking onto stdout by accident. This needs re-checking
+/// once a state callback is actually wired in - see the evidence text.
+fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
+    match run_whspr(bin, root, &["transcribe", "/dev/null"]) {
+        Ok(out) if out.success => {
+            let stdout_lines: Vec<&str> = out.stdout.lines().collect();
+            if stdout_lines.len() == 1 {
+                CheckResult::pass(
+                    "Y-15",
+                    format!(
+                        "`whspr transcribe` stdout is exactly one line ({:?}); no progress/log \
+                         noise on stdout. Caveat: no progress reporting is wired up at all yet \
+                         (no StateCallback in whspr-cli's main.rs), so this only confirms \
+                         stdout stays clean *today* - re-check once progress output exists",
+                        stdout_lines[0]
+                    ),
+                )
+            } else {
+                CheckResult::fail(
+                    "Y-15",
+                    format!(
+                        "expected exactly 1 stdout line (just the transcript), got {}: {:?}",
+                        stdout_lines.len(),
+                        out.stdout
+                    ),
+                )
+            }
+        }
+        Ok(out) => CheckResult::fail(
+            "Y-15",
+            format!("`whspr transcribe /dev/null` exited non-zero: {}", out.stderr),
+        ),
+        Err(e) => CheckResult::fail("Y-15", format!("could not run whspr transcribe: {e}")),
+    }
+}
+
+const CLI_CRITERIA: &[&str] = &["Y-11", "Y-03", "Y-12", "Y-04", "Y-15"];
 
 /// Runs every CLI-behavior check against one build of the `whspr` binary.
 pub fn run_cli_checks(root: &Path) -> Vec<CheckResult> {
@@ -120,5 +164,6 @@ pub fn run_cli_checks(root: &Path) -> Vec<CheckResult> {
     let mut results = check_version(&bin, root);
     results.push(check_help(&bin, root));
     results.push(check_nonzero_exit_on_error(&bin, root));
+    results.push(check_progress_output_discipline(&bin, root));
     results
 }
