@@ -58,16 +58,13 @@ impl HotkeyListener for GlobalHotkeyListener {
                     HotKeyState::Released => HotkeyEvent::Released,
                 };
 
-                // Send to tokio mpsc channel
-                // We need to use block_on to run async code from a thread
-                let runtime = tokio::runtime::Handle::try_current();
-                if let Ok(rt) = runtime {
-                    if rt.block_on(tx.send(hk_event)).is_err() {
-                        // Receiver dropped, stop listening
-                        break;
-                    }
-                } else {
-                    // Not in a tokio runtime context
+                // `blocking_send` is designed exactly for sending from a
+                // synchronous, non-async thread into a tokio mpsc channel —
+                // it doesn't require any ambient tokio runtime context on
+                // this thread (unlike `Handle::try_current` + `block_on`,
+                // which fails here since this is a plain `std::thread`).
+                if tx.blocking_send(hk_event).is_err() {
+                    // Receiver dropped, stop listening
                     break;
                 }
             }
@@ -151,5 +148,53 @@ impl EnigoTextSink {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Regression test for a bug where `subscribe()`'s background thread used
+    /// `tokio::runtime::Handle::try_current()` to send events, which fails
+    /// immediately on a plain `std::thread` with no ambient tokio runtime
+    /// context — causing the thread to exit right away, drop `tx`, and close
+    /// the channel before any hotkey event could ever be forwarded. We can't
+    /// easily fire a real OS-level hotkey in a test, but we can assert the
+    /// background thread stays alive (channel stays open) instead of dying
+    /// immediately after `subscribe()` is called.
+    #[test]
+    fn subscribe_keeps_channel_open_without_immediate_close() {
+        let listener = match GlobalHotkeyListener::new() {
+            Ok(l) => l,
+            Err(e) => {
+                // Some sandboxed/CI environments (no display server, no
+                // accessibility permissions, etc.) can't register a global
+                // hotkey at all. That's an environment limitation, not a
+                // logic bug, so skip rather than fail.
+                eprintln!("skipping test: failed to create GlobalHotkeyListener: {e}");
+                return;
+            }
+        };
+
+        let mut rx = listener.subscribe();
+
+        // Give the background thread time to start and, under the old buggy
+        // implementation, hit its immediate early-return.
+        thread::sleep(Duration::from_millis(200));
+
+        match rx.try_recv() {
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                panic!(
+                    "subscribe() background thread exited immediately - \
+                     channel closed with no hotkey event ever received"
+                );
+            }
+            _ => {
+                // Empty (no real hotkey fired, as expected in a test) or
+                // Ok(event) both mean the background thread is alive.
+            }
+        }
     }
 }
