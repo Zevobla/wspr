@@ -294,4 +294,21 @@ mod tests {
         sink.insert(&long_text)
             .expect("insert should succeed with a display and Accessibility permission granted");
     }
+
+    /// End-to-end proof that a *real* OS-level key press actually reaches
+    /// `subscribe()`'s receiver requires a human physically pressing the
+    /// registered hotkey (Ctrl+Space) while the test is running — there's
+    /// no way to synthesize that OS-level input event from within the test
+    /// process itself. `subscribe_keeps_channel_open_without_immediate_close`
+    /// above covers everything that's automatable; this documents the gap
+    /// and gives a manual repro.
+    #[test]
+    #[ignore = "needs a human to physically press Ctrl+Space during the test; run manually"]
+    fn subscribe_delivers_a_real_hotkey_press() {
+        let listener = GlobalHotkeyListener::new().expect("failed to register global hotkey");
+        let mut rx = listener.subscribe();
+        eprintln!("press Ctrl+Space now...");
+        let event = rx.blocking_recv().expect("channel closed with no event");
+        assert_eq!(event, HotkeyEvent::Pressed);
+    }
 }
