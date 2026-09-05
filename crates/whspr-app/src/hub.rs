@@ -12,11 +12,28 @@ pub fn view(state: &State) -> Element<'_, Message> {
         column![
             text("whspr").size(28),
             settings_section(state),
+            device_section(state),
         ]
         .spacing(20)
         .padding(20)
         .width(Length::Fill),
     )
+    .into()
+}
+
+fn device_section(state: &State) -> Element<'_, Message> {
+    let device_picker = pick_list(
+        state.input_devices.clone(),
+        state.selected_device.clone(),
+        Message::DeviceSelected,
+    )
+    .placeholder("No input devices found");
+
+    column![
+        text("Microphone").size(20),
+        column![text("Input device"), device_picker].spacing(6),
+    ]
+    .spacing(12)
     .into()
 }
 
