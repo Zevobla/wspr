@@ -432,4 +432,58 @@ mod tests {
         assert_eq!(loaded.asr, AsrChoice::OpenAi);
         assert_eq!(loaded.speaker.similarity_threshold, 0.8);
     }
+
+    #[test]
+    fn speaker_embedding_choice_defaults_to_cam_plus_plus() {
+        assert_eq!(
+            SpeakerSettings::default().embedding_model,
+            SpeakerEmbeddingChoice::CamPlusPlus
+        );
+    }
+
+    #[test]
+    fn speaker_embedding_choice_from_str_accepts_known_spellings() {
+        for s in ["cam-plus-plus", "CamPlusPlus", "campplus", "cam++"] {
+            assert_eq!(
+                SpeakerEmbeddingChoice::from_str(s),
+                Ok(SpeakerEmbeddingChoice::CamPlusPlus),
+                "expected {s:?} to parse as CamPlusPlus"
+            );
+        }
+        for s in ["eres2net", "ERes2Net", "eres2-net"] {
+            assert_eq!(
+                SpeakerEmbeddingChoice::from_str(s),
+                Ok(SpeakerEmbeddingChoice::Eres2Net),
+                "expected {s:?} to parse as Eres2Net"
+            );
+        }
+        assert!(SpeakerEmbeddingChoice::from_str("nonexistent-model").is_err());
+    }
+
+    #[test]
+    fn speaker_embedding_choice_maps_to_expected_filenames() {
+        assert_eq!(
+            SpeakerEmbeddingChoice::CamPlusPlus.filename(),
+            "embedding-campplus.onnx"
+        );
+        assert_eq!(
+            SpeakerEmbeddingChoice::Eres2Net.filename(),
+            "embedding-eres2net.onnx"
+        );
+    }
+
+    #[test]
+    fn speaker_settings_embedding_model_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.speaker.embedding_model = SpeakerEmbeddingChoice::Eres2Net;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(
+            round_tripped.speaker.embedding_model,
+            SpeakerEmbeddingChoice::Eres2Net
+        );
+    }
 }
