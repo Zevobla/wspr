@@ -100,6 +100,27 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             Task::none()
         }
+        Message::Worker(event) => {
+            match event {
+                crate::worker::WorkerEvent::StateChanged(pipeline_state) => {
+                    state.pipeline_state = pipeline_state;
+                }
+                crate::worker::WorkerEvent::Completed {
+                    text,
+                    duration_secs,
+                } => {
+                    state.history.push(crate::history::HistoryEntry {
+                        text,
+                        duration_secs: Some(duration_secs),
+                    });
+                    state.last_error = None;
+                }
+                crate::worker::WorkerEvent::Failed(error) => {
+                    state.last_error = Some(error);
+                }
+            }
+            Task::none()
+        }
     }
 }
 
@@ -107,12 +128,25 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 /// hotkey preview, so normal typing (e.g. in the language text input)
 /// doesn't get swallowed or misread as a capture attempt the rest of the
 /// time.
-fn subscription(state: &State) -> iced::Subscription<Message> {
+fn hotkey_capture_subscription(state: &State) -> iced::Subscription<Message> {
     if state.hotkey_capturing {
         iced::keyboard::listen().map(Message::HotkeyCaptureKeyEvent)
     } else {
         iced::Subscription::none()
     }
+}
+
+/// The pipeline worker runs for the whole lifetime of the app (it owns the
+/// hotkey listener), independent of Hub UI state.
+fn worker_subscription(_state: &State) -> iced::Subscription<Message> {
+    iced::Subscription::run(crate::worker::pipeline_worker).map(Message::Worker)
+}
+
+fn subscription(state: &State) -> iced::Subscription<Message> {
+    iced::Subscription::batch([
+        hotkey_capture_subscription(state),
+        worker_subscription(state),
+    ])
 }
 
 fn view(state: &State, window: window::Id) -> Element<'_, Message> {
