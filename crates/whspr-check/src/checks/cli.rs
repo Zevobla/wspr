@@ -162,6 +162,9 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
 /// Y-13: CLI works headless - removes display-server env vars entirely
 /// (rather than setting them empty, which some toolkits still treat as
 /// "present") and confirms the mock/local transcribe path is unaffected.
+///
+/// Passes `--data-dir <tempdir>` so this smoke run doesn't pollute the
+/// real platform history.jsonl.
 fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     let Some(bin_str) = bin.to_str() else {
         return CheckResult::fail("Y-13", "binary path isn't valid UTF-8");
@@ -170,10 +173,16 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     let Some(fixture_str) = fixture.to_str() else {
         return CheckResult::fail("Y-13", "fixture WAV path isn't valid UTF-8");
     };
+    let Ok(data_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("Y-13", "could not create a temp data dir");
+    };
+    let Some(data_dir_str) = data_dir.path().to_str() else {
+        return CheckResult::fail("Y-13", "temp data dir path isn't valid UTF-8");
+    };
     match repo::run_without_envs(
         root,
         bin_str,
-        &["transcribe", fixture_str],
+        &["transcribe", fixture_str, "--data-dir", data_dir_str],
         &["DISPLAY", "WAYLAND_DISPLAY"],
     ) {
         Ok(out) if out.success && out.stdout.contains("the quick brown fox") => CheckResult::pass(
