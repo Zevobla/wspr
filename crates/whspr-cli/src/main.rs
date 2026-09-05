@@ -58,6 +58,25 @@ enum Command {
         /// Don't save result to history file (privacy opt-out).
         #[arg(long)]
         no_store: bool,
+
+        /// Override the history data directory. Hidden: test-only, so the
+        /// e2e suite can redirect history writes to a tempdir instead of
+        /// the real platform data dir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
+
+        /// Override the base URL for cloud ASR backends (openai, deepgram).
+        /// Hidden: test-only, so the e2e suite can point --asr openai /
+        /// --asr deepgram at a wiremock::MockServer instead of the real API.
+        #[arg(long, hide = true)]
+        asr_base_url: Option<String>,
+
+        /// Override the API key for cloud ASR backends, bypassing config's
+        /// [api_keys] table. Hidden: test-only, so the e2e suite can drive
+        /// --asr openai/deepgram without depending on a real config file
+        /// being present on the machine running `cargo test`.
+        #[arg(long, hide = true)]
+        asr_api_key: Option<String>,
     },
 
     /// Transcribe all .wav files in a directory.
@@ -84,6 +103,25 @@ enum Command {
         /// Don't save results to history file.
         #[arg(long)]
         no_store: bool,
+
+        /// Override the history data directory. Hidden: test-only, so the
+        /// e2e suite can redirect history writes to a tempdir instead of
+        /// the real platform data dir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
+
+        /// Override the base URL for cloud ASR backends (openai, deepgram).
+        /// Hidden: test-only, so the e2e suite can point --asr openai /
+        /// --asr deepgram at a wiremock::MockServer instead of the real API.
+        #[arg(long, hide = true)]
+        asr_base_url: Option<String>,
+
+        /// Override the API key for cloud ASR backends, bypassing config's
+        /// [api_keys] table. Hidden: test-only, so the e2e suite can drive
+        /// --asr openai/deepgram without depending on a real config file
+        /// being present on the machine running `cargo test`.
+        #[arg(long, hide = true)]
+        asr_api_key: Option<String>,
     },
 }
 
@@ -107,6 +145,8 @@ enum Command {
 fn build_asr_backend(
     config: &whspr_config::Config,
     asr_id: Option<&str>,
+    asr_base_url: Option<&str>,
+    asr_api_key: Option<&str>,
 ) -> anyhow::Result<Box<dyn AsrBackend>> {
     let choice = match asr_id {
         Some(id) => AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?,
@@ -116,18 +156,34 @@ fn build_asr_backend(
     match choice {
         AsrChoice::WhisperLocal => Ok(Box::new(WhisperLocal::new("model.bin"))),
         AsrChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai").ok_or_else(|| {
-                anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
-            })?;
-            Ok(Box::new(OpenAiAsr::new(api_key)))
+            let api_key = match asr_api_key {
+                Some(key) => key.to_string(),
+                None => api_key_for(config, "openai").ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "OpenAI API key not configured (set [api_keys].openai in config)"
+                    )
+                })?,
+            };
+            let backend: Box<dyn AsrBackend> = match asr_base_url {
+                Some(url) => Box::new(OpenAiAsr::with_base_url(api_key, url)),
+                None => Box::new(OpenAiAsr::new(api_key)),
+            };
+            Ok(backend)
         }
         AsrChoice::Deepgram => {
-            let api_key = api_key_for(config, "deepgram").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Deepgram API key not configured (set [api_keys].deepgram in config)"
-                )
-            })?;
-            Ok(Box::new(DeepgramAsr::new(api_key)))
+            let api_key = match asr_api_key {
+                Some(key) => key.to_string(),
+                None => api_key_for(config, "deepgram").ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Deepgram API key not configured (set [api_keys].deepgram in config)"
+                    )
+                })?,
+            };
+            let backend: Box<dyn AsrBackend> = match asr_base_url {
+                Some(url) => Box::new(DeepgramAsr::with_base_url(api_key, url)),
+                None => Box::new(DeepgramAsr::new(api_key)),
+            };
+            Ok(backend)
         }
     }
 }
@@ -184,17 +240,32 @@ async fn load_audio(file_path: &Path) -> anyhow::Result<AudioBuffer> {
     }
 }
 
-/// Saves a transcription result to the history file.
+/// Resolves the directory used for the history journal. `override_dir`
+/// (plumbed from the hidden `--data-dir` flag) takes precedence when set;
+/// otherwise falls back to the real platform data directory.
+///
+/// Keeping this resolution as an explicit, injectable parameter — rather
+/// than baking the `ProjectDirs` lookup directly into `save_to_history` —
+/// means tests can point history writes at a `tempfile::tempdir()` instead
+/// of appending to a real user's `~/.local/share/whspr` (or platform
+/// equivalent) as a side effect of `cargo test`.
+fn resolve_data_dir(override_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
+    if let Some(dir) = override_dir {
+        return Ok(dir.to_path_buf());
+    }
+    directories::ProjectDirs::from("", "", "whspr")
+        .map(|dirs| dirs.data_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("cannot determine platform data dir"))
+}
+
+/// Saves a transcription result to `history.jsonl` inside `data_dir`.
 async fn save_to_history(
+    data_dir: &Path,
     text: &str,
     asr_id: &str,
     refine_id: &str,
     wpm: f64,
 ) -> anyhow::Result<()> {
-    let dirs = directories::ProjectDirs::from("", "", "whspr")
-        .ok_or_else(|| anyhow::anyhow!("cannot determine platform data dir"))?;
-
-    let data_dir = dirs.data_dir();
     std::fs::create_dir_all(data_dir)?;
 
     let history_path = data_dir.join("history.jsonl");
@@ -238,12 +309,20 @@ async fn main() -> anyhow::Result<()> {
             language: _language,
             json: output_json,
             no_store,
+            data_dir,
+            asr_base_url,
+            asr_api_key,
         }) => {
             eprintln!("Loading audio...");
             let audio = load_audio(&file).await?;
 
             eprintln!("Building pipeline...");
-            let asr_backend = build_asr_backend(&config, asr.as_deref())?;
+            let asr_backend = build_asr_backend(
+                &config,
+                asr.as_deref(),
+                asr_base_url.as_deref(),
+                asr_api_key.as_deref(),
+            )?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
             let asr_id = asr_backend.id();
@@ -259,8 +338,14 @@ async fn main() -> anyhow::Result<()> {
             let wpm = (output.split_whitespace().count() as f64) / (elapsed / 60.0);
 
             if !no_store {
-                if let Err(e) = save_to_history(&output, asr_id, refine_id, wpm).await {
-                    eprintln!("Warning: failed to save to history: {}", e);
+                match resolve_data_dir(data_dir.as_deref()) {
+                    Ok(dir) => {
+                        if let Err(e) = save_to_history(&dir, &output, asr_id, refine_id, wpm).await
+                        {
+                            eprintln!("Warning: failed to save to history: {}", e);
+                        }
+                    }
+                    Err(e) => eprintln!("Warning: failed to save to history: {}", e),
                 }
             }
 
@@ -284,12 +369,20 @@ async fn main() -> anyhow::Result<()> {
             language: _language,
             json: output_json,
             no_store,
+            data_dir,
+            asr_base_url,
+            asr_api_key,
         }) => {
             if !dir.is_dir() {
                 anyhow::bail!("{} is not a directory", dir.display());
             }
 
-            let asr_backend = build_asr_backend(&config, asr.as_deref())?;
+            let asr_backend = build_asr_backend(
+                &config,
+                asr.as_deref(),
+                asr_base_url.as_deref(),
+                asr_api_key.as_deref(),
+            )?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
             let asr_id = asr_backend.id();
@@ -320,8 +413,18 @@ async fn main() -> anyhow::Result<()> {
                                     results.push(result);
 
                                     if !no_store {
-                                        let _ =
-                                            save_to_history(&output, asr_id, refine_id, 0.0).await;
+                                        if let Ok(history_dir) =
+                                            resolve_data_dir(data_dir.as_deref())
+                                        {
+                                            let _ = save_to_history(
+                                                &history_dir,
+                                                &output,
+                                                asr_id,
+                                                refine_id,
+                                                0.0,
+                                            )
+                                            .await;
+                                        }
                                     }
                                 }
                                 Err(e) => {

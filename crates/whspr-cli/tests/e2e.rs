@@ -3,6 +3,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
 /// Creates a minimal test WAV file with a given sample rate.
 fn create_test_wav(
@@ -87,6 +88,256 @@ fn transcribe_with_json_flag_parses() {
         ])
         .assert()
         .success();
+}
+
+/// The canned transcript text MockAsr::default() always returns
+/// (whspr_core::testkit::MockAsr).
+const MOCK_TRANSCRIPT: &str = "the quick brown fox jumps over the lazy dog";
+
+#[test]
+fn transcribe_default_no_flags_prints_mock_transcript() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // No --asr flag at all: this is the CLI's most basic, documented use
+    // case (see root CLAUDE.md's "Build & test" section) and must succeed
+    // offline against the default MockAsr backend.
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args(["transcribe", fixture_path.to_str().unwrap(), "--no-store"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(MOCK_TRANSCRIPT));
+}
+
+#[test]
+fn transcribe_json_output_has_expected_fields() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--json",
+            "--no-store",
+        ])
+        .output()
+        .expect("failed to run whspr");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout was not valid JSON");
+
+    assert_eq!(
+        parsed.get("text").and_then(|v| v.as_str()),
+        Some(MOCK_TRANSCRIPT)
+    );
+    assert_eq!(parsed.get("asr").and_then(|v| v.as_str()), Some("mock"));
+    assert_eq!(parsed.get("refine").and_then(|v| v.as_str()), Some("noop"));
+    assert!(
+        parsed.get("wpm").and_then(|v| v.as_f64()).is_some(),
+        "expected a numeric wpm field, got {:?}",
+        parsed.get("wpm")
+    );
+}
+
+#[test]
+fn transcribe_batch_succeeds_with_one_result_per_file() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    create_test_wav(&temp_dir.path().join("a.wav"), 16000, 0.1).expect("failed to create a.wav");
+    create_test_wav(&temp_dir.path().join("b.wav"), 16000, 0.1).expect("failed to create b.wav");
+
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe-batch",
+            temp_dir.path().to_str().unwrap(),
+            "--json",
+            "--no-store",
+        ])
+        .output()
+        .expect("failed to run whspr");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected one JSON result per input file, got: {:?}",
+        lines
+    );
+
+    for line in lines {
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).expect("each output line should be valid JSON");
+        assert_eq!(
+            parsed.get("text").and_then(|v| v.as_str()),
+            Some(MOCK_TRANSCRIPT)
+        );
+        assert!(parsed.get("file").and_then(|v| v.as_str()).is_some());
+    }
+}
+
+#[test]
+fn transcribe_appends_history_entry_when_stored() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // --data-dir is a hidden, test-only override (see resolve_data_dir in
+    // main.rs) that redirects history writes away from the real platform
+    // data directory.
+    let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let history_path = data_dir.path().join("history.jsonl");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(&history_path).expect("history.jsonl should exist");
+    let lines: Vec<&str> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(lines.len(), 1, "expected exactly one history line");
+
+    let entry: serde_json::Value =
+        serde_json::from_str(lines[0]).expect("history line should be valid JSON");
+    assert_eq!(
+        entry.get("text").and_then(|v| v.as_str()),
+        Some(MOCK_TRANSCRIPT)
+    );
+    assert_eq!(entry.get("asr").and_then(|v| v.as_str()), Some("mock"));
+    assert_eq!(entry.get("refine").and_then(|v| v.as_str()), Some("noop"));
+    assert_eq!(entry.get("source").and_then(|v| v.as_str()), Some("cli"));
+    assert!(entry.get("timestamp").and_then(|v| v.as_u64()).is_some());
+    assert!(entry.get("wpm").is_some());
+    assert_eq!(
+        entry.get("word_count").and_then(|v| v.as_u64()),
+        Some(MOCK_TRANSCRIPT.split_whitespace().count() as u64)
+    );
+}
+
+#[test]
+fn transcribe_no_store_skips_history_entry() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let history_path = data_dir.path().join("history.jsonl");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--no-store",
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(
+        !history_path.exists(),
+        "--no-store must not create a history file"
+    );
+}
+
+// The wiremock server's background listener task and the subprocess spawned
+// by assert_cmd both need to make progress at once: the subprocess call
+// blocks the calling OS thread synchronously, so a single-threaded runtime
+// would never get to poll the mock server. `flavor = "multi_thread"` puts
+// them on separate worker threads.
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcribe_with_asr_openai_succeeds_against_mock_server() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(matchers::method("POST"))
+        .and(matchers::path("/v1/audio/transcriptions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"text": "hello from openai mock"})),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // --asr-base-url and --asr-api-key are hidden, test-only overrides (see
+    // build_asr_backend in main.rs) that let a real cloud backend be
+    // exercised end-to-end against a local mock server instead of the
+    // network.
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "openai",
+            "--asr-base-url",
+            &mock_server.uri(),
+            "--asr-api-key",
+            "test-key",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello from openai mock"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transcribe_with_asr_deepgram_succeeds_against_mock_server() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(matchers::method("POST"))
+        .and(matchers::path("/v1/listen"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "results": {
+                "channels": [
+                    {"alternatives": [{"transcript": "hello from deepgram mock"}]}
+                ]
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "deepgram",
+            "--asr-base-url",
+            &mock_server.uri(),
+            "--asr-api-key",
+            "test-key",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello from deepgram mock"));
 }
 
 #[test]
