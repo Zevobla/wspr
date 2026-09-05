@@ -374,8 +374,10 @@ mod tests {
     #[test]
     fn save_then_load_round_trips() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
-        let mut cfg = Config::default();
-        cfg.asr = AsrChoice::OpenAi;
+        let mut cfg = Config {
+            asr: AsrChoice::OpenAi,
+            ..Default::default()
+        };
         cfg.speaker.similarity_threshold = 0.8;
         cfg.save(temp_dir.path()).expect("save should succeed");
 
