@@ -14,10 +14,12 @@
 //!   --refine ID                     Text refiner (noop, openai, anthropic, llama-local; default from config)
 //!   --language LANG                 BCP47 language code (e.g. en, es, fr; not yet wired to ASR)
 //!   --embedding CHOICE               Speaker embedding model for `diarize` (cam-plus-plus, eres2net; default from config)
+//!   --format FORMAT                 `transcribe`: timecoded export (srt, vtt); overrides --json
 //!   --json                          Output JSON object instead of plain text
 //!   --no-store                      Don't save result to history file
 
 mod diarize_cmd;
+mod subtitles;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -57,6 +59,12 @@ enum Command {
         /// BCP47 language code (e.g. en, es, fr; not yet wired to ASR).
         #[arg(long)]
         language: Option<String>,
+
+        /// Timecoded export format ("srt" or "vtt"). When set, prints
+        /// subtitle-style cues (from the ASR `Transcript`'s segment timing)
+        /// instead of plain text, taking precedence over --json.
+        #[arg(long)]
+        format: Option<String>,
 
         /// Output JSON object with transcription metadata.
         #[arg(long)]
@@ -363,14 +371,22 @@ async fn main() -> anyhow::Result<()> {
             asr,
             refine,
             language: _language,
+            format,
             json: output_json,
             no_store,
             data_dir,
             asr_base_url,
             asr_api_key,
         }) => {
+            let export_format = format
+                .as_deref()
+                .map(subtitles::ExportFormat::from_str)
+                .transpose()
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+
             eprintln!("Loading audio...");
             let audio = load_audio(&file).await?;
+            let audio_duration_secs = audio.duration_secs();
 
             eprintln!("Building pipeline...");
             let asr_backend = build_asr_backend(
@@ -389,7 +405,7 @@ async fn main() -> anyhow::Result<()> {
 
             eprintln!("Transcribing and refining...");
             let start = Instant::now();
-            let output = pipeline.run(audio, &ctx).await?;
+            let (transcript, output) = pipeline.run_with_transcript(audio, &ctx).await?;
             let elapsed = start.elapsed().as_secs_f64();
             let wpm = (output.split_whitespace().count() as f64) / (elapsed / 60.0);
 
@@ -405,7 +421,17 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            if output_json {
+            if let Some(fmt) = export_format {
+                let rendered = match fmt {
+                    subtitles::ExportFormat::Srt => {
+                        subtitles::to_srt(&transcript, audio_duration_secs)
+                    }
+                    subtitles::ExportFormat::Vtt => {
+                        subtitles::to_vtt(&transcript, audio_duration_secs)
+                    }
+                };
+                println!("{}", rendered);
+            } else if output_json {
                 let json_out = json!({
                     "text": output,
                     "asr": asr_id,
