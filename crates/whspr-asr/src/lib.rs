@@ -11,6 +11,35 @@ use std::path::PathBuf;
 
 use whspr_core::{AsrBackend, AsrOptions, AudioBuffer, Result, Transcript, WhsprError};
 
+/// Local transcription via whisper.cpp (whisper-rs). Opt in the `whisper-rs`
+/// workspace dep from this crate's own Cargo.toml when implementing.
+pub struct WhisperLocal {
+    pub model_path: PathBuf,
+}
+
+impl WhisperLocal {
+    pub fn new(model_path: impl Into<PathBuf>) -> Self {
+        Self {
+            model_path: model_path.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl AsrBackend for WhisperLocal {
+    async fn transcribe(&self, _audio: &AudioBuffer, _opts: &AsrOptions) -> Result<Transcript> {
+        Err(WhsprError::Asr(
+            "WhisperLocal not available: whisper-rs build requires cmake in the nix devShell. \
+             See the project flake.nix to add cmake to the build environment."
+                .to_string(),
+        ))
+    }
+
+    fn id(&self) -> &'static str {
+        "whisper-local"
+    }
+}
+
 #[cfg(feature = "testkit")]
 pub use whspr_core::testkit::MockAsr;
 
@@ -265,6 +294,87 @@ impl AsrBackend for DeepgramAsr {
 
     fn id(&self) -> &'static str {
         "deepgram"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn test_openai_asr_transcribe() {
+        let mock_server = MockServer::start().await;
+        let base_url = mock_server.uri();
+
+        // Mock the OpenAI API endpoint
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path("/v1/audio/transcriptions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"text": "hello world"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let asr = OpenAiAsr::with_base_url("test-key", &base_url);
+        let audio = AudioBuffer::new(vec![0.1; 16000], 16000); // 1 second of audio
+        let opts = AsrOptions::default();
+
+        let result = asr.transcribe(&audio, &opts).await;
+        assert!(result.is_ok());
+        let transcript = result.unwrap();
+        assert_eq!(transcript.text, "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_deepgram_asr_transcribe() {
+        let mock_server = MockServer::start().await;
+        let base_url = mock_server.uri();
+
+        // Mock the Deepgram API endpoint
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path("/v1/listen"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "results": {
+                    "channels": [
+                        {
+                            "alternatives": [
+                                {"transcript": "deepgram test"}
+                            ]
+                        }
+                    ]
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let asr = DeepgramAsr::with_base_url("test-key", &base_url);
+        let audio = AudioBuffer::new(vec![0.1; 16000], 16000); // 1 second of audio
+        let opts = AsrOptions::default();
+
+        let result = asr.transcribe(&audio, &opts).await;
+        assert!(result.is_ok());
+        let transcript = result.unwrap();
+        assert_eq!(transcript.text, "deepgram test");
+    }
+
+    #[test]
+    fn test_encode_wav() {
+        // Create a simple test signal
+        let samples = vec![0.0, 0.5, -0.5, 0.25];
+        let wav_data = encode_wav(&samples).unwrap();
+
+        // Check WAV header starts with "RIFF"
+        assert!(wav_data.starts_with(b"RIFF"));
+        // Check it has WAVE marker
+        assert_eq!(&wav_data[8..12], b"WAVE");
+        // Check it has fmt subchunk
+        assert!(wav_data[12..].windows(4).any(|w| w == b"fmt "));
+        // Check it has data subchunk
+        assert!(wav_data.windows(4).any(|w| w == b"data"));
+        // Total size should be 44 byte header + samples.len() * 2 bytes for i16 PCM data
+        assert!(wav_data.len() >= 44 + samples.len() * 2);
     }
 }
 
