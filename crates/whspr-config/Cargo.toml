@@ -10,6 +10,7 @@ whspr-core.workspace = true
 serde.workspace = true
 directories.workspace = true
 toml.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
