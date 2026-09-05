@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::traits::{AsrBackend, TextRefiner, TextSink};
-use crate::types::{AsrOptions, AudioBuffer, PipelineState, RefineContext};
+use crate::types::{AsrOptions, AudioBuffer, PipelineState, RefineContext, Transcript};
 
 /// Called on every pipeline state transition. Kept as a plain callback rather
 /// than a channel so callers that don't care can simply omit it.
@@ -45,6 +45,21 @@ impl Pipeline {
     /// Runs one full turn and returns the final (refined) text. Injects it
     /// via the configured `TextSink` as a side effect if one is set.
     pub async fn run(&self, audio: AudioBuffer, ctx: &RefineContext) -> Result<String> {
+        let (_transcript, refined) = self.run_with_transcript(audio, ctx).await?;
+        Ok(refined)
+    }
+
+    /// Like `run`, but also returns the full ASR `Transcript` (including
+    /// per-segment timing) alongside the refined text. `run` alone discards
+    /// segment timing once it flattens the result down to a single
+    /// `String`; callers that need both the clean final text and
+    /// per-segment timestamps (e.g. exporting an SRT/VTT file) want this
+    /// instead.
+    pub async fn run_with_transcript(
+        &self,
+        audio: AudioBuffer,
+        ctx: &RefineContext,
+    ) -> Result<(Transcript, String)> {
         self.report(PipelineState::Transcribing);
         let transcript = self.asr.transcribe(&audio, &AsrOptions::default()).await?;
 
@@ -57,7 +72,7 @@ impl Pipeline {
         }
 
         self.report(PipelineState::Idle);
-        Ok(refined)
+        Ok((transcript, refined))
     }
 }
 
