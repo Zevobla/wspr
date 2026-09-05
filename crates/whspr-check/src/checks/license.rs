@@ -309,3 +309,70 @@ pub fn check_readme_names_license(root: &Path) -> CheckResult {
         )
     }
 }
+
+/// (package name, declared `license`, `license_file`) - one per resolved
+/// non-workspace dependency.
+type ThirdPartyLicense = (String, Option<String>, Option<String>);
+
+/// Every resolved non-workspace package's license info from `cargo
+/// metadata` - shared by Z-07 and Z-08, which both need the same
+/// third-party dependency list.
+fn third_party_licenses(root: &Path) -> anyhow::Result<Vec<ThirdPartyLicense>> {
+    let meta = repo::cargo_metadata(root)?;
+    let members: std::collections::HashSet<&str> = meta["workspace_members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.as_str())
+        .collect();
+    let packages = meta["packages"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("cargo metadata JSON had no `packages` array"))?;
+
+    Ok(packages
+        .iter()
+        .filter(|p| !members.contains(p["id"].as_str().unwrap_or_default()))
+        .map(|p| {
+            (
+                p["name"].as_str().unwrap_or("?").to_string(),
+                p["license"].as_str().map(str::to_string),
+                p["license_file"].as_str().map(str::to_string),
+            )
+        })
+        .collect())
+}
+
+/// Z-07: dependency-license inventory - every resolved third-party
+/// dependency reports a license (SPDX expression) or a license file.
+pub fn check_dependency_license_inventory(root: &Path) -> CheckResult {
+    let deps = match third_party_licenses(root) {
+        Ok(d) => d,
+        Err(e) => return CheckResult::fail("Z-07", e.to_string()),
+    };
+    let missing: Vec<&str> = deps
+        .iter()
+        .filter(|(_, lic, file)| lic.is_none() && file.is_none())
+        .map(|(name, _, _)| name.as_str())
+        .collect();
+
+    if missing.is_empty() {
+        CheckResult::pass(
+            "Z-07",
+            format!(
+                "all {} resolved third-party dependencies (from `cargo metadata`) report a \
+                 license or a license_file - none missing",
+                deps.len()
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "Z-07",
+            format!(
+                "{}/{} resolved dependencies report neither a license nor a license_file: {}",
+                missing.len(),
+                deps.len(),
+                missing.join(", ")
+            ),
+        )
+    }
+}
