@@ -108,7 +108,7 @@ pub fn check_mic_model_independence(root: &Path, tests_passed: bool) -> CheckRes
         );
     }
 
-    let capture_refs = match repo::git_grep(root, &["-F"], "start_capture(") {
+    let capture_refs = match repo::git_grep(root, &["-F"], "start_capture(", &[]) {
         Ok(lines) => lines,
         Err(e) => {
             return CheckResult::fail("AB-06", format!("could not grep for start_capture(: {e}"))

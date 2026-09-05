@@ -87,7 +87,12 @@ pub fn check_config_in_platform_dir(root: &Path) -> CheckResult {
     };
     let config_dir = project_dirs.config_dir();
 
-    let uses_project_dirs = match repo::git_grep(root, &["-F"], "ProjectDirs::from(\"\", \"\", \"whspr\")") {
+    let uses_project_dirs = match repo::git_grep(
+        root,
+        &["-F"],
+        "ProjectDirs::from(\"\", \"\", \"whspr\")",
+        &["*.rs"],
+    ) {
         Ok(matches) => !matches.is_empty(),
         Err(e) => return CheckResult::fail("B-14", format!("could not grep whspr-config source: {e}")),
     };
