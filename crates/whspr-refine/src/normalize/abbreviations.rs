@@ -12,11 +12,56 @@ use super::split_punct;
 /// matching. Ambiguous-with-a-common-word entries are intentionally omitted.
 const ACRONYMS: &[&str] = &[
     // English initialisms
-    "usa", "uk", "eu", "un", "nasa", "fbi", "cia", "nato", "gps", "api", "url", "uri", "html",
-    "css", "http", "https", "sql", "json", "xml", "cpu", "gpu", "usb", "pdf", "faq", "ceo", "cto",
-    "cfo", "vip", "asap", "diy", "suv", "gdp", "dna", "rna", "hiv", "nba", "nfl", "ussr",
+    "usa",
+    "uk",
+    "eu",
+    "un",
+    "nasa",
+    "fbi",
+    "cia",
+    "nato",
+    "gps",
+    "api",
+    "url",
+    "uri",
+    "html",
+    "css",
+    "http",
+    "https",
+    "sql",
+    "json",
+    "xml",
+    "cpu",
+    "gpu",
+    "usb",
+    "pdf",
+    "faq",
+    "ceo",
+    "cto",
+    "cfo",
+    "vip",
+    "asap",
+    "diy",
+    "suv",
+    "gdp",
+    "dna",
+    "rna",
+    "hiv",
+    "nba",
+    "nfl",
+    "ussr",
     // Russian initialisms
-    "сша", "ссср", "рф", "мгу", "мид", "ндс", "ржд", "гибдд", "оао", "ооо", "зао",
+    "сша",
+    "ссср",
+    "рф",
+    "мгу",
+    "мид",
+    "ндс",
+    "ржд",
+    "гибдд",
+    "оао",
+    "ооо",
+    "зао",
 ];
 
 fn is_acronym(core: &str) -> bool {
@@ -46,7 +91,10 @@ mod tests {
     #[test]
     fn english_acronyms() {
         assert_eq!(normalize_abbreviations("nasa"), "NASA");
-        assert_eq!(normalize_abbreviations("the fbi and the cia"), "the FBI and the CIA");
+        assert_eq!(
+            normalize_abbreviations("the fbi and the cia"),
+            "the FBI and the CIA"
+        );
         assert_eq!(normalize_abbreviations("json over http"), "JSON over HTTP");
     }
 
@@ -66,7 +114,10 @@ mod tests {
     fn preserves_surrounding_punctuation() {
         assert_eq!(normalize_abbreviations("(nasa)"), "(NASA)");
         assert_eq!(normalize_abbreviations("nasa,"), "NASA,");
-        assert_eq!(normalize_abbreviations("работает в мид."), "работает в МИД.");
+        assert_eq!(
+            normalize_abbreviations("работает в мид."),
+            "работает в МИД."
+        );
     }
 
     #[test]

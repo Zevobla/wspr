@@ -24,7 +24,9 @@ enum Placement {
 fn currency_symbol(core: &str) -> Option<(&'static str, Placement)> {
     use Placement::{After, Before};
     Some(match core.to_lowercase().as_str() {
-        "dollar" | "dollars" | "usd" | "доллар" | "доллара" | "долларов" => ("$", Before),
+        "dollar" | "dollars" | "usd" | "доллар" | "доллара" | "долларов" => {
+            ("$", Before)
+        }
         "euro" | "euros" | "евро" => ("€", Before),
         "pound" | "pounds" | "фунт" | "фунта" | "фунтов" => ("£", Before),
         "рубль" | "рубля" | "рублей" | "руб" => ("₽", After),
