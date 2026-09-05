@@ -15,6 +15,7 @@ whspr-audio.workspace = true
 whspr-asr.workspace = true
 whspr-refine.workspace = true
 whspr-config.workspace = true
+whspr-diarize = { path = "../whspr-diarize" }
 clap.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
