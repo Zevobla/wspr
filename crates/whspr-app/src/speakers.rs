@@ -81,19 +81,28 @@ mod tests {
         writer.finalize().expect("failed to finalize test wav");
     }
 
+    /// Covers both the mock-fallback path and the `SPEAKER_MODEL_DIR`
+    /// env-var-fallback path in one test (rather than two separate
+    /// `#[test]` fns), since `cargo test` runs tests in parallel threads by
+    /// default and this env var is process-global -- two tests mutating it
+    /// concurrently would race. Mirrors `whspr_asr::WhisperLocal`'s
+    /// identically-reasoned `resolve_model_path_precedence` test.
     #[tokio::test]
-    async fn run_diarize_scan_against_mock_diarizer() {
+    async fn run_diarize_scan_mock_and_env_var_fallback() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let wav_path = dir.path().join("recording.wav");
         write_test_wav(&wav_path);
-        let db_path = dir.path().join("speakers.json");
 
-        // `MockDiarizer::default()`'s two canned embeddings are orthogonal
-        // (cosine similarity 0.0), so the real default similarity threshold
-        // (`SpeakerSettings::default().similarity_threshold`, 0.7) is enough
-        // to exercise two *distinct* speakers being enrolled, as intended.
-        let result = run_diarize_scan(
-            wav_path,
+        // No model_dir and SPEAKER_MODEL_DIR unset: falls back to the
+        // deterministic MockDiarizer. `MockDiarizer::default()`'s two
+        // canned embeddings are orthogonal (cosine similarity 0.0), so the
+        // real default similarity threshold
+        // (`SpeakerSettings::default().similarity_threshold`, 0.7) is
+        // enough to exercise two *distinct* speakers being enrolled.
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+        let db_path = dir.path().join("speakers.json");
+        let (db, count) = run_diarize_scan(
+            wav_path.clone(),
             None,
             SpeakerEmbeddingChoice::default(),
             0.7,
@@ -102,10 +111,28 @@ mod tests {
         )
         .await
         .expect("run_diarize_scan should succeed with the mock diarizer");
-
-        let (db, count) = result;
         assert_eq!(count, 2);
         assert_eq!(db.profiles.len(), 2);
         assert!(db_path.is_file());
+
+        // No model_dir, but SPEAKER_MODEL_DIR set to a bogus path: should
+        // attempt (and fail on) a real SherpaDiarizer rather than silently
+        // succeeding via MockDiarizer, proving the env var is consulted.
+        std::env::set_var("SPEAKER_MODEL_DIR", "/nonexistent/from-env");
+        let err = run_diarize_scan(
+            wav_path,
+            None,
+            SpeakerEmbeddingChoice::default(),
+            0.7,
+            SpeakerDb::default(),
+            dir.path().join("speakers2.json"),
+        )
+        .await
+        .expect_err("should fail since /nonexistent/from-env doesn't exist");
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+        assert!(
+            err.contains("from-env"),
+            "expected the error to mention the SPEAKER_MODEL_DIR-sourced path, got: {err}"
+        );
     }
 }
