@@ -143,6 +143,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Some(db_path) => Task::perform(
                     crate::speakers::run_diarize_scan(
                         path,
+                        state.config.speaker.enabled,
                         state.config.speaker.model_dir.clone(),
                         state.config.speaker.embedding_model,
                         state.config.speaker.similarity_threshold,
