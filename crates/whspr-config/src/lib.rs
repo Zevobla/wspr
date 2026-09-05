@@ -16,6 +16,10 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+mod speaker;
+
+pub use speaker::{SpeakerDb, SpeakerProfile};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AsrChoice {
@@ -62,6 +66,34 @@ impl FromStr for RefineChoice {
     }
 }
 
+/// Settings for the speaker-fingerprinting (diarization) feature.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct SpeakerSettings {
+    /// Whether the diarization/speaker-fingerprinting feature is turned on
+    /// at all. Lets a user who doesn't care about it skip the sherpa model
+    /// download entirely without anything else breaking.
+    pub enabled: bool,
+    /// Directory containing the sherpa-onnx segmentation + embedding model
+    /// files (see `whspr-diarize` for the expected filenames). `None` means
+    /// not configured yet — diarization fails with an honest error until
+    /// the user sets this.
+    pub model_dir: Option<std::path::PathBuf>,
+    /// Minimum cosine similarity to match a turn to an already-enrolled
+    /// speaker rather than creating a new one. See `SpeakerDb::match_or_enroll`.
+    pub similarity_threshold: f32,
+}
+
+impl Default for SpeakerSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model_dir: None,
+            similarity_threshold: 0.7,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -84,6 +116,8 @@ pub struct Config {
     /// `[whisper]` table.
     #[serde(default)]
     pub whisper: WhisperConfig,
+    #[serde(default)]
+    pub speaker: SpeakerSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
@@ -99,6 +133,24 @@ pub struct WhisperConfig {
     /// path has been configured yet.
     #[serde(default)]
     pub model_path: Option<PathBuf>,
+}
+
+impl Config {
+    /// Writes this config as TOML to `config_dir/config.toml`, creating the
+    /// directory if needed. The save-side counterpart to `load_from` —
+    /// unlike that function's best-effort, swallow-errors first-run write,
+    /// this one surfaces failures to the caller (e.g. the GUI wants to know
+    /// if a settings change didn't actually persist).
+    pub fn save(&self, config_dir: &Path) -> whspr_core::Result<()> {
+        std::fs::create_dir_all(config_dir).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to create config dir: {e}"))
+        })?;
+        let toml_string = toml::to_string_pretty(self).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to serialize config: {e}"))
+        })?;
+        std::fs::write(config_dir.join("config.toml"), toml_string)
+            .map_err(|e| whspr_core::WhsprError::Config(format!("failed to write config: {e}")))
+    }
 }
 
 /// Loads the effective config from the platform config directory.
@@ -316,5 +368,20 @@ mod tests {
             toml::from_str(&toml_string).expect("failed to deserialize config");
 
         assert_eq!(round_tripped.whisper, cfg.whisper);
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let mut cfg = Config {
+            asr: AsrChoice::OpenAi,
+            ..Default::default()
+        };
+        cfg.speaker.similarity_threshold = 0.8;
+        cfg.save(temp_dir.path()).expect("save should succeed");
+
+        let loaded = load_from(Some(temp_dir.path()));
+        assert_eq!(loaded.asr, AsrChoice::OpenAi);
+        assert_eq!(loaded.speaker.similarity_threshold, 0.8);
     }
 }
