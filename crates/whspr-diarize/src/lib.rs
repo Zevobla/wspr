@@ -275,14 +275,18 @@ mod tests {
 
     #[test]
     fn new_rejects_missing_model_dir() {
-        let err = SherpaDiarizer::new("/nonexistent/whspr-diarize-test-model-dir").unwrap_err();
+        let err = SherpaDiarizer::new(
+            "/nonexistent/whspr-diarize-test-model-dir",
+            SpeakerEmbeddingChoice::CamPlusPlus,
+        )
+        .unwrap_err();
         assert!(matches!(err, WhsprError::Diarize(_)));
     }
 
     #[test]
     fn new_rejects_model_dir_missing_both_files() {
         let dir = tempfile::tempdir().unwrap();
-        let err = SherpaDiarizer::new(dir.path()).unwrap_err();
+        let err = SherpaDiarizer::new(dir.path(), SpeakerEmbeddingChoice::CamPlusPlus).unwrap_err();
         match err {
             WhsprError::Diarize(msg) => assert!(
                 msg.contains("segmentation model"),
@@ -300,11 +304,33 @@ mod tests {
             b"not a real onnx model, just enough to exist as a file",
         )
         .unwrap();
-        let err = SherpaDiarizer::new(dir.path()).unwrap_err();
+        let err = SherpaDiarizer::new(dir.path(), SpeakerEmbeddingChoice::CamPlusPlus).unwrap_err();
         match err {
             WhsprError::Diarize(msg) => assert!(
                 msg.contains("embedding model"),
                 "expected the embedding model to be reported missing, got: {msg}"
+            ),
+            other => panic!("expected WhsprError::Diarize, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_looks_up_the_selected_embedding_choice_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(SEGMENTATION_MODEL_FILENAME), b"stub").unwrap();
+        // Only the Eres2Net file exists. Asking for CamPlusPlus should still
+        // fail on the embedding model specifically, proving `new` actually
+        // looks up the *chosen* filename rather than always the same one.
+        std::fs::write(
+            dir.path().join(SpeakerEmbeddingChoice::Eres2Net.filename()),
+            b"stub",
+        )
+        .unwrap();
+        let err = SherpaDiarizer::new(dir.path(), SpeakerEmbeddingChoice::CamPlusPlus).unwrap_err();
+        match err {
+            WhsprError::Diarize(msg) => assert!(
+                msg.contains("embedding model"),
+                "expected the CamPlusPlus embedding model to be reported missing, got: {msg}"
             ),
             other => panic!("expected WhsprError::Diarize, got {other:?}"),
         }
