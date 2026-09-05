@@ -1,6 +1,11 @@
 //! Small string helpers shared across check modules (mostly for trimming
 //! subprocess output down to a readable amount of evidence text).
 
+/// File extensions that mean "this is a model weight file", shared by every
+/// check that cares whether one is tracked in git (AB-06, Z-12): local
+/// whisper.cpp/llama.cpp weights are `.gguf`/`.bin`/`.ggml`.
+pub const MODEL_WEIGHT_EXTENSIONS: &[&str] = &[".gguf", ".bin", ".ggml"];
+
 /// Last `n` bytes of `s`, snapped forward to the nearest UTF-8 char
 /// boundary so this never panics on a multi-byte character straddling the
 /// cut point.
