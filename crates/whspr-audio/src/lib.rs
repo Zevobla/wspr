@@ -241,7 +241,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
                         buf.extend_from_slice(data);
                     }
                 },
-                |err| eprintln!("stream error: {}", err),
+                |err| tracing::error!("cpal input stream error: {}", err),
                 None,
             )
             .map_err(|e| WhsprError::Audio(format!("failed to build F32 stream: {}", e)))?,
@@ -257,7 +257,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
                             }
                         }
                     },
-                    |err| eprintln!("stream error: {}", err),
+                    |err| tracing::error!("cpal input stream error: {}", err),
                     None,
                 )
                 .map_err(|e| WhsprError::Audio(format!("failed to build I16 stream: {}", e)))?
@@ -275,7 +275,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
                             }
                         }
                     },
-                    |err| eprintln!("stream error: {}", err),
+                    |err| tracing::error!("cpal input stream error: {}", err),
                     None,
                 )
                 .map_err(|e| WhsprError::Audio(format!("failed to build U16 stream: {}", e)))?
