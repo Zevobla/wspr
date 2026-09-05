@@ -1,15 +1,16 @@
 //! Text refiner implementations. Everything here implements
 //! `whspr_core::TextRefiner`. `NoopRefiner` is real and always available
 //! (it's the "no LLM cleanup" choice, not just a test double). `OpenAiRefiner`
-//! and `AnthropicRefiner` are real cloud-backed implementations. `LlamaLocal`
-//! returns a runtime error: llama-cpp-2 requires `cmake` to build its native
-//! sources, and `cmake` is not present in this project's nix devShell, so
-//! wiring it up isn't possible from this crate alone (see the `refine` method
-//! below for details).
+//! and `AnthropicRefiner` are real, cloud-backed implementations.
+//! `LlamaLocal` (in `llama_local.rs`) is real too, but local: it runs a GGUF
+//! model through llama-cpp-2 instead of calling out to an API.
+
+mod llama_local;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+pub use llama_local::LlamaLocal;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
 /// Builds the shared "clean up speech-to-text" instructions used as the
@@ -274,42 +275,6 @@ impl TextRefiner for AnthropicRefiner {
     }
 }
 
-/// Local cleanup via a small llama.cpp model (llama-cpp-2).
-///
-/// Blocked: llama-cpp-2 builds llama.cpp's native C/C++ sources via `cmake`,
-/// and `cmake` is not available in this project's nix devShell
-/// (`nix develop -c which cmake` fails; `cargo build --features llama` dies
-/// in the `llama-cpp-sys-2` build script with "is `cmake` not installed?").
-/// Adding `cmake` requires editing `flake.nix`, which is out of scope for
-/// this crate. `refine` below returns a clear runtime error instead of
-/// pretending this backend works.
-pub struct LlamaLocal {
-    pub model_path: std::path::PathBuf,
-}
-
-impl LlamaLocal {
-    pub fn new(model_path: impl Into<std::path::PathBuf>) -> Self {
-        Self {
-            model_path: model_path.into(),
-        }
-    }
-}
-
-#[async_trait]
-impl TextRefiner for LlamaLocal {
-    async fn refine(&self, _raw: &str, _ctx: &RefineContext) -> Result<String> {
-        Err(WhsprError::Refine(
-            "LlamaLocal not available: llama-cpp-2 build requires cmake in the nix devShell. \
-             See the project flake.nix to add cmake to the build environment."
-                .to_string(),
-        ))
-    }
-
-    fn id(&self) -> &'static str {
-        "llama-local"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,11 +426,5 @@ mod tests {
     fn test_anthropic_refiner_id() {
         let refiner = AnthropicRefiner::new("key", "claude-3");
         assert_eq!(refiner.id(), "anthropic");
-    }
-
-    #[test]
-    fn test_llama_local_id() {
-        let refiner = LlamaLocal::new("/path/to/model.gguf");
-        assert_eq!(refiner.id(), "llama-local");
     }
 }
