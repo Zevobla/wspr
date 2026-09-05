@@ -4,6 +4,7 @@
 
 mod error;
 mod pipeline;
+mod similarity;
 mod traits;
 mod types;
 
@@ -12,7 +13,9 @@ pub mod testkit;
 
 pub use error::{Result, WhsprError};
 pub use pipeline::{Pipeline, StateCallback};
-pub use traits::{AsrBackend, HotkeyEvent, HotkeyListener, TextRefiner, TextSink};
+pub use similarity::cosine_similarity;
+pub use traits::{AsrBackend, Diarizer, HotkeyEvent, HotkeyListener, TextRefiner, TextSink};
 pub use types::{
-    AsrOptions, AudioBuffer, PipelineState, RefineContext, Transcript, TranscriptSegment,
+    AsrOptions, AudioBuffer, PipelineState, RefineContext, SpeakerTurn, Transcript,
+    TranscriptSegment,
 };
