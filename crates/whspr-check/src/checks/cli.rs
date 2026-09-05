@@ -4,8 +4,8 @@
 //! for every check), so cargo's own build noise never leaks into the
 //! stdout/stderr we're inspecting.
 
-use crate::report::CheckResult;
 use crate::repo::{self, CmdOutput};
+use crate::report::CheckResult;
 use std::path::Path;
 
 fn run_whspr(bin: &Path, root: &Path, args: &[&str]) -> anyhow::Result<CmdOutput> {
@@ -25,20 +25,29 @@ fn check_version(bin: &Path, root: &Path) -> Vec<CheckResult> {
             } else {
                 CheckResult::fail(
                     "Y-11",
-                    format!("`whspr --version` exited non-zero; stderr: {}", out.stderr.trim()),
+                    format!(
+                        "`whspr --version` exited non-zero; stderr: {}",
+                        out.stderr.trim()
+                    ),
                 )
             };
-            let looks_like_version =
-                out.stdout.to_lowercase().contains("whspr") && out.stdout.chars().any(|c| c.is_ascii_digit());
+            let looks_like_version = out.stdout.to_lowercase().contains("whspr")
+                && out.stdout.chars().any(|c| c.is_ascii_digit());
             let y03 = if looks_like_version {
                 CheckResult::pass(
                     "Y-03",
-                    format!("stdout: {:?} (contains \"whspr\" and a digit)", out.stdout.trim()),
+                    format!(
+                        "stdout: {:?} (contains \"whspr\" and a digit)",
+                        out.stdout.trim()
+                    ),
                 )
             } else {
                 CheckResult::fail(
                     "Y-03",
-                    format!("stdout doesn't look like a version string: {:?}", out.stdout.trim()),
+                    format!(
+                        "stdout doesn't look like a version string: {:?}",
+                        out.stdout.trim()
+                    ),
                 )
             };
             vec![y11, y03]
@@ -121,7 +130,10 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
         }
         Ok(out) => CheckResult::fail(
             "Y-15",
-            format!("`whspr transcribe /dev/null` exited non-zero: {}", out.stderr),
+            format!(
+                "`whspr transcribe /dev/null` exited non-zero: {}",
+                out.stderr
+            ),
         ),
         Err(e) => CheckResult::fail("Y-15", format!("could not run whspr transcribe: {e}")),
     }
@@ -145,6 +157,7 @@ pub fn run_cli_checks(bin: &Path, root: &Path) -> Vec<CheckResult> {
 pub fn build_failure_results(reason: &str) -> Vec<CheckResult> {
     CLI_CRITERIA
         .iter()
-        .map(|id| CheckResult::fail(*id, format!("could not build whspr-cli: {reason}")))
+        .copied()
+        .map(|id| CheckResult::fail(id, format!("could not build whspr-cli: {reason}")))
         .collect()
 }
