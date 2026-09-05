@@ -41,6 +41,8 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(docs::check_readme_architecture(root));
     results.push(docs::check_readme_settings_table(root));
     results.push(docs::check_readme_swap_docs(root));
+    results.push(docs::check_readme_dependencies_documented(root));
+    results.push(docs::check_readme_build_steps_documented(root));
 
     results
 }
