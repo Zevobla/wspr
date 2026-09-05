@@ -204,6 +204,26 @@ mod tests {
     }
 
     #[test]
+    fn load_from_creates_config_file_on_first_run() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        assert!(!config_path.exists(), "precondition: no file yet");
+
+        let _first_run = load_from(Some(temp_dir.path()));
+        assert!(
+            config_path.is_file(),
+            "load_from() should have written a default config.toml"
+        );
+
+        // A second load reads back exactly what got written, with no
+        // further changes.
+        let second_run = load_from(Some(temp_dir.path()));
+        assert_eq!(second_run.asr, AsrChoice::WhisperLocal);
+        assert_eq!(second_run.refine, RefineChoice::Noop);
+        assert_eq!(second_run.language, None);
+    }
+
+    #[test]
     fn load_from_ignores_environment_variables() {
         // Regression test: env vars must never override the config file or
         // defaults, even for names the old design specifically read.
