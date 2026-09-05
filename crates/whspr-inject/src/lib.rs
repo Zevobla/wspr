@@ -432,6 +432,20 @@ mod tests {
         assert_eq!(clipboard.content.as_deref(), Some("user's data"));
     }
 
+    /// A mid-paste error must not strand our text on the clipboard: the
+    /// original is still restored, and the paste error is reported.
+    #[test]
+    fn stage_and_paste_restores_original_when_paste_errors() {
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || {
+            Err(WhsprError::Inject("paste failed".into()))
+        });
+
+        assert!(matches!(outcome, PasteOutcome::Pasted(Err(_))));
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+    }
+
     /// Verifies the arboard integration is real: setting text actually
     /// round-trips through the system clipboard, including non-ASCII text
     /// (the case `paste_from_clipboard` exists for). This is the one piece
