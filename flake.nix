@@ -81,10 +81,18 @@
           cargoExtraArgs = "-p whspr-cli";
           doCheck = false;
         });
+
+        whspr-app = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+          pname = "whspr-app";
+          cargoExtraArgs = "-p whspr-app";
+          doCheck = false;
+        });
       in
       {
         packages = {
           whspr-cli = whspr-cli;
+          whspr-app = whspr-app;
           default = whspr-cli;
         };
 
