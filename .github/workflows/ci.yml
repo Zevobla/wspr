@@ -24,5 +24,41 @@ jobs:
       - name: rustfmt
         run: nix develop -c -- cargo fmt --all -- --check
 
+      - name: cargo check (all targets)
+        run: nix develop -c cargo check --workspace --all-targets
+
+      - name: install cargo-deny
+        run: nix develop -c cargo install cargo-deny --locked
+
+      - name: cargo deny (licenses, bans)
+        run: nix develop -c cargo deny check licenses bans
+
+      - name: install cargo-llvm-cov
+        run: nix develop -c cargo install cargo-llvm-cov --locked
+
+      - name: cargo llvm-cov
+        run: |
+          nix develop -c cargo llvm-cov --workspace --lcov \
+            --output-path lcov.info
+
+      - name: upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov.info
+          path: lcov.info
+
+      - name: ban todo!()/unimplemented!() stubs
+        run: |
+          # whspr-check's own source legitimately mentions
+          # todo!()/unimplemented!() in comments and string literals
+          # describing this exact check (crates/whspr-check/src/checks/
+          # slop.rs), so it's excluded rather than producing permanent
+          # false positives; comment lines (//, ///, //!) are filtered
+          # the same way for every other crate.
+          ! grep -rn --include='*.rs' -E 'todo!\(|unimplemented!\(' \
+            crates/*/src \
+            | grep -v '^crates/whspr-check/' \
+            | grep -vE ':[0-9]+:[[:space:]]*//'
+
       - name: nix flake check
         run: nix flake check --print-build-logs

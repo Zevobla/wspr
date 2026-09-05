@@ -1,0 +1,6 @@
+# Project-wide rustfmt config (part of AN-02). CI runs
+# `cargo fmt --all -- --check` against this; kept to stable options so the
+# check doesn't depend on a nightly toolchain.
+edition = "2021"
+newline_style = "Unix"
+use_small_heuristics = "Default"
