@@ -11,7 +11,7 @@
 //! edit the config file. Don't add `std::env::var` reads here.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -80,6 +80,25 @@ pub struct Config {
     /// interim placeholder. Never read from environment variables.
     #[serde(default)]
     pub api_keys: BTreeMap<String, String>,
+    /// `WhisperLocal` (whisper-rs) settings, read from the config file's
+    /// `[whisper]` table.
+    #[serde(default)]
+    pub whisper: WhisperConfig,
+}
+
+/// Settings for the local whisper.cpp backend. Config-file-only like
+/// `Config::api_keys` (no env var fallback) — see the module doc comment.
+///
+/// `WhisperLocal::new(path)` (in `whspr-asr`) already accepts any path
+/// directly, so this field is a convenience for whoever eventually wires
+/// config into backend construction (e.g. `whspr-cli`); that wiring is not
+/// done here, out of scope for this crate.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WhisperConfig {
+    /// Path to a GGML model file (e.g. `ggml-base.bin`). `None` means no
+    /// path has been configured yet.
+    #[serde(default)]
+    pub model_path: Option<PathBuf>,
 }
 
 /// Loads the effective config from the platform config directory.
@@ -262,5 +281,40 @@ mod tests {
         let key = api_key_for(&Config::default(), "openai");
         std::env::remove_var("WHSPR_OPENAI_API_KEY");
         assert_eq!(key, None);
+    }
+
+    #[test]
+    fn whisper_model_path_defaults_to_none() {
+        let cfg = Config::default();
+        assert_eq!(cfg.whisper.model_path, None);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_whisper_model_path() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[whisper]").expect("failed to write whisper header");
+        writeln!(file, "model_path = \"/models/ggml-base.bin\"")
+            .expect("failed to write model_path");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert_eq!(
+            cfg.whisper.model_path,
+            Some(PathBuf::from("/models/ggml-base.bin"))
+        );
+    }
+
+    #[test]
+    fn whisper_config_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.whisper.model_path = Some(PathBuf::from("/models/ggml-base.bin"));
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(round_tripped.whisper, cfg.whisper);
     }
 }
