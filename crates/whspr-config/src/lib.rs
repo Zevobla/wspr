@@ -148,9 +148,8 @@ impl Config {
         let toml_string = toml::to_string_pretty(self).map_err(|e| {
             whspr_core::WhsprError::Config(format!("failed to serialize config: {e}"))
         })?;
-        std::fs::write(config_dir.join("config.toml"), toml_string).map_err(|e| {
-            whspr_core::WhsprError::Config(format!("failed to write config: {e}"))
-        })
+        std::fs::write(config_dir.join("config.toml"), toml_string)
+            .map_err(|e| whspr_core::WhsprError::Config(format!("failed to write config: {e}")))
     }
 }
 
