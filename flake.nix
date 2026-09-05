@@ -73,6 +73,8 @@
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
         };
 
+        inherit (import ./nix/models.nix { inherit pkgs; }) whisper-model;
+
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
         whspr-cli = craneLib.buildPackage (commonArgs // {
