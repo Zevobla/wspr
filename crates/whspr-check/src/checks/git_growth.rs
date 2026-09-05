@@ -405,3 +405,53 @@ pub fn check_commit_count(root: &Path) -> CheckResult {
         )
     }
 }
+
+/// AD-06: commits are distributed over time, not clustered into one short
+/// burst.
+///
+/// This checker's own heuristic (matching the rest of this file's style):
+/// commits collectively span at least 3 distinct UTC hour-buckets. Not the
+/// same measurement as AD-02/AD-03 (which look at gap *lengths* between
+/// consecutive commits) - a project could satisfy those with commits every
+/// few minutes and still have its entire history fit inside one hour,
+/// which this check would catch instead.
+pub fn check_commit_distribution(root: &Path) -> CheckResult {
+    let git_ref = match target_ref(root) {
+        Ok(r) => r,
+        Err(e) => return CheckResult::fail("AD-06", e.to_string()),
+    };
+    let commits = match log_all_commits(root, &git_ref) {
+        Ok(c) => c,
+        Err(e) => return CheckResult::fail("AD-06", e.to_string()),
+    };
+
+    if commits.is_empty() {
+        return CheckResult::needs_bench("AD-06", format!("no commits on {git_ref}"));
+    }
+
+    let distinct_hours: std::collections::HashSet<i64> =
+        commits.iter().map(|c| c.timestamp / 3600).collect();
+
+    const MIN_DISTINCT_HOURS: usize = 3;
+    if distinct_hours.len() >= MIN_DISTINCT_HOURS {
+        CheckResult::pass(
+            "AD-06",
+            format!(
+                "{} commits on {git_ref} span {} distinct UTC hour-buckets (threshold: >= \
+                 {MIN_DISTINCT_HOURS}) - not clustered into one short burst",
+                commits.len(),
+                distinct_hours.len()
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "AD-06",
+            format!(
+                "{} commits on {git_ref} fall within only {} distinct UTC hour-bucket(s) \
+                 (threshold: >= {MIN_DISTINCT_HOURS})",
+                commits.len(),
+                distinct_hours.len()
+            ),
+        )
+    }
+}

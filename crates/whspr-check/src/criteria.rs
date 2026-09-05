@@ -251,6 +251,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AD",
         title: "Commit authorship is a single consistent identity",
     },
+    Criterion {
+        id: "AD-06",
+        group: "AD",
+        title: "Commits are distributed over time, not clustered into one burst",
+    },
     // --- Y: CLI/batch ---
     Criterion {
         id: "Y-03",
