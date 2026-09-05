@@ -74,17 +74,23 @@ fn transcribe_with_json_flag_parses() {
 const MOCK_TRANSCRIPT: &str = "the quick brown fox jumps over the lazy dog";
 
 #[test]
-fn transcribe_default_no_flags_prints_mock_transcript() {
+fn transcribe_with_asr_mock_prints_mock_transcript() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
-    // No --asr flag at all: this is the CLI's most basic, documented use
-    // case (see root CLAUDE.md's "Build & test" section) and must succeed
-    // offline against the default MockAsr backend.
+    // The CLI's no-flag default now builds a real WhisperLocal backend (see
+    // build_asr_backend in main.rs), so `--asr mock` is this suite's
+    // explicit, deterministic, offline opt-in instead.
     Command::cargo_bin("whspr")
         .unwrap()
-        .args(["transcribe", fixture_path.to_str().unwrap(), "--no-store"])
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--no-store",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains(MOCK_TRANSCRIPT));
