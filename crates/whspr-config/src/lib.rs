@@ -316,4 +316,17 @@ mod tests {
         std::env::remove_var("WHSPR_OPENAI_API_KEY");
         assert_eq!(key, None);
     }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let mut cfg = Config::default();
+        cfg.asr = AsrChoice::OpenAi;
+        cfg.speaker.similarity_threshold = 0.8;
+        cfg.save(temp_dir.path()).expect("save should succeed");
+
+        let loaded = load_from(Some(temp_dir.path()));
+        assert_eq!(loaded.asr, AsrChoice::OpenAi);
+        assert_eq!(loaded.speaker.similarity_threshold, 0.8);
+    }
 }
