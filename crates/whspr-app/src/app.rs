@@ -15,7 +15,6 @@
 //! `State::config`/`State` fields only for this pass; they don't survive a
 //! restart. This is a deliberate, documented scope choice, not an oversight.
 
-use iced::widget::{container, text};
 use iced::{window, Element, Task, Theme};
 
 use crate::config_ui;
@@ -62,6 +61,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     }
 }
 
-fn view(_state: &State, _window: window::Id) -> Element<'_, Message> {
-    container(text("whspr")).into()
+fn view(state: &State, _window: window::Id) -> Element<'_, Message> {
+    crate::hub::view(state)
 }
