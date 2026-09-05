@@ -43,7 +43,12 @@ impl Report {
         // Group by criterion prefix
         let mut groups: BTreeMap<String, Vec<&CaseResult>> = BTreeMap::new();
         for case in &cases {
-            let prefix = case.criterion.split('-').next().unwrap_or(&case.criterion).to_string();
+            let prefix = case
+                .criterion
+                .split('-')
+                .next()
+                .unwrap_or(&case.criterion)
+                .to_string();
             groups.entry(prefix).or_default().push(case);
         }
 
@@ -166,11 +171,7 @@ mod tests {
         let f_group = report.groups.iter().find(|g| g.prefix == "F").unwrap();
         assert_eq!(f_group.case_count, 2);
 
-        let am_group = report
-            .groups
-            .iter()
-            .find(|g| g.prefix == "AM")
-            .unwrap();
+        let am_group = report.groups.iter().find(|g| g.prefix == "AM").unwrap();
         assert_eq!(am_group.case_count, 1);
     }
 

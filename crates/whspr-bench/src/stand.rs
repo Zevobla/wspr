@@ -71,11 +71,7 @@ impl StandSet {
     /// Extract the criterion prefix (everything before the first hyphen) for grouping.
     #[allow(dead_code)]
     pub fn criterion_prefix(criterion: &str) -> String {
-        criterion
-            .split('-')
-            .next()
-            .unwrap_or(criterion)
-            .to_string()
+        criterion.split('-').next().unwrap_or(criterion).to_string()
     }
 }
 
