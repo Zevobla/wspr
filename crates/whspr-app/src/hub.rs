@@ -57,8 +57,10 @@ fn hotkey_section(state: &State) -> Element<'_, Message> {
 
     column![
         text("Hotkey").size(20),
-        text("Active hotkey: Ctrl+Space (fixed -- whspr-inject doesn't yet support \
-              registering a different combo at runtime)"),
+        text(
+            "Active hotkey: Ctrl+Space (fixed -- whspr-inject doesn't yet support \
+              registering a different combo at runtime)"
+        ),
         capture_button,
         preview,
     ]
@@ -107,7 +109,10 @@ fn history_section(state: &State) -> Element<'_, Message> {
 }
 
 fn stats_section(state: &State) -> Element<'_, Message> {
-    let count_line = text(format!("Transcriptions this session: {}", state.history.len()));
+    let count_line = text(format!(
+        "Transcriptions this session: {}",
+        state.history.len()
+    ));
 
     let wpm_line = match stats::average_wpm(&state.history) {
         Some(wpm) => text(format!("Average speed: {wpm:.0} wpm")),
@@ -132,8 +137,11 @@ fn settings_section(state: &State) -> Element<'_, Message> {
         Message::RefineSelected,
     );
 
-    let language_input = text_input("e.g. en, es, fr (blank = auto-detect)", &state.language_input)
-        .on_input(Message::LanguageChanged);
+    let language_input = text_input(
+        "e.g. en, es, fr (blank = auto-detect)",
+        &state.language_input,
+    )
+    .on_input(Message::LanguageChanged);
 
     column![
         text("Settings").size(20),

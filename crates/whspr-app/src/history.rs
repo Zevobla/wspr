@@ -42,7 +42,10 @@ pub fn parse_history_jsonl(contents: &str) -> Vec<HistoryEntry> {
                 .get("duration_secs")
                 .and_then(Value::as_f64)
                 .map(|d| d as f32);
-            Some(HistoryEntry { text, duration_secs })
+            Some(HistoryEntry {
+                text,
+                duration_secs,
+            })
         })
         .collect()
 }
