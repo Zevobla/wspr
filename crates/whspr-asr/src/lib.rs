@@ -625,6 +625,14 @@ mod tests {
         assert_eq!(strip_special_tokens("dangling <|foo"), "dangling <|foo");
     }
 
+    #[test]
+    fn strip_special_tokens_is_conservative_about_short_brackets() {
+        // A single letter or a digits-only bracket isn't a known service
+        // tag, so it's left alone.
+        assert_eq!(strip_special_tokens("option [A] here"), "option [A] here");
+        assert_eq!(strip_special_tokens("clause [123]"), "clause [123]");
+    }
+
     /// AM-04: stripping a leading token must not swallow the first character
     /// of the actual utterance, whether or not a space separates them.
     #[test]
