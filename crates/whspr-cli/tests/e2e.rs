@@ -147,6 +147,45 @@ fn transcribe_json_output_has_expected_fields() {
 }
 
 #[test]
+fn transcribe_batch_succeeds_with_one_result_per_file() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    create_test_wav(&temp_dir.path().join("a.wav"), 16000, 0.1).expect("failed to create a.wav");
+    create_test_wav(&temp_dir.path().join("b.wav"), 16000, 0.1).expect("failed to create b.wav");
+
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe-batch",
+            temp_dir.path().to_str().unwrap(),
+            "--json",
+            "--no-store",
+        ])
+        .output()
+        .expect("failed to run whspr");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected one JSON result per input file, got: {:?}",
+        lines
+    );
+
+    for line in lines {
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).expect("each output line should be valid JSON");
+        assert_eq!(
+            parsed.get("text").and_then(|v| v.as_str()),
+            Some(MOCK_TRANSCRIPT)
+        );
+        assert!(parsed.get("file").and_then(|v| v.as_str()).is_some());
+    }
+}
+
+#[test]
 fn transcribe_help_mentions_asr_flag() {
     Command::cargo_bin("whspr")
         .unwrap()
