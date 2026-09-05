@@ -3,6 +3,8 @@
 //! weights/secrets ever made it into the tracked tree or git history.
 
 use crate::report::CheckResult;
+use crate::repo;
+use crate::util::MODEL_WEIGHT_EXTENSIONS;
 use std::path::Path;
 
 /// Z-01: LICENSE file present at repo root.
@@ -98,6 +100,58 @@ pub fn check_declared_license(root: &Path) -> Vec<CheckResult> {
     };
 
     vec![z02, a04]
+}
+
+/// Z-12: model weights are gitignored and absent from the tracked tree.
+/// Both halves matter: a .gitignore entry alone doesn't prove nothing was
+/// committed before the ignore rule was added, and no tracked files alone
+/// doesn't prove a contributor won't accidentally commit one next time.
+pub fn check_model_weights_ignored_and_absent(root: &Path) -> CheckResult {
+    let gitignore = std::fs::read_to_string(root.join(".gitignore")).unwrap_or_default();
+    let ignored_patterns: Vec<&str> = MODEL_WEIGHT_EXTENSIONS
+        .iter()
+        .filter(|ext| gitignore.contains(&format!("*{ext}")))
+        .copied()
+        .collect();
+
+    let tracked = match repo::git_ls_files(root) {
+        Ok(files) => files,
+        Err(e) => return CheckResult::fail("Z-12", format!("could not list tracked files: {e}")),
+    };
+    let tracked_model_files: Vec<String> = tracked
+        .into_iter()
+        .filter(|p| {
+            let lower = p.to_lowercase();
+            MODEL_WEIGHT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+        })
+        .collect();
+
+    if ignored_patterns.len() == MODEL_WEIGHT_EXTENSIONS.len() && tracked_model_files.is_empty() {
+        CheckResult::pass(
+            "Z-12",
+            format!(
+                ".gitignore covers all {} model-weight extensions ({}) and 0 are tracked",
+                MODEL_WEIGHT_EXTENSIONS.len(),
+                MODEL_WEIGHT_EXTENSIONS.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "Z-12",
+            format!(
+                ".gitignore covers {}/{} model-weight extensions ({}); tracked model-weight \
+                 files: {}",
+                ignored_patterns.len(),
+                MODEL_WEIGHT_EXTENSIONS.len(),
+                ignored_patterns.join(", "),
+                if tracked_model_files.is_empty() {
+                    "none".to_string()
+                } else {
+                    tracked_model_files.join(", ")
+                }
+            ),
+        )
+    }
 }
 
 /// How many lines of the README count as its "first screen" for Z-04 - a
