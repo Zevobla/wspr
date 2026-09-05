@@ -1,0 +1,20 @@
+[package]
+name = "whspr-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "whspr"
+path = "src/main.rs"
+
+[dependencies]
+whspr-core = { workspace = true, features = ["testkit"] }
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
