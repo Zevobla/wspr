@@ -132,7 +132,12 @@ impl EnigoTextSink {
             .set_text(text)
             .map_err(|e| WhsprError::Inject(format!("failed to set clipboard: {}", e)))?;
 
-        // Simulate paste keystroke (Cmd+V on macOS, Ctrl+V elsewhere)
+        self.send_paste_keystroke()
+    }
+
+    /// Simulates the platform paste shortcut (Cmd+V on macOS, Ctrl+V
+    /// elsewhere) into whatever window currently has focus.
+    fn send_paste_keystroke(&self) -> Result<()> {
         let mut enigo = Enigo::new(&Settings::default())
             .map_err(|e| WhsprError::Inject(format!("failed to initialize enigo: {}", e)))?;
 
