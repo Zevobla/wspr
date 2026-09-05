@@ -1,7 +1,7 @@
 //! The Hub window: settings, device list, hotkey config, history, and stats.
 
-use iced::widget::{button, column, container, pick_list, scrollable, text, text_input};
-use iced::{Element, Length};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced::{Element, Length, Theme};
 
 use crate::config_ui::{self, ASR_LABELS, REFINE_LABELS};
 use crate::state::{Message, State};
@@ -11,7 +11,7 @@ use crate::stats;
 pub fn view(state: &State) -> Element<'_, Message> {
     container(
         column![
-            text("whspr").size(28),
+            header(state),
             settings_section(state),
             device_section(state),
             hotkey_section(state),
@@ -62,6 +62,19 @@ fn hotkey_section(state: &State) -> Element<'_, Message> {
         preview,
     ]
     .spacing(8)
+    .into()
+}
+
+fn header(state: &State) -> Element<'_, Message> {
+    let theme_label = match state.theme {
+        Theme::Dark => "Switch to light",
+        _ => "Switch to dark",
+    };
+
+    row![
+        text("whspr").size(28).width(Length::Fill),
+        button(text(theme_label)).on_press(Message::ThemeToggled),
+    ]
     .into()
 }
 
