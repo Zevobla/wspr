@@ -367,7 +367,6 @@ async fn save_to_history(
     std::fs::create_dir_all(data_dir)?;
 
     let history_path = data_dir.join("history.jsonl");
-    log_rotation::rotate_if_too_large(&history_path, log_rotation::DEFAULT_MAX_BYTES)?;
     let word_count = text.split_whitespace().count();
 
     // Use SystemTime since chrono is not in workspace deps
