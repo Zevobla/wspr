@@ -11,7 +11,7 @@
 //! edit the config file. Don't add `std::env::var` reads here.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -80,6 +80,25 @@ pub struct Config {
     /// interim placeholder. Never read from environment variables.
     #[serde(default)]
     pub api_keys: BTreeMap<String, String>,
+    /// `WhisperLocal` (whisper-rs) settings, read from the config file's
+    /// `[whisper]` table.
+    #[serde(default)]
+    pub whisper: WhisperConfig,
+}
+
+/// Settings for the local whisper.cpp backend. Config-file-only like
+/// `Config::api_keys` (no env var fallback) — see the module doc comment.
+///
+/// `WhisperLocal::new(path)` (in `whspr-asr`) already accepts any path
+/// directly, so this field is a convenience for whoever eventually wires
+/// config into backend construction (e.g. `whspr-cli`); that wiring is not
+/// done here, out of scope for this crate.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WhisperConfig {
+    /// Path to a GGML model file (e.g. `ggml-base.bin`). `None` means no
+    /// path has been configured yet.
+    #[serde(default)]
+    pub model_path: Option<PathBuf>,
 }
 
 /// Loads the effective config from the platform config directory.
