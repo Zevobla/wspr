@@ -25,7 +25,9 @@ fn fraction_denominator(core: &str) -> Option<u64> {
     Some(match core.to_lowercase().as_str() {
         "half" | "halves" | "половина" | "половины" | "половину" => 2,
         "third" | "thirds" | "треть" | "трети" | "третей" => 3,
-        "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей" => 4,
+        "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей" => {
+            4
+        }
         "fifth" | "fifths" | "пятая" | "пятых" => 5,
         "sixth" | "sixths" | "шестая" | "шестых" => 6,
         "eighth" | "eighths" | "восьмая" | "восьмых" => 8,

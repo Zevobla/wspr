@@ -77,7 +77,10 @@ mod tests {
 
     #[test]
     fn domain_with_path() {
-        assert_eq!(normalize_urls("example dot com slash path"), "example.com/path");
+        assert_eq!(
+            normalize_urls("example dot com slash path"),
+            "example.com/path"
+        );
     }
 
     #[test]

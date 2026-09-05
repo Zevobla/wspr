@@ -70,8 +70,14 @@ mod tests {
 
     #[test]
     fn preserves_surrounding_text_and_punctuation() {
-        assert_eq!(normalize_phones("call 555 123 4567 now"), "call 5551234567 now");
-        assert_eq!(normalize_phones("phone: 555 123 4567."), "phone: 5551234567.");
+        assert_eq!(
+            normalize_phones("call 555 123 4567 now"),
+            "call 5551234567 now"
+        );
+        assert_eq!(
+            normalize_phones("phone: 555 123 4567."),
+            "phone: 5551234567."
+        );
     }
 
     #[test]
