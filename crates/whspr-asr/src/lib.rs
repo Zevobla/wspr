@@ -9,10 +9,16 @@ use serde::Deserialize;
 use std::io::Write;
 use std::path::PathBuf;
 
-use whspr_core::{AsrBackend, AsrOptions, AudioBuffer, Result, Transcript, WhsprError};
+use whspr_core::{
+    AsrBackend, AsrOptions, AudioBuffer, Result, Transcript, TranscriptSegment, WhsprError,
+};
 
-/// Local transcription via whisper.cpp (whisper-rs). Opt in the `whisper-rs`
-/// workspace dep from this crate's own Cargo.toml when implementing.
+/// Local transcription via whisper.cpp (whisper-rs).
+///
+/// `transcribe` assumes the `AudioBuffer` it receives is already 16kHz mono
+/// f32 PCM, per the contract documented on `whspr_core::AudioBuffer` (capture/
+/// decode/resample all normalize to that shape before anything touches an
+/// `AsrBackend`) — no resampling happens in here.
 pub struct WhisperLocal {
     pub model_path: PathBuf,
 }
@@ -27,7 +33,7 @@ impl WhisperLocal {
 
 #[async_trait]
 impl AsrBackend for WhisperLocal {
-    async fn transcribe(&self, _audio: &AudioBuffer, _opts: &AsrOptions) -> Result<Transcript> {
+    async fn transcribe(&self, audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript> {
         if !self.model_path.exists() {
             return Err(WhsprError::Asr(format!(
                 "WhisperLocal model file not found at {}; download a GGML model (e.g. \
@@ -37,12 +43,81 @@ impl AsrBackend for WhisperLocal {
             )));
         }
 
-        todo!("load the model and run inference")
+        let model_path = self.model_path.clone();
+        let samples = audio.samples.clone();
+        let language = opts.language.clone();
+
+        // whisper.cpp inference is CPU-bound and can take real wall-clock
+        // seconds; run it on a blocking-pool thread rather than blocking the
+        // async runtime directly. WhisperContext/WhisperState/FullParams are
+        // all `Send + Sync` (whisper-rs marks them so explicitly), so moving
+        // them into the closure and running synchronously in there is sound.
+        tokio::task::spawn_blocking(move || {
+            transcribe_blocking(&model_path, &samples, language.as_deref())
+        })
+        .await
+        .map_err(|e| WhsprError::Asr(format!("WhisperLocal worker thread panicked: {}", e)))?
     }
 
     fn id(&self) -> &'static str {
         "whisper-local"
     }
+}
+
+/// Runs whisper.cpp inference synchronously. Called from inside
+/// `spawn_blocking` — never call this directly from an async context.
+fn transcribe_blocking(
+    model_path: &std::path::Path,
+    samples: &[f32],
+    language: Option<&str>,
+) -> Result<Transcript> {
+    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+    let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
+        .map_err(|e| WhsprError::Asr(format!("failed to load whisper model: {}", e)))?;
+    let mut state = ctx
+        .create_state()
+        .map_err(|e| WhsprError::Asr(format!("failed to create whisper state: {}", e)))?;
+
+    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+        beam_size: 5,
+        patience: -1.0,
+    });
+    params.set_language(language);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+
+    state
+        .full(params, samples)
+        .map_err(|e| WhsprError::Asr(format!("whisper inference failed: {}", e)))?;
+
+    let mut segments = Vec::new();
+    for segment in state.as_iter() {
+        let text = segment
+            .to_str_lossy()
+            .map_err(|e| WhsprError::Asr(format!("failed to decode whisper segment: {}", e)))?;
+        segments.push(TranscriptSegment {
+            text: text.trim().to_string(),
+            start_secs: segment.start_timestamp() as f32 / 100.0,
+            end_secs: segment.end_timestamp() as f32 / 100.0,
+        });
+    }
+
+    let text = segments
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string();
+
+    Ok(Transcript {
+        text,
+        language: language.map(str::to_string),
+        segments,
+    })
 }
 
 #[cfg(feature = "testkit")]
