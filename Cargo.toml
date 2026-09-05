@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/whspr/whspr"
 
 [workspace.dependencies]
@@ -38,7 +38,7 @@ directories = "6.0"
 clap = { version = "4.6", features = ["derive"] }
 
 # Networking
-reqwest = { version = "0.13", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", features = ["json", "rustls"] }
 
 # Audio
 hound = "3.5"
