@@ -153,4 +153,48 @@ mod tests {
     fn refine_from_label_falls_back_to_default_for_unknown_label() {
         assert_eq!(refine_from_label("not-a-real-backend"), RefineChoice::Noop);
     }
+
+    #[test]
+    fn embedding_label_roundtrips_through_from_label() {
+        for choice in [
+            SpeakerEmbeddingChoice::CamPlusPlus,
+            SpeakerEmbeddingChoice::Eres2Net,
+        ] {
+            assert_eq!(embedding_from_label(embedding_label(choice)), choice);
+        }
+    }
+
+    #[test]
+    fn embedding_from_label_falls_back_to_default_for_unknown_label() {
+        assert_eq!(
+            embedding_from_label("not-a-real-embedding-model"),
+            SpeakerEmbeddingChoice::CamPlusPlus
+        );
+    }
+
+    #[test]
+    fn language_label_roundtrips_through_from_label() {
+        for &label in LANGUAGE_LABELS.iter() {
+            let language = language_from_label(label);
+            assert_eq!(language_label(&language), label);
+        }
+    }
+
+    #[test]
+    fn language_label_none_is_auto() {
+        assert_eq!(language_label(&None), "auto");
+    }
+
+    #[test]
+    fn language_label_unknown_code_falls_back_to_auto() {
+        assert_eq!(
+            language_label(&Some("xx-not-a-real-code".to_string())),
+            "auto"
+        );
+    }
+
+    #[test]
+    fn language_from_label_auto_is_none() {
+        assert_eq!(language_from_label("auto"), None);
+    }
 }
