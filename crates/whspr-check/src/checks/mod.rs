@@ -10,6 +10,7 @@ pub mod docs;
 pub mod git_growth;
 pub mod license;
 pub mod privacy;
+pub mod slop;
 pub mod tests_isolation;
 
 use crate::report::CheckResult;
@@ -72,6 +73,8 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(config::check_config_created_on_first_run());
     results.push(config::check_config_format_is_toml());
     results.push(config::check_config_in_platform_dir(root));
+
+    results.push(slop::check_stub_function_count(root));
 
     results
 }
