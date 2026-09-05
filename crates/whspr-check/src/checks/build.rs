@@ -60,8 +60,18 @@ pub fn check_build_and_lock(root: &Path) -> Vec<CheckResult> {
     out
 }
 
-/// AA-13: `cargo clippy --workspace --all-targets -- -D warnings` is clean.
-pub fn check_clippy(root: &Path) -> CheckResult {
+/// Dead-code-shaped lint names rustc/clippy actually uses, checked against
+/// a failing clippy run's stderr to tell "AC-06 specifically failed" apart
+/// from "clippy failed for some unrelated reason."
+const DEAD_CODE_MARKERS: &[&str] = &["dead_code", "never used", "never read", "never constructed"];
+
+/// AA-13 (`cargo clippy --workspace --all-targets -- -D warnings` is
+/// clean) and AC-06 (dead code absent), from the same clippy run: `-D
+/// warnings` promotes every warning - including the built-in `dead_code`
+/// lint - to a hard error, so a clean exit is already proof no dead code
+/// was flagged. No need to run clippy a second time with a narrower lint
+/// selection.
+pub fn check_clippy(root: &Path) -> Vec<CheckResult> {
     match crate::repo::run(
         root,
         "cargo",
@@ -74,18 +84,46 @@ pub fn check_clippy(root: &Path) -> CheckResult {
             "warnings",
         ],
     ) {
-        Ok(output) if output.success => CheckResult::pass(
-            "AA-13",
-            "`cargo clippy --workspace --all-targets -- -D warnings` exited 0",
-        ),
-        Ok(output) => CheckResult::fail(
-            "AA-13",
-            format!(
-                "clippy reported warnings/errors; last 800 chars of stderr: {}",
-                tail(&output.stderr, 800)
+        Ok(output) if output.success => vec![
+            CheckResult::pass(
+                "AA-13",
+                "`cargo clippy --workspace --all-targets -- -D warnings` exited 0",
             ),
-        ),
-        Err(e) => CheckResult::fail("AA-13", format!("could not run cargo clippy: {e}")),
+            CheckResult::pass(
+                "AC-06",
+                "the same clean clippy -D warnings run (see AA-13) promotes the built-in \
+                 dead_code lint to an error too, so a clean exit already proves no dead code \
+                 was flagged",
+            ),
+        ],
+        Ok(output) => {
+            let evidence = tail(&output.stderr, 800);
+            let is_dead_code = DEAD_CODE_MARKERS.iter().any(|m| output.stderr.contains(m));
+            vec![
+                CheckResult::fail(
+                    "AA-13",
+                    format!(
+                        "clippy reported warnings/errors; last 800 chars of stderr: {evidence}"
+                    ),
+                ),
+                if is_dead_code {
+                    CheckResult::fail(
+                        "AC-06",
+                        format!("clippy's dead-code-shaped lints fired: {evidence}"),
+                    )
+                } else {
+                    CheckResult::fail(
+                        "AC-06",
+                        "AA-13's clippy run failed for a non-dead-code reason (see AA-13's \
+                         evidence), so AC-06 can't be independently confirmed clean from this run",
+                    )
+                },
+            ]
+        }
+        Err(e) => vec![
+            CheckResult::fail("AA-13", format!("could not run cargo clippy: {e}")),
+            CheckResult::fail("AC-06", format!("could not run cargo clippy: {e}")),
+        ],
     }
 }
 
