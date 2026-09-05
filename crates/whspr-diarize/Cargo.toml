@@ -7,6 +7,9 @@ repository.workspace = true
 
 [dependencies]
 whspr-core.workspace = true
+# For `SpeakerEmbeddingChoice`: which embedding model to load is a
+# user-facing menu choice (see whspr-config), not a hardcoded filename.
+whspr-config.workspace = true
 # Not in [workspace.dependencies] (see root Cargo.toml's protocol for adding
 # new deps) — declared directly here. CPU-only: default features minus
 # `tts` (we don't need text-to-speech) and no `cuda`/`directml`.
