@@ -111,6 +111,42 @@ fn transcribe_default_no_flags_prints_mock_transcript() {
 }
 
 #[test]
+fn transcribe_json_output_has_expected_fields() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--json",
+            "--no-store",
+        ])
+        .output()
+        .expect("failed to run whspr");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout was not valid JSON");
+
+    assert_eq!(
+        parsed.get("text").and_then(|v| v.as_str()),
+        Some(MOCK_TRANSCRIPT)
+    );
+    assert_eq!(parsed.get("asr").and_then(|v| v.as_str()), Some("mock"));
+    assert_eq!(parsed.get("refine").and_then(|v| v.as_str()), Some("noop"));
+    assert!(
+        parsed.get("wpm").and_then(|v| v.as_f64()).is_some(),
+        "expected a numeric wpm field, got {:?}",
+        parsed.get("wpm")
+    );
+}
+
+#[test]
 fn transcribe_help_mentions_asr_flag() {
     Command::cargo_bin("whspr")
         .unwrap()
