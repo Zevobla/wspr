@@ -65,6 +65,13 @@ pub async fn run(
     data_dir: Option<PathBuf>,
     output_json: bool,
 ) -> anyhow::Result<()> {
+    if !config.speaker.enabled {
+        anyhow::bail!(
+            "speaker fingerprinting is disabled ([speaker].enabled = false in config); \
+             enable it to run `whspr diarize`"
+        );
+    }
+
     eprintln!("Loading audio...");
     let audio = crate::load_audio(&file).await?;
     let audio = whspr_audio::resample_to_16k_mono(&audio).map_err(|e| anyhow::anyhow!("{}", e))?;
