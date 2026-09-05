@@ -4,7 +4,21 @@
 
 use crate::repo;
 use crate::report::CheckResult;
+use std::collections::HashMap;
 use std::path::Path;
+
+/// The library crates AA-16 holds to a no-direct-printing standard.
+/// Deliberately excludes the binary crates (`whspr-cli`, `whspr-app`),
+/// which legitimately own their own stdout for direct user-facing program
+/// output, and `whspr-check` itself, which prints its report.
+const LIBRARY_CRATES: &[&str] = &[
+    "whspr-core",
+    "whspr-asr",
+    "whspr-refine",
+    "whspr-audio",
+    "whspr-config",
+    "whspr-inject",
+];
 
 /// AA-06: module/file size sanity - no single tracked `*.rs` file has grown
 /// unreasonably large.
@@ -56,6 +70,88 @@ pub fn check_file_size_sanity(root: &Path) -> CheckResult {
                     .map(|(f, l)| format!("{f} ({l} lines)"))
                     .collect::<Vec<_>>()
                     .join(", ")
+            ),
+        )
+    }
+}
+
+/// AA-16: logging goes through one interface, not scattered
+/// `println!`/`eprintln!` calls.
+///
+/// Scoped to `LIBRARY_CRATES` only, and excludes hits inside a `#[cfg(test)]`
+/// module: every test module in this repo is a trailing block at the end of
+/// its file (verified by inspection, not assumed), so "does this hit's line
+/// number come before the file's own `#[cfg(test)]` line" precisely
+/// separates real code from conventional test-diagnostic `eprintln!`s,
+/// without needing an actual Rust parser.
+pub fn check_logging_single_interface(root: &Path) -> CheckResult {
+    let pathspecs: Vec<String> = LIBRARY_CRATES
+        .iter()
+        .map(|c| format!("crates/{c}/src"))
+        .collect();
+    let pathspec_refs: Vec<&str> = pathspecs.iter().map(String::as_str).collect();
+
+    let matches = match repo::git_grep(root, &["-E"], r"(println|eprintln)!\(", &pathspec_refs) {
+        Ok(m) => m,
+        Err(e) => {
+            return CheckResult::fail(
+                "AA-16",
+                format!("could not grep for println!/eprintln!: {e}"),
+            )
+        }
+    };
+
+    let mut test_marker_line_by_path: HashMap<String, usize> = HashMap::new();
+    let mut real_hits: Vec<String> = Vec::new();
+
+    for line in &matches {
+        let mut parts = line.splitn(3, ':');
+        let (Some(path), Some(lineno_str), Some(content)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        if content.trim_start().starts_with("//") {
+            continue; // mentioned in a comment, not a real call site
+        }
+        let Ok(lineno) = lineno_str.parse::<usize>() else {
+            continue;
+        };
+
+        let test_line = *test_marker_line_by_path
+            .entry(path.to_string())
+            .or_insert_with(|| {
+                repo::git_grep(root, &["-F", "-m", "1"], "#[cfg(test)]", &[path])
+                    .ok()
+                    .and_then(|m| m.first()?.split(':').nth(1)?.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
+
+        if lineno < test_line {
+            real_hits.push(line.clone());
+        }
+    }
+
+    if real_hits.is_empty() {
+        CheckResult::pass(
+            "AA-16",
+            format!(
+                "no println!/eprintln! outside #[cfg(test)] sections across the {} library \
+                 crates ({})",
+                LIBRARY_CRATES.len(),
+                LIBRARY_CRATES.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "AA-16",
+            format!(
+                "{} println!/eprintln! call site(s) in library crates, outside test code \
+                 (should go through a shared logging facade like `tracing`, which is a declared \
+                 workspace dependency but has zero actual macro usage anywhere in the workspace \
+                 today): {}",
+                real_hits.len(),
+                real_hits.join("; ")
             ),
         )
     }
