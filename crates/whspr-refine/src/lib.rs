@@ -4,13 +4,17 @@
 //! and `AnthropicRefiner` are real, cloud-backed implementations.
 //! `LlamaLocal` (in `llama_local.rs`) is real too, but local: it runs a GGUF
 //! model through llama-cpp-2 instead of calling out to an API.
+//! `NormalizingRefiner` (in `normalize/`) wraps any of the above and applies
+//! rule-based number/date/time normalization to its output.
 
 mod llama_local;
+mod normalize;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use llama_local::LlamaLocal;
+pub use normalize::NormalizingRefiner;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
 /// Builds the shared "clean up speech-to-text" instructions used as the
