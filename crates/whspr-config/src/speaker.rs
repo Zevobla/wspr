@@ -137,3 +137,111 @@ fn now_unix() -> u64 {
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn match_or_enroll_empty_db_creates_speaker_1() {
+        let mut db = SpeakerDb::default();
+        let embedding = vec![1.0, 0.0, 0.0];
+
+        let (id, is_new) = db.match_or_enroll(&embedding, 0.7, "scan1");
+
+        assert_eq!(id, "Speaker 1");
+        assert!(is_new);
+        assert_eq!(db.profiles.len(), 1);
+        assert_eq!(db.profiles[0].id, "Speaker 1");
+        assert_eq!(db.profiles[0].samples, 1);
+        assert_eq!(db.profiles[0].scans, vec!["scan1".to_string()]);
+    }
+
+    #[test]
+    fn match_or_enroll_identical_embedding_matches_existing() {
+        let mut db = SpeakerDb::default();
+        let embedding = vec![1.0, 0.0, 0.0];
+
+        // First enrollment
+        let (id1, is_new1) = db.match_or_enroll(&embedding, 0.7, "scan1");
+        assert_eq!(id1, "Speaker 1");
+        assert!(is_new1);
+
+        // Second enrollment with identical embedding should match
+        let (id2, is_new2) = db.match_or_enroll(&embedding, 0.7, "scan2");
+        assert_eq!(id2, "Speaker 1");
+        assert!(!is_new2);
+
+        // Should have only one profile with updated samples and scans
+        assert_eq!(db.profiles.len(), 1);
+        assert_eq!(db.profiles[0].samples, 2);
+        assert_eq!(db.profiles[0].scans, vec!["scan1".to_string(), "scan2".to_string()]);
+    }
+
+    #[test]
+    fn match_or_enroll_orthogonal_embedding_creates_new_speaker() {
+        let mut db = SpeakerDb::default();
+        let embedding1 = vec![1.0, 0.0, 0.0];
+        let embedding2 = vec![0.0, 1.0, 0.0];
+
+        let (id1, is_new1) = db.match_or_enroll(&embedding1, 0.7, "scan1");
+        assert_eq!(id1, "Speaker 1");
+        assert!(is_new1);
+
+        // Orthogonal embedding should score 0.0, below threshold
+        let (id2, is_new2) = db.match_or_enroll(&embedding2, 0.7, "scan1");
+        assert_eq!(id2, "Speaker 2");
+        assert!(is_new2);
+
+        assert_eq!(db.profiles.len(), 2);
+    }
+
+    #[test]
+    fn rename_existing_profile() {
+        let mut db = SpeakerDb::default();
+        let embedding = vec![1.0, 0.0, 0.0];
+
+        let (id, _) = db.match_or_enroll(&embedding, 0.7, "scan1");
+        assert_eq!(id, "Speaker 1");
+
+        let renamed = db.rename("Speaker 1", "Alice");
+        assert!(renamed);
+        assert_eq!(db.profiles[0].name, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn rename_nonexistent_profile_returns_false() {
+        let mut db = SpeakerDb::default();
+        let renamed = db.rename("Nonexistent", "Name");
+        assert!(!renamed);
+    }
+
+    #[test]
+    fn load_nonexistent_path_returns_empty_db() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let nonexistent_path = temp_dir.path().join("nonexistent.json");
+
+        let db = SpeakerDb::load(&nonexistent_path);
+        assert_eq!(db.profiles.len(), 0);
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let db_path = temp_dir.path().join("speakers.json");
+
+        let mut db = SpeakerDb::default();
+        let embedding = vec![1.0, 0.0, 0.0];
+        let (id, _) = db.match_or_enroll(&embedding, 0.7, "scan1");
+        db.rename(&id, "Test Speaker");
+
+        db.save(&db_path).expect("save should succeed");
+
+        let loaded = SpeakerDb::load(&db_path);
+        assert_eq!(loaded.profiles.len(), 1);
+        assert_eq!(loaded.profiles[0].id, "Speaker 1");
+        assert_eq!(loaded.profiles[0].name, Some("Test Speaker".to_string()));
+        assert_eq!(loaded.profiles[0].samples, 1);
+        assert!(loaded.profiles[0].centroid.len() > 0);
+    }
+}
