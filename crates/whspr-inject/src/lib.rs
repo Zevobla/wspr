@@ -130,6 +130,40 @@ impl Clipboard for ArboardClipboard {
     }
 }
 
+/// Restores a saved clipboard state when dropped.
+///
+/// Holding the restore in a guard makes it run no matter how the paste
+/// step turns out — a normal return, an early error, or even a panic
+/// unwinding through the paste — so we never leave our injected text
+/// sitting on the user's clipboard.
+struct ClipboardRestoreGuard<'a, C: Clipboard> {
+    clipboard: &'a mut C,
+    /// What was on the clipboard before we overwrote it. `None` means it
+    /// held no text (empty, or a non-text payload we can't reproduce), so
+    /// the closest restore is to clear it.
+    original: Option<String>,
+}
+
+impl<'a, C: Clipboard> ClipboardRestoreGuard<'a, C> {
+    fn new(clipboard: &'a mut C, original: Option<String>) -> Self {
+        Self {
+            clipboard,
+            original,
+        }
+    }
+}
+
+impl<C: Clipboard> Drop for ClipboardRestoreGuard<'_, C> {
+    fn drop(&mut self) {
+        // Best-effort: if restoring fails there's nothing useful we can do
+        // during unwinding, so swallow the error rather than risk a panic.
+        let _ = match &self.original {
+            Some(text) => self.clipboard.set_text(text),
+            None => self.clipboard.clear(),
+        };
+    }
+}
+
 /// Delivers text to the focused application via synthetic keystrokes
 /// (falling back to clipboard paste for long text).
 pub struct EnigoTextSink;
