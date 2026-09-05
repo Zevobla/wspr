@@ -4,8 +4,12 @@
 //! This is the actual "hold hotkey, speak, get text" loop: press the
 //! (fixed, Ctrl+Space -- see `crate::hotkey_capture`) hotkey to start
 //! recording, release it to stop, transcribe, refine, and inject the
-//! result into whatever has focus. Uses the `testkit` Mock/Noop backends,
-//! same as whspr-cli, so the whole loop works offline with no API keys.
+//! result into whatever has focus. `build_asr_backend`/`build_refiner`
+//! select real backends from `Config` (mirroring whspr-cli's own
+//! `build_asr_backend`/`build_refiner` in `crates/whspr-cli/src/main.rs`),
+//! so the app honors the user's ASR/refiner choice instead of being stuck
+//! on the offline mock -- `--asr mock`/`RefineChoice::Noop` are still real,
+//! selectable choices, just no longer the only ones that work.
 //!
 //! The raw press/release stream is run through `whspr_inject`'s
 //! `DebouncedHotkeyListener` before it ever reaches this loop, so a
@@ -18,9 +22,12 @@ use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use iced::futures::Stream;
 
+use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
+use whspr_config::{api_key_for, AsrChoice, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
-use whspr_core::{Pipeline, PipelineState, RefineContext};
+use whspr_core::{AsrBackend, Pipeline, PipelineState, RefineContext, TextRefiner};
 use whspr_inject::{DebounceAction, DebouncedHotkeyListener, EnigoTextSink, GlobalHotkeyListener};
+use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner};
 
 /// Events the worker reports back to the iced app.
 #[derive(Debug, Clone)]
@@ -60,6 +67,65 @@ enum CaptureDecision {
     Ignore,
 }
 
+/// Builds an ASR backend from `config.asr`. Mirrors whspr-cli's
+/// `build_asr_backend` (`crates/whspr-cli/src/main.rs`), minus the CLI's
+/// test-only base-url/api-key overrides, which have no equivalent here.
+/// Returns a plain `String` error (not `anyhow`, which whspr-app doesn't
+/// otherwise depend on) so the caller can forward it directly into
+/// `WorkerEvent::Failed`.
+fn build_asr_backend(config: &whspr_config::Config) -> Result<Box<dyn AsrBackend>, String> {
+    match config.asr {
+        AsrChoice::Mock => Ok(Box::new(MockAsr::default())),
+        AsrChoice::WhisperLocal => {
+            let model_path = WhisperLocal::resolve_model_path(config.whisper.model_path.clone())
+                .ok_or_else(|| {
+                    "no whisper model configured: set [whisper].model_path in the config file \
+                     or the WHISPER_MODEL_PATH environment variable, or pick a different ASR \
+                     backend in Settings"
+                        .to_string()
+                })?;
+            Ok(Box::new(WhisperLocal::new(model_path)))
+        }
+        AsrChoice::OpenAi => {
+            let api_key = api_key_for(config, "openai").ok_or_else(|| {
+                "OpenAI API key not configured (set [api_keys].openai in config)".to_string()
+            })?;
+            Ok(Box::new(OpenAiAsr::new(api_key)))
+        }
+        AsrChoice::Deepgram => {
+            let api_key = api_key_for(config, "deepgram").ok_or_else(|| {
+                "Deepgram API key not configured (set [api_keys].deepgram in config)".to_string()
+            })?;
+            Ok(Box::new(DeepgramAsr::new(api_key)))
+        }
+    }
+}
+
+/// Builds a text refiner from `config.refine`, always wrapped in
+/// `NormalizingRefiner` so rule-based number/date/time normalization runs
+/// regardless of which backend produced the raw text. Mirrors whspr-cli's
+/// `build_refiner` (`crates/whspr-cli/src/main.rs`).
+fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn TextRefiner>, String> {
+    let inner: Box<dyn TextRefiner> = match config.refine {
+        RefineChoice::Noop => Box::new(NoopRefiner),
+        RefineChoice::OpenAi => {
+            let api_key = api_key_for(config, "openai").ok_or_else(|| {
+                "OpenAI API key not configured (set [api_keys].openai in config)".to_string()
+            })?;
+            Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini"))
+        }
+        RefineChoice::Anthropic => {
+            let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
+                "Anthropic API key not configured (set [api_keys].anthropic in config)".to_string()
+            })?;
+            Box::new(AnthropicRefiner::new(api_key, "claude-3-5-sonnet-20241022"))
+        }
+        RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
+    };
+
+    Ok(Box::new(NormalizingRefiner::new(inner, config.normalize)))
+}
+
 fn capture_decision(action: DebounceAction, capture_active: bool) -> CaptureDecision {
     match action {
         DebounceAction::StartRecording => CaptureDecision::Start,
@@ -75,6 +141,30 @@ fn capture_decision(action: DebounceAction, capture_active: bool) -> CaptureDeci
 }
 
 async fn run(mut output: mpsc::Sender<WorkerEvent>) {
+    let config = whspr_config::load();
+
+    // Building either backend can fail honestly (e.g. no whisper model
+    // configured, or a cloud backend picked with no API key set) -- surface
+    // that through the same `WorkerEvent::Failed` + park-forever path used
+    // below for a missing hotkey listener, rather than panicking or quietly
+    // falling back to the mock the user didn't ask for.
+    let asr_backend = match build_asr_backend(&config) {
+        Ok(backend) => backend,
+        Err(error) => {
+            let _ = output.send(WorkerEvent::Failed(error)).await;
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+    let refiner = match build_refiner(&config) {
+        Ok(refiner) => refiner,
+        Err(error) => {
+            let _ = output.send(WorkerEvent::Failed(error)).await;
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+
     // `Pipeline::with_state_callback` takes a plain synchronous `Fn`, called
     // from inside `pipeline.run()` at each transition. A tokio unbounded
     // sender's `send` is exactly that: synchronous, non-blocking, and
@@ -82,7 +172,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     // `output`, whose `send` is async and needs `&mut self`).
     let (state_tx, mut state_rx) = tokio::sync::mpsc::unbounded_channel::<PipelineState>();
 
-    let pipeline = Pipeline::new(Box::new(MockAsr::default()), Box::new(NoopRefiner))
+    let pipeline = Pipeline::new(asr_backend, refiner)
         .with_sink(Box::new(EnigoTextSink))
         .with_state_callback(Box::new(move |state| {
             let _ = state_tx.send(state);
