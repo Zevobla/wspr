@@ -153,16 +153,21 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     let Some(bin_str) = bin.to_str() else {
         return CheckResult::fail("Y-13", "binary path isn't valid UTF-8");
     };
+    let fixture = repo::fixture_wav_path(root);
+    let Some(fixture_str) = fixture.to_str() else {
+        return CheckResult::fail("Y-13", "fixture WAV path isn't valid UTF-8");
+    };
     match repo::run_without_envs(
         root,
         bin_str,
-        &["transcribe", "/dev/null"],
+        &["transcribe", fixture_str],
         &["DISPLAY", "WAYLAND_DISPLAY"],
     ) {
         Ok(out) if out.success && out.stdout.contains("the quick brown fox") => CheckResult::pass(
             "Y-13",
-            "`whspr transcribe /dev/null` still succeeds with DISPLAY and WAYLAND_DISPLAY \
-             removed from its environment - no GUI/display-server dependency in this path",
+            "`whspr transcribe` on a real WAV fixture still succeeds with DISPLAY and \
+             WAYLAND_DISPLAY removed from its environment - no GUI/display-server dependency in \
+             this path",
         ),
         Ok(out) => CheckResult::fail(
             "Y-13",
