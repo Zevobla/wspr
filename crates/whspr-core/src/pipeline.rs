@@ -95,6 +95,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_with_transcript_returns_transcript_alongside_refined_text() {
+        let pipeline = Pipeline::new(Box::new(MockAsr::default()), Box::new(NoopRefiner));
+        let audio = AudioBuffer::new(vec![0.0; 16_000], 16_000);
+
+        let (transcript, refined) = pipeline
+            .run_with_transcript(audio, &RefineContext::default())
+            .await
+            .unwrap();
+
+        assert_eq!(transcript, MockAsr::default().canned);
+        assert_eq!(refined, MockAsr::default().canned.text);
+    }
+
+    #[tokio::test]
     async fn reports_expected_state_transitions() {
         use std::sync::{Arc, Mutex};
 
