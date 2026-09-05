@@ -27,3 +27,4 @@ assert_cmd.workspace = true
 predicates.workspace = true
 wiremock.workspace = true
 tempfile.workspace = true
+hound.workspace = true
