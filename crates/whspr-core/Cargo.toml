@@ -1,0 +1,18 @@
+[package]
+name = "whspr-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[features]
+# Exposes lightweight test doubles (MockAsr, NoopRefiner) for use across the
+# workspace. Always compiled in when running this crate's own tests.
+testkit = []

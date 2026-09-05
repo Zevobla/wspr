@@ -1,0 +1,18 @@
+//! The spine of whspr. Every other crate depends on this one and only this
+//! one for the shared domain types and traits — it must never depend back on
+//! a leaf crate (asr/refine/audio/inject/config).
+
+mod error;
+mod pipeline;
+mod traits;
+mod types;
+
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
+
+pub use error::{Result, WhsprError};
+pub use pipeline::{Pipeline, StateCallback};
+pub use traits::{AsrBackend, HotkeyEvent, HotkeyListener, TextRefiner, TextSink};
+pub use types::{
+    AsrOptions, AudioBuffer, PipelineState, RefineContext, Transcript, TranscriptSegment,
+};
