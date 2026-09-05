@@ -6,8 +6,8 @@ mod stand;
 use anyhow::Result;
 use clap::Parser;
 use whspr_asr::WhisperLocal;
-use whspr_core::{testkit::MockAsr, AsrBackend, AsrOptions};
 use whspr_audio::decode_wav;
+use whspr_core::{testkit::MockAsr, AsrBackend, AsrOptions};
 
 use cli::Args;
 use report::{CaseResult, Report};
@@ -18,8 +18,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Validate arguments
-    args.validate()
-        .map_err(|e| anyhow::anyhow!(e))?;
+    args.validate().map_err(|e| anyhow::anyhow!(e))?;
 
     // Load the stand set
     let stand_set_path = args.stand_set.join("эталоны.json");
@@ -29,9 +28,9 @@ async fn main() -> Result<()> {
     let backend: Box<dyn AsrBackend> = match args.asr.as_str() {
         "mock" => Box::new(MockAsr::default()),
         "whisper-local" => {
-            let model_path = args.model.ok_or_else(|| {
-                anyhow::anyhow!("model path required for whisper-local backend")
-            })?;
+            let model_path = args
+                .model
+                .ok_or_else(|| anyhow::anyhow!("model path required for whisper-local backend"))?;
             Box::new(WhisperLocal::new(model_path))
         }
         other => {

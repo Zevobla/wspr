@@ -86,7 +86,11 @@ fn test_integration_mock_backend() -> anyhow::Result<()> {
         ])
         .output()?;
 
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -121,7 +125,11 @@ fn test_integration_json_output() -> anyhow::Result<()> {
         ])
         .output()?;
 
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -138,10 +146,7 @@ fn test_integration_json_output() -> anyhow::Result<()> {
 
     // Check first case
     assert_eq!(cases[0].get("file").unwrap().as_str().unwrap(), "test1.wav");
-    assert_eq!(
-        cases[0].get("criterion").unwrap().as_str().unwrap(),
-        "F-01"
-    );
+    assert_eq!(cases[0].get("criterion").unwrap().as_str().unwrap(), "F-01");
 
     Ok(())
 }
@@ -223,10 +228,17 @@ fn test_integration_criterion_grouping() -> anyhow::Result<()> {
     assert_eq!(groups.len(), 2);
 
     // Find F group
-    let f_group = groups.iter().find(|g| g.get("prefix").unwrap().as_str().unwrap() == "F");
+    let f_group = groups
+        .iter()
+        .find(|g| g.get("prefix").unwrap().as_str().unwrap() == "F");
     assert!(f_group.is_some());
     assert_eq!(
-        f_group.unwrap().get("case_count").unwrap().as_u64().unwrap(),
+        f_group
+            .unwrap()
+            .get("case_count")
+            .unwrap()
+            .as_u64()
+            .unwrap(),
         2
     );
 
@@ -236,7 +248,12 @@ fn test_integration_criterion_grouping() -> anyhow::Result<()> {
         .find(|g| g.get("prefix").unwrap().as_str().unwrap() == "AM");
     assert!(am_group.is_some());
     assert_eq!(
-        am_group.unwrap().get("case_count").unwrap().as_u64().unwrap(),
+        am_group
+            .unwrap()
+            .get("case_count")
+            .unwrap()
+            .as_u64()
+            .unwrap(),
         1
     );
 
