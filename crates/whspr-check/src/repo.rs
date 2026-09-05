@@ -81,6 +81,26 @@ pub fn run_env(
     })
 }
 
+/// Builds `package` and returns the path to its `bin_name` binary under
+/// the default `target/debug/` layout. Assumes no custom
+/// `CARGO_TARGET_DIR`, which matches every documented dev workflow in
+/// this repo (README, CLAUDE.md, flake devShell).
+pub fn ensure_binary_built(root: &Path, package: &str, bin_name: &str) -> anyhow::Result<PathBuf> {
+    let build = run(root, "cargo", &["build", "-p", package, "--quiet"])?;
+    if !build.success {
+        anyhow::bail!("`cargo build -p {package}` failed: {}", build.stderr);
+    }
+    let path = root.join("target/debug").join(bin_name);
+    if !path.is_file() {
+        anyhow::bail!(
+            "expected a binary at {} after building {package}, but it's not there (custom \
+             CARGO_TARGET_DIR?)",
+            path.display()
+        );
+    }
+    Ok(path)
+}
+
 /// Reads README.md from the repo root. Shared by every doc-content check
 /// (Z-04, W-06/07/08, AH-03/04, AC-03) so they don't each independently
 /// read-and-error-handle the same file.

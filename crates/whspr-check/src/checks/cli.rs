@@ -6,27 +6,7 @@
 
 use crate::report::CheckResult;
 use crate::repo::{self, CmdOutput};
-use std::path::{Path, PathBuf};
-
-/// Builds `whspr-cli` and returns the path to the resulting `whspr`
-/// binary. Assumes the default `target/` layout (no custom
-/// `CARGO_TARGET_DIR`), which matches every documented dev workflow in
-/// this repo (README, CLAUDE.md, flake devShell).
-fn ensure_whspr_binary(root: &Path) -> anyhow::Result<PathBuf> {
-    let build = repo::run(root, "cargo", &["build", "-p", "whspr-cli", "--quiet"])?;
-    if !build.success {
-        anyhow::bail!("`cargo build -p whspr-cli` failed: {}", build.stderr);
-    }
-    let path = root.join("target/debug/whspr");
-    if !path.is_file() {
-        anyhow::bail!(
-            "expected a binary at {} after building whspr-cli, but it's not there (custom \
-             CARGO_TARGET_DIR?)",
-            path.display()
-        );
-    }
-    Ok(path)
-}
+use std::path::Path;
 
 fn run_whspr(bin: &Path, root: &Path, args: &[&str]) -> anyhow::Result<CmdOutput> {
     let bin_str = bin
@@ -149,21 +129,22 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
 
 const CLI_CRITERIA: &[&str] = &["Y-11", "Y-03", "Y-12", "Y-04", "Y-15"];
 
-/// Runs every CLI-behavior check against one build of the `whspr` binary.
-pub fn run_cli_checks(root: &Path) -> Vec<CheckResult> {
-    let bin = match ensure_whspr_binary(root) {
-        Ok(p) => p,
-        Err(e) => {
-            return CLI_CRITERIA
-                .iter()
-                .map(|id| CheckResult::fail(*id, format!("could not build whspr-cli: {e}")))
-                .collect()
-        }
-    };
-
-    let mut results = check_version(&bin, root);
-    results.push(check_help(&bin, root));
-    results.push(check_nonzero_exit_on_error(&bin, root));
-    results.push(check_progress_output_discipline(&bin, root));
+/// Runs every CLI-behavior check against an already-built `whspr` binary
+/// (built once by the caller via `repo::ensure_binary_built`, and shared
+/// with `checks::privacy`'s P-01, which also needs to invoke it).
+pub fn run_cli_checks(bin: &Path, root: &Path) -> Vec<CheckResult> {
+    let mut results = check_version(bin, root);
+    results.push(check_help(bin, root));
+    results.push(check_nonzero_exit_on_error(bin, root));
+    results.push(check_progress_output_discipline(bin, root));
     results
+}
+
+/// Failure result for every CLI criterion, used when the `whspr` binary
+/// itself couldn't be built.
+pub fn build_failure_results(reason: &str) -> Vec<CheckResult> {
+    CLI_CRITERIA
+        .iter()
+        .map(|id| CheckResult::fail(*id, format!("could not build whspr-cli: {reason}")))
+        .collect()
 }
