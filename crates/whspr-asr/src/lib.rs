@@ -1,8 +1,7 @@
 //! ASR backend implementations. Everything here implements
 //! `whspr_core::AsrBackend`; the pipeline never knows or cares which one it
-//! got. Bodies are `todo!()` until the ASR team wires up the real
-//! dependencies (whisper-rs, HTTP clients, ...) — this crate must keep
-//! compiling without those heavy deps in the meantime.
+//! got. `WhisperLocal` (whisper-rs), `OpenAiAsr`, and `DeepgramAsr` are all
+//! real implementations now.
 
 use async_trait::async_trait;
 use serde::Deserialize;

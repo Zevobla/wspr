@@ -20,6 +20,5 @@ tokio = { workspace = true, features = ["macros"] }
 hound.workspace = true
 
 [features]
-# Re-exports whspr-core's MockAsr for convenience; does not pull in any
-# heavy ASR backend (whisper-rs etc land as their own opt-in deps later).
+# Re-exports whspr-core's MockAsr for convenience.
 testkit = ["whspr-core/testkit"]
