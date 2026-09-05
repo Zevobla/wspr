@@ -58,6 +58,12 @@ enum Command {
         /// Don't save result to history file (privacy opt-out).
         #[arg(long)]
         no_store: bool,
+
+        /// Override the history data directory. Hidden: test-only, so the
+        /// e2e suite can redirect history writes to a tempdir instead of
+        /// the real platform data dir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
     },
 
     /// Transcribe all .wav files in a directory.
@@ -84,6 +90,12 @@ enum Command {
         /// Don't save results to history file.
         #[arg(long)]
         no_store: bool,
+
+        /// Override the history data directory. Hidden: test-only, so the
+        /// e2e suite can redirect history writes to a tempdir instead of
+        /// the real platform data dir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
     },
 }
 
@@ -184,17 +196,32 @@ async fn load_audio(file_path: &Path) -> anyhow::Result<AudioBuffer> {
     }
 }
 
-/// Saves a transcription result to the history file.
+/// Resolves the directory used for the history journal. `override_dir`
+/// (plumbed from the hidden `--data-dir` flag) takes precedence when set;
+/// otherwise falls back to the real platform data directory.
+///
+/// Keeping this resolution as an explicit, injectable parameter — rather
+/// than baking the `ProjectDirs` lookup directly into `save_to_history` —
+/// means tests can point history writes at a `tempfile::tempdir()` instead
+/// of appending to a real user's `~/.local/share/whspr` (or platform
+/// equivalent) as a side effect of `cargo test`.
+fn resolve_data_dir(override_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
+    if let Some(dir) = override_dir {
+        return Ok(dir.to_path_buf());
+    }
+    directories::ProjectDirs::from("", "", "whspr")
+        .map(|dirs| dirs.data_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("cannot determine platform data dir"))
+}
+
+/// Saves a transcription result to `history.jsonl` inside `data_dir`.
 async fn save_to_history(
+    data_dir: &Path,
     text: &str,
     asr_id: &str,
     refine_id: &str,
     wpm: f64,
 ) -> anyhow::Result<()> {
-    let dirs = directories::ProjectDirs::from("", "", "whspr")
-        .ok_or_else(|| anyhow::anyhow!("cannot determine platform data dir"))?;
-
-    let data_dir = dirs.data_dir();
     std::fs::create_dir_all(data_dir)?;
 
     let history_path = data_dir.join("history.jsonl");
@@ -238,6 +265,7 @@ async fn main() -> anyhow::Result<()> {
             language: _language,
             json: output_json,
             no_store,
+            data_dir,
         }) => {
             eprintln!("Loading audio...");
             let audio = load_audio(&file).await?;
@@ -259,8 +287,14 @@ async fn main() -> anyhow::Result<()> {
             let wpm = (output.split_whitespace().count() as f64) / (elapsed / 60.0);
 
             if !no_store {
-                if let Err(e) = save_to_history(&output, asr_id, refine_id, wpm).await {
-                    eprintln!("Warning: failed to save to history: {}", e);
+                match resolve_data_dir(data_dir.as_deref()) {
+                    Ok(dir) => {
+                        if let Err(e) = save_to_history(&dir, &output, asr_id, refine_id, wpm).await
+                        {
+                            eprintln!("Warning: failed to save to history: {}", e);
+                        }
+                    }
+                    Err(e) => eprintln!("Warning: failed to save to history: {}", e),
                 }
             }
 
@@ -284,6 +318,7 @@ async fn main() -> anyhow::Result<()> {
             language: _language,
             json: output_json,
             no_store,
+            data_dir,
         }) => {
             if !dir.is_dir() {
                 anyhow::bail!("{} is not a directory", dir.display());
@@ -320,8 +355,18 @@ async fn main() -> anyhow::Result<()> {
                                     results.push(result);
 
                                     if !no_store {
-                                        let _ =
-                                            save_to_history(&output, asr_id, refine_id, 0.0).await;
+                                        if let Ok(history_dir) =
+                                            resolve_data_dir(data_dir.as_deref())
+                                        {
+                                            let _ = save_to_history(
+                                                &history_dir,
+                                                &output,
+                                                asr_id,
+                                                refine_id,
+                                                0.0,
+                                            )
+                                            .await;
+                                        }
                                     }
                                 }
                                 Err(e) => {
