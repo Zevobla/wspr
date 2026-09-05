@@ -14,5 +14,8 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
 
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v14
+
       - name: nix flake check
         run: nix flake check --print-build-logs
