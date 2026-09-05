@@ -5,6 +5,7 @@
 
 mod currency;
 mod dates;
+mod emails;
 mod numbers;
 mod percents;
 mod phones;
@@ -66,6 +67,7 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
         text = currency::normalize_currency(&text);
         text = percents::normalize_percents(&text);
         text = phones::normalize_phones(&text);
+        text = emails::normalize_emails(&text);
     }
     text
 }
