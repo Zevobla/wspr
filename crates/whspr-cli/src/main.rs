@@ -21,6 +21,7 @@
 //!   --csv                           `stats`: output CSV instead of a human-readable table
 
 mod diarize_cmd;
+mod log_rotation;
 mod stats_cmd;
 mod subtitles;
 
