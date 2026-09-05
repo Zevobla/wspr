@@ -13,14 +13,20 @@ pub struct State {
     /// only live in this in-memory copy for now -- see the module doc on
     /// `crate::app` for why persistence is out of scope for this pass.
     pub config: Config,
+    /// Live contents of the language `text_input`, kept separate from
+    /// `config.language: Option<String>` since a text widget needs a plain
+    /// `String` to bind to (an empty string means "no override", i.e. `None`).
+    pub language_input: String,
 }
 
 impl State {
     /// Builds the initial state from the config loaded at boot.
     pub fn new(config: Config) -> Self {
+        let language_input = config.language.clone().unwrap_or_default();
         Self {
             hub_window: None,
             config,
+            language_input,
         }
     }
 }
@@ -34,4 +40,6 @@ pub enum Message {
     AsrSelected(&'static str),
     /// The user picked a new refiner backend label in the Hub.
     RefineSelected(&'static str),
+    /// The user edited the language override text input in the Hub.
+    LanguageChanged(String),
 }
