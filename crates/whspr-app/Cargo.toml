@@ -28,3 +28,8 @@ tracing.workspace = true
 cpal.workspace = true
 # Tolerant parsing of the (schema-less-to-us) JSONL history file.
 serde_json.workspace = true
+# Locates the platform data dir the history file would live in.
+directories.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
