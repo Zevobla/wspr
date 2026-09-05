@@ -69,18 +69,24 @@ impl MockDiarizer {
 
 impl Default for MockDiarizer {
     fn default() -> Self {
+        // Orthogonal (cosine similarity 0.0) so callers exercising speaker
+        // matching against these two canned turns with a realistic
+        // threshold (e.g. `SpeakerSettings::default().similarity_threshold`,
+        // 0.7) genuinely get two distinct enrolled speakers, not one --
+        // this is the only backend that works with no model files, so it's
+        // also the default demo/test path for the whole enrollment flow.
         Self::new(vec![
             SpeakerTurn {
                 start_secs: 0.0,
                 end_secs: 2.5,
-                embedding: vec![0.1, 0.2, 0.3],
+                embedding: vec![1.0, 0.0, 0.0],
                 speaker: None,
                 score: 0.95,
             },
             SpeakerTurn {
                 start_secs: 2.5,
                 end_secs: 5.0,
-                embedding: vec![0.4, 0.5, 0.6],
+                embedding: vec![0.0, 1.0, 0.0],
                 speaker: None,
                 score: 0.92,
             },
