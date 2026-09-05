@@ -125,9 +125,8 @@ impl SpeakerDb {
         let json = serde_json::to_string_pretty(self).map_err(|e| {
             whspr_core::WhsprError::Config(format!("failed to serialize speaker db: {e}"))
         })?;
-        std::fs::write(path, json).map_err(|e| {
-            whspr_core::WhsprError::Config(format!("failed to write speaker db: {e}"))
-        })
+        std::fs::write(path, json)
+            .map_err(|e| whspr_core::WhsprError::Config(format!("failed to write speaker db: {e}")))
     }
 }
 
@@ -175,7 +174,10 @@ mod tests {
         // Should have only one profile with updated samples and scans
         assert_eq!(db.profiles.len(), 1);
         assert_eq!(db.profiles[0].samples, 2);
-        assert_eq!(db.profiles[0].scans, vec!["scan1".to_string(), "scan2".to_string()]);
+        assert_eq!(
+            db.profiles[0].scans,
+            vec!["scan1".to_string(), "scan2".to_string()]
+        );
     }
 
     #[test]
