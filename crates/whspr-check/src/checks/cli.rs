@@ -102,12 +102,25 @@ fn check_nonzero_exit_on_error(bin: &Path, root: &Path) -> CheckResult {
 /// end - not merely "nothing leaked onto stdout because nothing ran",
 /// which is what this looked like against `/dev/null` before whspr-cli's
 /// `decode_wav` was wired up for real.
+///
+/// Passes `--data-dir <tempdir>` so this smoke run's mock transcript never
+/// gets appended to the real platform history.jsonl.
 fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
         return CheckResult::fail("Y-15", "fixture WAV path isn't valid UTF-8");
     };
-    match run_whspr(bin, root, &["transcribe", fixture_str]) {
+    let Ok(data_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("Y-15", "could not create a temp data dir");
+    };
+    let Some(data_dir_str) = data_dir.path().to_str() else {
+        return CheckResult::fail("Y-15", "temp data dir path isn't valid UTF-8");
+    };
+    match run_whspr(
+        bin,
+        root,
+        &["transcribe", fixture_str, "--data-dir", data_dir_str],
+    ) {
         Ok(out) if out.success => {
             let stdout_lines: Vec<&str> = out.stdout.lines().collect();
             if stdout_lines.len() == 1 && !out.stderr.trim().is_empty() {
