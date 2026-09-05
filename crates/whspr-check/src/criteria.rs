@@ -126,6 +126,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AA",
         title: "Domain crate (whspr-core) is free of heavy framework deps",
     },
+    Criterion {
+        id: "AA-10",
+        group: "AA",
+        title: "No circular dependencies between workspace crates",
+    },
     // --- Z: Licenses/provenance ---
     Criterion {
         id: "Z-01",
