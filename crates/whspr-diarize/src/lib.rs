@@ -231,6 +231,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn segment_sample_range_normal() {
+        assert_eq!(
+            segment_sample_range(1.0, 2.0, 16_000, 100_000),
+            (16_000, 32_000)
+        );
+    }
+
+    #[test]
+    fn segment_sample_range_clamps_end_to_total_samples() {
+        assert_eq!(
+            segment_sample_range(9.0, 11.0, 16_000, 100_000),
+            (100_000, 100_000)
+        );
+    }
+
+    #[test]
+    fn segment_sample_range_clamps_negative_start_to_zero() {
+        assert_eq!(
+            segment_sample_range(-1.0, 1.0, 16_000, 100_000),
+            (0, 16_000)
+        );
+    }
+
+    #[test]
+    fn segment_sample_range_never_inverts_when_end_precedes_start() {
+        // Pathological input (end before start) still yields a valid,
+        // non-inverted (possibly zero-length) range rather than panicking
+        // on the later slice index.
+        let (start, end) = segment_sample_range(2.0, 1.0, 16_000, 100_000);
+        assert!(start <= end);
+        assert_eq!((start, end), (32_000, 32_000));
+    }
+
+    #[test]
     fn new_rejects_missing_model_dir() {
         let err = SherpaDiarizer::new("/nonexistent/whspr-diarize-test-model-dir").unwrap_err();
         assert!(matches!(err, WhsprError::Diarize(_)));
