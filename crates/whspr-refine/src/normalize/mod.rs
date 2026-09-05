@@ -3,6 +3,7 @@
 //! string transforms - no LLM, no network - each independently toggleable
 //! via `whspr_config::NormalizeSettings`.
 
+mod abbreviations;
 mod currency;
 mod dates;
 mod emails;
@@ -70,6 +71,7 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
         text = phones::normalize_phones(&text);
         text = emails::normalize_emails(&text);
         text = urls::normalize_urls(&text);
+        text = abbreviations::normalize_abbreviations(&text);
     }
     text
 }
