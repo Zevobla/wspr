@@ -210,6 +210,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AB",
         title: "Tests run in CI",
     },
+    Criterion {
+        id: "AB-05",
+        group: "AB",
+        title: "Test-suite runtime is bounded",
+    },
     // --- AD: Growth-monotonicity(git) ---
     Criterion {
         id: "AD-01",
