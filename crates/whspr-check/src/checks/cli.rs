@@ -182,14 +182,18 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
 
 /// Y-14: repeat run gives identical output (determinism).
 fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
-    let first = run_whspr(bin, root, &["transcribe", "/dev/null"]);
-    let second = run_whspr(bin, root, &["transcribe", "/dev/null"]);
+    let fixture = repo::fixture_wav_path(root);
+    let Some(fixture_str) = fixture.to_str() else {
+        return CheckResult::fail("Y-14", "fixture WAV path isn't valid UTF-8");
+    };
+    let first = run_whspr(bin, root, &["transcribe", fixture_str]);
+    let second = run_whspr(bin, root, &["transcribe", fixture_str]);
     match (first, second) {
         (Ok(a), Ok(b)) if a.success && b.success && a.stdout == b.stdout => CheckResult::pass(
             "Y-14",
             format!(
-                "two consecutive `whspr transcribe /dev/null` runs produced identical stdout: \
-                 {:?}",
+                "two consecutive `whspr transcribe` runs on the same WAV fixture produced \
+                 identical stdout: {:?}",
                 a.stdout.trim()
             ),
         ),
