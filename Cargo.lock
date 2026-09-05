@@ -2931,6 +2931,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "whspr-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "toml",
+ "whspr-config",
+]
+
+[[package]]
 name = "whspr-cli"
 version = "0.1.0"
 dependencies = [
