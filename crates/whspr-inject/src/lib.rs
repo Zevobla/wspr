@@ -265,4 +265,33 @@ mod tests {
             let _ = clipboard.set_text(previous);
         }
     }
+
+    /// `EnigoTextSink::insert` for short text synthesizes real keystrokes
+    /// via enigo into whatever window currently has OS focus. That needs an
+    /// active display session and (on macOS) Accessibility permission
+    /// granted to the test process, and it types into whatever happens to
+    /// be focused when the test runs — not something to fire unattended in
+    /// CI. Kept here, `#[ignore]`d, so a developer with a real desktop
+    /// session and a scratch text field focused can run it deliberately via
+    /// `cargo test -p whspr-inject -- --ignored`.
+    #[test]
+    #[ignore = "types real keystrokes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
+    fn type_text_sends_real_keystrokes() {
+        let sink = EnigoTextSink;
+        sink.insert("whspr-inject manual keystroke test")
+            .expect("insert should succeed with a display and Accessibility permission granted");
+    }
+
+    /// `EnigoTextSink::insert` for long text sets the clipboard (tested
+    /// above) and then simulates a real paste keystroke (Cmd+V / Ctrl+V)
+    /// into whatever window has OS focus. Same non-hermetic constraints as
+    /// `type_text_sends_real_keystrokes` above.
+    #[test]
+    #[ignore = "pastes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
+    fn paste_from_clipboard_sends_real_paste_keystroke() {
+        let sink = EnigoTextSink;
+        let long_text = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
+        sink.insert(&long_text)
+            .expect("insert should succeed with a display and Accessibility permission granted");
+    }
 }
