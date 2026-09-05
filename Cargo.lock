@@ -2935,6 +2935,7 @@ name = "whspr-check"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "directories",
  "tempfile",
  "toml",
  "whspr-config",
