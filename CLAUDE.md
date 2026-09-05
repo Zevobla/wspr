@@ -88,16 +88,27 @@ inject, reporting `PipelineState` transitions through the callback.
 
 ## Commit hygiene
 
-- One coherent change per commit: a function, a module, a single logical
-  unit. Never `git add -A` a pile of unrelated work into one bunch commit —
-  stage specific paths (`git add <paths>`) so each commit is independently
-  reviewable.
+- Commit at the **smallest coherent step**, not per-feature or per-crate:
+  add a struct in one commit, its first method in the next, each test in
+  its own commit, a doc comment separately. If a single commit's diff spans
+  multiple functions or a whole module at once, it's almost certainly
+  several commits. Never `git add -A` a pile of unrelated work into one
+  bunch commit — stage specific paths (`git add <paths>`) so each commit is
+  independently reviewable.
+- Prefer many small commits over few large ones. This is graded: AD-04
+  penalizes a large fraction of code landing in one commit; AD-07 wants
+  tests committed alongside the code they cover, not lumped into a separate
+  bulk commit at the end.
+- Rule of thumb: if the one-line commit subject needs "and" or a comma to
+  describe it, split it into more commits.
 - Conventional-commit messages: `type(scope): summary`, e.g.
   `feat(asr): backend stubs`, `test(core): mock/noop testkit`,
   `build(nix): flake devShell + crane packaging`. Common types: `feat`,
   `fix`, `test`, `build`, `docs`, `chore`, `refactor`.
-- Commit as you go, not in one batch at the end — if you can't describe a
-  commit in one short sentence, it's probably more than one commit.
+- Commit as you go, not in one batch at the end.
+- Commits are unsigned: append `--no-gpg-sign` to every `git commit` (the
+  global `commit.gpgsign` setting stays untouched — never edit git config
+  to work around this).
 - This applies to every team, at every level: foremen enforce it on the
   Haiku workers they delegate to, the same way it's enforced on you.
 
