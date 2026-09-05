@@ -44,6 +44,9 @@ pub struct State {
     /// `crate::worker::pipeline_worker`'s `WorkerEvent::StateChanged` and
     /// shown by the Flow Bar overlay.
     pub pipeline_state: whspr_core::PipelineState,
+    /// The most recent error reported by the pipeline worker (hotkey
+    /// listener startup, mic capture, or a pipeline run), if any.
+    pub last_error: Option<String>,
 }
 
 impl State {
@@ -64,6 +67,7 @@ impl State {
             history: Vec::new(),
             theme: iced::Theme::Light,
             pipeline_state: whspr_core::PipelineState::Idle,
+            last_error: None,
         }
     }
 }
@@ -92,4 +96,7 @@ pub enum Message {
     HotkeyCaptureKeyEvent(iced::keyboard::Event),
     /// The user toggled between light and dark theme in the Hub.
     ThemeToggled,
+    /// An event from the background pipeline worker (see `crate::worker`):
+    /// a pipeline state change, a completed dictation turn, or a failure.
+    Worker(crate::worker::WorkerEvent),
 }

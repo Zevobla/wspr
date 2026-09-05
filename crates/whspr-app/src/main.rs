@@ -7,6 +7,7 @@ mod hotkey_capture;
 mod hub;
 mod state;
 mod stats;
+mod worker;
 
 fn main() -> iced::Result {
     app::run()
