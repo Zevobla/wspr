@@ -47,5 +47,18 @@ jobs:
           name: lcov.info
           path: lcov.info
 
+      - name: ban todo!()/unimplemented!() stubs
+        run: |
+          # whspr-check's own source legitimately mentions
+          # todo!()/unimplemented!() in comments and string literals
+          # describing this exact check (crates/whspr-check/src/checks/
+          # slop.rs), so it's excluded rather than producing permanent
+          # false positives; comment lines (//, ///, //!) are filtered
+          # the same way for every other crate.
+          ! grep -rn --include='*.rs' -E 'todo!\(|unimplemented!\(' \
+            crates/*/src \
+            | grep -v '^crates/whspr-check/' \
+            | grep -vE ':[0-9]+:[[:space:]]*//'
+
       - name: nix flake check
         run: nix flake check --print-build-logs
