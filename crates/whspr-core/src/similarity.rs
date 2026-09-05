@@ -17,3 +17,33 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
     dot / (norm_a * norm_b)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identical_vectors_are_maximally_similar() {
+        assert!((cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn opposite_vectors_are_maximally_dissimilar() {
+        assert!((cosine_similarity(&[1.0, 0.0], &[-1.0, 0.0]) - (-1.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn orthogonal_vectors_are_zero() {
+        assert!(cosine_similarity(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mismatched_lengths_return_zero() {
+        assert_eq!(cosine_similarity(&[1.0, 2.0], &[1.0]), 0.0);
+    }
+
+    #[test]
+    fn empty_vectors_return_zero() {
+        assert_eq!(cosine_similarity(&[], &[]), 0.0);
+    }
+}
