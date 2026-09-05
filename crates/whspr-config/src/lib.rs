@@ -135,6 +135,25 @@ pub struct WhisperConfig {
     pub model_path: Option<PathBuf>,
 }
 
+impl Config {
+    /// Writes this config as TOML to `config_dir/config.toml`, creating the
+    /// directory if needed. The save-side counterpart to `load_from` —
+    /// unlike that function's best-effort, swallow-errors first-run write,
+    /// this one surfaces failures to the caller (e.g. the GUI wants to know
+    /// if a settings change didn't actually persist).
+    pub fn save(&self, config_dir: &Path) -> whspr_core::Result<()> {
+        std::fs::create_dir_all(config_dir).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to create config dir: {e}"))
+        })?;
+        let toml_string = toml::to_string_pretty(self).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to serialize config: {e}"))
+        })?;
+        std::fs::write(config_dir.join("config.toml"), toml_string).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to write config: {e}"))
+        })
+    }
+}
+
 /// Loads the effective config from the platform config directory.
 /// Falls back gracefully to defaults on any error (config loading should never crash).
 pub fn load() -> Config {
