@@ -5,7 +5,12 @@
 //! meantime.
 
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
+use cpal::traits::DeviceTrait;
+use cpal::traits::HostTrait;
+use cpal::traits::StreamTrait;
+use cpal::StreamConfig;
 use whspr_core::{AudioBuffer, Result, WhsprError};
 
 /// Decodes a WAV file into an `AudioBuffer` at its native sample rate/channel
@@ -144,16 +149,125 @@ pub fn resample_to_16k_mono(input: &AudioBuffer) -> Result<AudioBuffer> {
 }
 
 /// Handle for an in-progress microphone capture session.
-pub struct CaptureHandle;
+///
+/// Holds the cpal stream, shared sample buffer, and device sample rate.
+pub struct CaptureHandle {
+    stream: cpal::Stream,
+    buffer: Arc<Mutex<Vec<f32>>>,
+    sample_rate: u32,
+}
 
 impl CaptureHandle {
     /// Stops capture and returns the recorded audio as a 16kHz mono buffer.
+    ///
+    /// The returned buffer is resampled to the canonical 16kHz shape.
     pub fn stop(self) -> Result<AudioBuffer> {
-        todo!("whspr-audio: stop cpal stream and drain captured samples")
+        // Drop the stream to stop recording
+        drop(self.stream);
+
+        // Drain the buffer
+        let samples = self
+            .buffer
+            .lock()
+            .map_err(|e| WhsprError::Audio(format!("failed to lock capture buffer: {}", e)))?
+            .clone();
+
+        // Wrap in an AudioBuffer at the device's native sample rate
+        let buffer = AudioBuffer::new(samples, self.sample_rate);
+
+        // Resample to 16kHz mono (the canonical shape)
+        resample_to_16k_mono(&buffer)
     }
 }
 
 /// Starts recording from the default input device.
+///
+/// Returns a `CaptureHandle` that can be stopped to retrieve the recorded audio
+/// as a 16kHz mono buffer.
 pub fn start_capture() -> Result<CaptureHandle> {
-    todo!("whspr-audio: start_capture via cpal")
+    // Get the default host and input device
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .ok_or_else(|| WhsprError::Audio("no default input device found".to_string()))?;
+
+    // Get the default config
+    let config = device
+        .default_input_config()
+        .map_err(|e| WhsprError::Audio(format!("failed to get default input config: {}", e)))?;
+
+    let sample_rate = config.sample_rate();
+    let stream_config: StreamConfig = config.into();
+
+    // Create a shared buffer for captured samples
+    let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let buffer_clone = Arc::clone(&buffer);
+
+    // Build the input stream
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => device
+            .build_input_stream(
+                stream_config,
+                move |data: &[f32], _: &_| {
+                    if let Ok(mut buf) = buffer_clone.lock() {
+                        buf.extend_from_slice(data);
+                    }
+                },
+                |err| eprintln!("stream error: {}", err),
+                None,
+            )
+            .map_err(|e| WhsprError::Audio(format!("failed to build F32 stream: {}", e)))?,
+        cpal::SampleFormat::I16 => {
+            device
+                .build_input_stream(
+                    stream_config,
+                    move |data: &[i16], _: &_| {
+                        if let Ok(mut buf) = buffer_clone.lock() {
+                            // Convert i16 to f32 [-1.0, 1.0]
+                            for sample in data {
+                                buf.push(*sample as f32 / 32768.0);
+                            }
+                        }
+                    },
+                    |err| eprintln!("stream error: {}", err),
+                    None,
+                )
+                .map_err(|e| WhsprError::Audio(format!("failed to build I16 stream: {}", e)))?
+        }
+        cpal::SampleFormat::U16 => {
+            device
+                .build_input_stream(
+                    stream_config,
+                    move |data: &[u16], _: &_| {
+                        if let Ok(mut buf) = buffer_clone.lock() {
+                            // Convert u16 to f32 [-1.0, 1.0]
+                            for sample in data {
+                                let s = *sample as f32 - 32768.0;
+                                buf.push(s / 32768.0);
+                            }
+                        }
+                    },
+                    |err| eprintln!("stream error: {}", err),
+                    None,
+                )
+                .map_err(|e| WhsprError::Audio(format!("failed to build U16 stream: {}", e)))?
+        }
+        _ => {
+            return Err(WhsprError::Audio(format!(
+                "unsupported sample format: {:?}",
+                config.sample_format()
+            )));
+        }
+    };
+
+    // Start recording
+    stream
+        .play()
+        .map_err(|e| WhsprError::Audio(format!("failed to start stream: {}", e)))?;
+
+    Ok(CaptureHandle {
+        stream,
+        buffer,
+        sample_rate,
+    })
 }
