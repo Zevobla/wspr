@@ -89,6 +89,27 @@ fn transcribe_with_json_flag_parses() {
         .success();
 }
 
+/// The canned transcript text MockAsr::default() always returns
+/// (whspr_core::testkit::MockAsr).
+const MOCK_TRANSCRIPT: &str = "the quick brown fox jumps over the lazy dog";
+
+#[test]
+fn transcribe_default_no_flags_prints_mock_transcript() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // No --asr flag at all: this is the CLI's most basic, documented use
+    // case (see root CLAUDE.md's "Build & test" section) and must succeed
+    // offline against the default MockAsr backend.
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args(["transcribe", fixture_path.to_str().unwrap(), "--no-store"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(MOCK_TRANSCRIPT));
+}
+
 #[test]
 fn transcribe_help_mentions_asr_flag() {
     Command::cargo_bin("whspr")
