@@ -543,3 +543,42 @@ fn diarize_with_nonexistent_model_dir_fails_with_clear_error() {
         .assert()
         .failure();
 }
+
+#[test]
+fn diarize_with_unknown_embedding_choice_fails_with_clear_error() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    let data_dir = tempfile::tempdir().expect("failed to create data dir");
+
+    // --embedding is only consulted once --model-dir opts into a real
+    // backend (mirrors --asr's "explicit opt-in" philosophy), so this
+    // exercises SpeakerEmbeddingChoice::from_str's error path without
+    // needing any real model files -- it fails on the unknown choice
+    // before ever touching the (also-nonexistent) model_dir.
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "diarize",
+            fixture_path.to_str().unwrap(),
+            "--model-dir",
+            "/nonexistent/path",
+            "--embedding",
+            "not-a-real-embedding-choice",
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run whspr diarize");
+
+    assert!(
+        !output.status.success(),
+        "should fail on unknown --embedding"
+    );
+    let stderr = String::from_utf8(output.stderr).expect("stderr was not valid UTF-8");
+    assert!(
+        stderr.contains("embedding"),
+        "expected the error to mention the embedding choice, got: {stderr}"
+    );
+}
