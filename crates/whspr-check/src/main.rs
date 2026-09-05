@@ -11,22 +11,16 @@
 //! the catalog entirely and counted in the report's "not yet automated"
 //! bucket — never guessed at or marked PASS on faith.
 
+mod checks;
 mod criteria;
 mod report;
 mod repo;
-
-use report::CheckResult;
 
 fn main() -> anyhow::Result<()> {
     let root = repo::find_repo_root()?;
     println!("whspr-check: analyzing {}", root.display());
 
-    // Placeholder result set until the real checks land in follow-up
-    // commits; proves report::print renders against the real catalog.
-    let results = vec![CheckResult::needs_bench(
-        criteria::CATALOG[0].id,
-        "checker not implemented yet".to_string(),
-    )];
+    let results = checks::run_all(&root);
 
     report::print(&results);
     Ok(())
