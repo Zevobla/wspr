@@ -1,7 +1,15 @@
-//! Rule-based text normalization: numbers written as digits, dates unified
-//! to `YYYY-MM-DD`, times unified to 24-hour `HH:MM`. Pure, deterministic
-//! string transforms - no LLM, no network - each independently toggleable
-//! via `whspr_config::NormalizeSettings`.
+//! Rule-based text normalization. Pure, deterministic string transforms - no
+//! LLM, no network - toggleable via `whspr_config::NormalizeSettings`:
+//!   - `dates`  -> dates unified to `YYYY-MM-DD`
+//!   - `times`  -> times unified to 24-hour `HH:MM`
+//!   - `numbers` gates the number-word pass *and* the extended token passes
+//!     it feeds: currency (F-13), percents/fractions (F-14), phone numbers
+//!     (F-15), emails (F-16), URLs (F-17), acronym uppercasing (F-18), and
+//!     consecutive-duplicate-word collapse (F-19).
+//!
+//! The extended passes share the existing `numbers` toggle rather than
+//! introducing new config fields, so this module stays self-contained and
+//! `whspr-config` is untouched.
 
 mod abbreviations;
 mod currency;
@@ -57,6 +65,11 @@ impl TextRefiner for NormalizingRefiner {
 /// time. (Each pass also independently recognizes number words that are
 /// already digits, so this order isn't load-bearing for correctness - it
 /// just avoids doing the same work twice.)
+///
+/// The extended `numbers`-gated passes then run in dependency order: the
+/// number-word pass first (so "five dollars" is already "5 dollars" for the
+/// currency pass), emails before URLs (so an address is assembled before its
+/// bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     let mut text = text.to_string();
     if settings.dates {
