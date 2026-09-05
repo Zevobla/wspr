@@ -116,6 +116,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AA",
         title: "No single source file has grown unreasonably large",
     },
+    Criterion {
+        id: "AA-16",
+        group: "AA",
+        title: "Logging goes through one interface, not scattered println!/eprintln!",
+    },
     // --- Z: Licenses/provenance ---
     Criterion {
         id: "Z-01",
