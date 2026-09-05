@@ -95,6 +95,13 @@ enum Command {
         /// being present on the machine running `cargo test`.
         #[arg(long, hide = true)]
         asr_api_key: Option<String>,
+
+        /// Override the canned transcript `--asr mock` returns. Hidden:
+        /// test-only, so the e2e suite can drive a normalizable phrase
+        /// through the real transcribe path without disturbing every other
+        /// test's fixed expectation of MockAsr's default text.
+        #[arg(long, hide = true)]
+        asr_mock_text: Option<String>,
     },
 
     /// Transcribe all .wav files in a directory.
@@ -216,6 +223,7 @@ fn build_asr_backend(
     asr_id: Option<&str>,
     asr_base_url: Option<&str>,
     asr_api_key: Option<&str>,
+    asr_mock_text: Option<&str>,
 ) -> anyhow::Result<Box<dyn AsrBackend>> {
     let choice = match asr_id {
         Some(id) => AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?,
@@ -223,7 +231,10 @@ fn build_asr_backend(
     };
 
     match choice {
-        AsrChoice::Mock => Ok(Box::new(MockAsr::default())),
+        AsrChoice::Mock => Ok(match asr_mock_text {
+            Some(text) => Box::new(MockAsr::new(text)),
+            None => Box::new(MockAsr::default()),
+        }),
         AsrChoice::WhisperLocal => {
             let model_path = WhisperLocal::resolve_model_path(config.whisper.model_path.clone())
                 .ok_or_else(|| {
@@ -402,6 +413,7 @@ async fn main() -> anyhow::Result<()> {
             data_dir,
             asr_base_url,
             asr_api_key,
+            asr_mock_text,
         }) => {
             let export_format = format
                 .as_deref()
@@ -419,6 +431,7 @@ async fn main() -> anyhow::Result<()> {
                 asr.as_deref(),
                 asr_base_url.as_deref(),
                 asr_api_key.as_deref(),
+                asr_mock_text.as_deref(),
             )?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
@@ -489,6 +502,7 @@ async fn main() -> anyhow::Result<()> {
                 asr.as_deref(),
                 asr_base_url.as_deref(),
                 asr_api_key.as_deref(),
+                None,
             )?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
