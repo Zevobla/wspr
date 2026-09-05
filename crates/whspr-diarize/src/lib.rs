@@ -46,16 +46,20 @@
 //!
 //! # Required model files
 //!
-//! `SherpaDiarizer::new(model_dir)` expects `model_dir` to contain exactly
-//! two files (literal names, chosen by this crate — rename the upstream
-//! release assets to match):
+//! `SherpaDiarizer::new(model_dir, embedding_choice)` expects `model_dir` to
+//! contain:
 //!
 //! - `segmentation.onnx` — the pyannote speaker-segmentation-3.0 model.
 //!   Source: rename `model.onnx` extracted from
 //!   <https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2>
-//!   (sherpa-onnx model zoo, `speaker-segmentation-models` release).
-//! - `embedding.onnx` — a WeSpeaker CAM++ speaker-embedding model trained on
-//!   VoxCeleb (English). Source: rename
+//!   (sherpa-onnx model zoo, `speaker-segmentation-models` release). There's
+//!   only one segmentation model, so this filename is fixed.
+//! - a speaker-embedding model, whichever file `embedding_choice.filename()`
+//!   names (see `whspr_config::SpeakerEmbeddingChoice`) -- **not** a single
+//!   hardcoded filename, so the CLI/GUI can offer a real menu once wave3-nix
+//!   provisions more than one embedding model. The default choice,
+//!   `embedding-campplus.onnx`, is a WeSpeaker CAM++ model trained on
+//!   VoxCeleb (English); source: rename
 //!   `wespeaker_en_voxceleb_CAM++.onnx` downloaded from
 //!   <https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx>
 //!   (sherpa-onnx model zoo, `speaker-recongition-models` release — note the
@@ -65,18 +69,19 @@
 //! verification harness (deliberately not part of `cargo test --workspace`,
 //! which must stay offline and model-free).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use sherpa_rs::diarize::{Diarize, DiarizeConfig};
 use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
 
+use whspr_config::SpeakerEmbeddingChoice;
 use whspr_core::{AudioBuffer, Diarizer, Result, SpeakerTurn, WhsprError};
 
 /// Filename `model_dir` must contain for the pyannote segmentation model.
+/// There's only one segmentation model in use, so (unlike the embedding
+/// model) this isn't a menu choice.
 pub const SEGMENTATION_MODEL_FILENAME: &str = "segmentation.onnx";
-/// Filename `model_dir` must contain for the speaker embedding model.
-pub const EMBEDDING_MODEL_FILENAME: &str = "embedding.onnx";
 
 /// `whspr_core::Diarizer` backed by sherpa-onnx (via `sherpa-rs`). See the
 /// module docs for exactly which model files it needs and how it derives
@@ -88,9 +93,31 @@ pub struct SherpaDiarizer {
 }
 
 impl SherpaDiarizer {
-    /// Loads the segmentation + embedding models from `model_dir`. See the
-    /// module doc comment for the exact filenames expected.
-    pub fn new(model_dir: impl AsRef<Path>) -> Result<Self> {
+    /// Resolves the model directory to use: an explicit path (e.g. from a
+    /// `--model-dir` flag or `whspr-config`'s `[speaker].model_dir`) takes
+    /// priority. If none is given, falls back to the `SPEAKER_MODEL_DIR`
+    /// environment variable, which the project's Nix devShell sets to a
+    /// directory of pinned, reproducibly-fetched checkpoints (see
+    /// `nix/models.nix`) so nobody needs to download models by hand.
+    /// Mirrors `whspr_asr::WhisperLocal::resolve_model_path`'s identical
+    /// reasoning: this is a build/environment-provided path, not a
+    /// user-changeable app setting, so reading it here doesn't run afoul of
+    /// `whspr-config`'s "no env vars" rule.
+    ///
+    /// Returns `None` if neither is available; callers should treat that as
+    /// "no real diarization backend configured" rather than constructing a
+    /// `SherpaDiarizer` pointed at a path that doesn't exist.
+    pub fn resolve_model_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
+        explicit.or_else(|| std::env::var_os("SPEAKER_MODEL_DIR").map(PathBuf::from))
+    }
+
+    /// Loads the segmentation model, and the embedding model named by
+    /// `embedding_choice`, from `model_dir`. See the module doc comment for
+    /// the exact filenames expected.
+    pub fn new(
+        model_dir: impl AsRef<Path>,
+        embedding_choice: SpeakerEmbeddingChoice,
+    ) -> Result<Self> {
         let model_dir = model_dir.as_ref();
         if !model_dir.is_dir() {
             return Err(WhsprError::Diarize(format!(
@@ -100,7 +127,7 @@ impl SherpaDiarizer {
         }
 
         let segmentation_model = model_dir.join(SEGMENTATION_MODEL_FILENAME);
-        let embedding_model = model_dir.join(EMBEDDING_MODEL_FILENAME);
+        let embedding_model = model_dir.join(embedding_choice.filename());
         for (label, path) in [
             ("segmentation model", &segmentation_model),
             ("embedding model", &embedding_model),
@@ -230,6 +257,30 @@ impl Diarizer for SherpaDiarizer {
 mod tests {
     use super::*;
 
+    /// Exercises all three precedence outcomes in one test (rather than
+    /// three separate `#[test]` fns) since `cargo test` runs tests in
+    /// parallel threads by default and mutating a shared env var from
+    /// multiple concurrently-running tests would race. Mirrors
+    /// `whspr_asr::WhisperLocal`'s identical `resolve_model_path` test.
+    #[test]
+    fn resolve_model_dir_precedence() {
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+        assert_eq!(SherpaDiarizer::resolve_model_dir(None), None);
+
+        std::env::set_var("SPEAKER_MODEL_DIR", "/from/env");
+        assert_eq!(
+            SherpaDiarizer::resolve_model_dir(None),
+            Some(PathBuf::from("/from/env")),
+            "should fall back to SPEAKER_MODEL_DIR when no explicit dir is given"
+        );
+        assert_eq!(
+            SherpaDiarizer::resolve_model_dir(Some(PathBuf::from("/explicit"))),
+            Some(PathBuf::from("/explicit")),
+            "an explicit dir should win over SPEAKER_MODEL_DIR"
+        );
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+    }
+
     #[test]
     fn segment_sample_range_normal() {
         assert_eq!(
@@ -266,14 +317,18 @@ mod tests {
 
     #[test]
     fn new_rejects_missing_model_dir() {
-        let err = SherpaDiarizer::new("/nonexistent/whspr-diarize-test-model-dir").unwrap_err();
+        let err = SherpaDiarizer::new(
+            "/nonexistent/whspr-diarize-test-model-dir",
+            SpeakerEmbeddingChoice::CamPlusPlus,
+        )
+        .unwrap_err();
         assert!(matches!(err, WhsprError::Diarize(_)));
     }
 
     #[test]
     fn new_rejects_model_dir_missing_both_files() {
         let dir = tempfile::tempdir().unwrap();
-        let err = SherpaDiarizer::new(dir.path()).unwrap_err();
+        let err = SherpaDiarizer::new(dir.path(), SpeakerEmbeddingChoice::CamPlusPlus).unwrap_err();
         match err {
             WhsprError::Diarize(msg) => assert!(
                 msg.contains("segmentation model"),
@@ -291,11 +346,33 @@ mod tests {
             b"not a real onnx model, just enough to exist as a file",
         )
         .unwrap();
-        let err = SherpaDiarizer::new(dir.path()).unwrap_err();
+        let err = SherpaDiarizer::new(dir.path(), SpeakerEmbeddingChoice::CamPlusPlus).unwrap_err();
         match err {
             WhsprError::Diarize(msg) => assert!(
                 msg.contains("embedding model"),
                 "expected the embedding model to be reported missing, got: {msg}"
+            ),
+            other => panic!("expected WhsprError::Diarize, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_looks_up_the_selected_embedding_choice_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(SEGMENTATION_MODEL_FILENAME), b"stub").unwrap();
+        // Only the Eres2Net file exists. Asking for CamPlusPlus should still
+        // fail on the embedding model specifically, proving `new` actually
+        // looks up the *chosen* filename rather than always the same one.
+        std::fs::write(
+            dir.path().join(SpeakerEmbeddingChoice::Eres2Net.filename()),
+            b"stub",
+        )
+        .unwrap();
+        let err = SherpaDiarizer::new(dir.path(), SpeakerEmbeddingChoice::CamPlusPlus).unwrap_err();
+        match err {
+            WhsprError::Diarize(msg) => assert!(
+                msg.contains("embedding model"),
+                "expected the CamPlusPlus embedding model to be reported missing, got: {msg}"
             ),
             other => panic!("expected WhsprError::Diarize, got {other:?}"),
         }
