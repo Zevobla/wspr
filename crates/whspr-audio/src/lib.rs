@@ -18,8 +18,80 @@ use rubato::{
 };
 use whspr_core::{AudioBuffer, Result, WhsprError};
 
+/// Trims leading and trailing silence from `audio`.
+///
+/// Classifies the audio in fixed ~20ms windows (the window length is
+/// derived from `audio.sample_rate`, so this is correct at any input rate,
+/// not just 16kHz) by RMS energy: a window is "silent" if its RMS is `<=
+/// threshold`. Whole silent windows are dropped from the very start and
+/// very end only; speech in the middle — including a pause *inside* an
+/// utterance — is never touched, because the scan from each end stops as
+/// soon as it hits one non-silent window.
+///
+/// `min_keep` is a floor, in samples, on the trimmed output's length: if
+/// trimming would leave fewer than `min_keep` samples — including the
+/// degenerate case of an entirely-silent buffer, where the forward and
+/// backward scans would otherwise meet in the middle and trim everything —
+/// the original `audio` is returned unchanged instead of over-trimming
+/// toward empty. This is what makes it safe to call unconditionally from
+/// `decode_wav`: it never hands a downstream ASR backend a surprise empty
+/// clip, and a buffer shorter than one window is also returned unchanged
+/// (there's nothing safe to window-classify).
+pub fn trim_silence(audio: &AudioBuffer, threshold: f32, min_keep: usize) -> AudioBuffer {
+    let window_len = ((audio.sample_rate as usize) / 50).max(1); // ~20ms
+    let samples = &audio.samples;
+    let n = samples.len();
+
+    if n < window_len {
+        return audio.clone();
+    }
+
+    let window_rms = |start: usize| -> f32 {
+        let end = (start + window_len).min(n);
+        let window = &samples[start..end];
+        (window.iter().map(|s| s * s).sum::<f32>() / window.len() as f32).sqrt()
+    };
+
+    let mut start = 0;
+    while start + window_len <= n && window_rms(start) <= threshold {
+        start += window_len;
+    }
+
+    let mut end = n;
+    while end >= window_len
+        && end - window_len >= start
+        && window_rms(end - window_len) <= threshold
+    {
+        end -= window_len;
+    }
+
+    if start >= end || end - start < min_keep {
+        return audio.clone();
+    }
+
+    AudioBuffer::new(samples[start..end].to_vec(), audio.sample_rate)
+}
+
+/// Default RMS energy threshold (on the `AudioBuffer`'s [-1.0, 1.0]
+/// amplitude scale) below which a short window of audio is classified as
+/// silence by `trim_silence`.
+pub const DEFAULT_SILENCE_THRESHOLD: f32 = 0.02;
+
+/// Default floor, in samples, below which `trim_silence` refuses to shrink
+/// the buffer further. 1600 samples is 100ms at 16kHz. Guards against ever
+/// handing an ASR backend a suspiciously tiny or fully-empty clip.
+pub const DEFAULT_MIN_KEEP_SAMPLES: usize = 1600;
+
+/// `trim_silence` with sensible defaults (see `DEFAULT_SILENCE_THRESHOLD`,
+/// `DEFAULT_MIN_KEEP_SAMPLES`). This is what `decode_wav` calls internally.
+pub fn trim_silence_default(audio: &AudioBuffer) -> AudioBuffer {
+    trim_silence(audio, DEFAULT_SILENCE_THRESHOLD, DEFAULT_MIN_KEEP_SAMPLES)
+}
+
 /// Decodes a WAV file into an `AudioBuffer` at its native sample rate/channel
 /// layout (resample separately with `resample_to_16k_mono`).
+///
+/// Automatically trims leading and trailing silence (see `trim_silence` for details).
 ///
 /// Handles arbitrary bit depths (8/16/24/32-bit int, float) and channel layouts,
 /// normalizing all to f32 [-1.0, 1.0] and downmixing to mono during decode.
@@ -108,7 +180,8 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
         samples = mono;
     }
 
-    Ok(AudioBuffer::new(samples, sample_rate))
+    let audio = AudioBuffer::new(samples, sample_rate);
+    Ok(trim_silence_default(&audio))
 }
 
 /// Resamples an `AudioBuffer` to 16kHz mono.
