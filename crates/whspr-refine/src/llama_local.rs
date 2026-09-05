@@ -181,3 +181,50 @@ fn token_to_string(model: &LlamaModel, token: LlamaToken) -> Result<String> {
     };
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_llama_local_id() {
+        let refiner = LlamaLocal::new("/path/to/model.gguf");
+        assert_eq!(refiner.id(), "llama-local");
+    }
+
+    #[tokio::test]
+    async fn test_llama_local_missing_model_errors_no_panic() {
+        let refiner = LlamaLocal::new("/definitely/does/not/exist.gguf");
+
+        let result = refiner
+            .refine("hello um world", &RefineContext::default())
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    /// Real end-to-end run against a real GGUF model. Ignored by default so
+    /// the offline gate stays green without a model file on disk; point
+    /// `WHSPR_LLAMA_TEST_MODEL` at a small GGUF (e.g. a SmolLM2-135M-Instruct
+    /// quant) and run with `cargo test -p whspr-refine -- --ignored` to
+    /// exercise it for real.
+    #[tokio::test]
+    #[ignore]
+    async fn test_llama_local_real_model() {
+        let Ok(model_path) = std::env::var("WHSPR_LLAMA_TEST_MODEL") else {
+            eprintln!("skipping: WHSPR_LLAMA_TEST_MODEL not set");
+            return;
+        };
+
+        let refiner = LlamaLocal::new(model_path);
+        let result = refiner
+            .refine(
+                "um so i think we should uh meet on tuesday, I mean Wednesday",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed against a real model");
+
+        assert!(!result.is_empty());
+    }
+}
