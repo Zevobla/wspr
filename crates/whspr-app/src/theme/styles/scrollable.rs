@@ -17,12 +17,18 @@ pub fn rail(scheme: &color::Scheme, status: Status) -> Style {
             is_horizontal_scrollbar_hovered,
             is_vertical_scrollbar_hovered,
             ..
-        } => (is_horizontal_scrollbar_hovered, is_vertical_scrollbar_hovered),
+        } => (
+            is_horizontal_scrollbar_hovered,
+            is_vertical_scrollbar_hovered,
+        ),
         Status::Dragged {
             is_horizontal_scrollbar_dragged,
             is_vertical_scrollbar_dragged,
             ..
-        } => (is_horizontal_scrollbar_dragged, is_vertical_scrollbar_dragged),
+        } => (
+            is_horizontal_scrollbar_dragged,
+            is_vertical_scrollbar_dragged,
+        ),
     };
 
     Style {
@@ -35,7 +41,11 @@ pub fn rail(scheme: &color::Scheme, status: Status) -> Style {
 }
 
 fn track(scheme: &color::Scheme, accented: bool) -> Rail {
-    let color = if accented { scheme.primary } else { scheme.outline_variant };
+    let color = if accented {
+        scheme.primary
+    } else {
+        scheme.outline_variant
+    };
 
     Rail {
         background: None,

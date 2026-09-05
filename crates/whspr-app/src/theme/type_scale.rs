@@ -71,8 +71,14 @@ mod tests {
 
     #[test]
     fn emphasized_steps_up_exactly_one_weight() {
-        assert_eq!(TypeStyle::new(14.0, Weight::Normal).emphasized().weight, Weight::Medium);
-        assert_eq!(TypeStyle::new(14.0, Weight::Medium).emphasized().weight, Weight::Semibold);
+        assert_eq!(
+            TypeStyle::new(14.0, Weight::Normal).emphasized().weight,
+            Weight::Medium
+        );
+        assert_eq!(
+            TypeStyle::new(14.0, Weight::Medium).emphasized().weight,
+            Weight::Semibold
+        );
     }
 
     #[test]
@@ -83,6 +89,9 @@ mod tests {
 
     #[test]
     fn emphasized_saturates_at_black() {
-        assert_eq!(TypeStyle::new(14.0, Weight::Black).emphasized().weight, Weight::Black);
+        assert_eq!(
+            TypeStyle::new(14.0, Weight::Black).emphasized().weight,
+            Weight::Black
+        );
     }
 }
