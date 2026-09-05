@@ -1,6 +1,6 @@
 //! The Hub window: settings, device list, hotkey config, history, and stats.
 
-use iced::widget::{button, column, container, pick_list, text, text_input};
+use iced::widget::{button, column, container, pick_list, scrollable, text, text_input};
 use iced::{Element, Length};
 
 use crate::config_ui::{self, ASR_LABELS, REFINE_LABELS};
@@ -14,6 +14,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             settings_section(state),
             device_section(state),
             hotkey_section(state),
+            history_section(state),
         ]
         .spacing(20)
         .padding(20)
@@ -60,6 +61,26 @@ fn hotkey_section(state: &State) -> Element<'_, Message> {
     ]
     .spacing(8)
     .into()
+}
+
+fn history_section(state: &State) -> Element<'_, Message> {
+    let content: Element<'_, Message> = if state.history.is_empty() {
+        text("No transcriptions yet -- dictate something to see it here.").into()
+    } else {
+        // Most recent first.
+        let entries: Vec<Element<'_, Message>> = state
+            .history
+            .iter()
+            .rev()
+            .map(|entry| text(entry.text.clone()).into())
+            .collect();
+
+        scrollable(column(entries).spacing(6))
+            .height(Length::Fixed(160.0))
+            .into()
+    };
+
+    column![text("History").size(20), content].spacing(8).into()
 }
 
 fn settings_section(state: &State) -> Element<'_, Message> {
