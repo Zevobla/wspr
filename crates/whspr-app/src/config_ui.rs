@@ -6,13 +6,25 @@
 //! the trait nor the type is ours), so we keep small label tables here
 //! instead and translate both ways.
 
-use whspr_config::{AsrChoice, RefineChoice};
+use whspr_config::{AsrChoice, RefineChoice, SpeakerEmbeddingChoice};
 
 /// Labels shown in the ASR backend `pick_list`, in display order.
 pub const ASR_LABELS: [&str; 3] = ["whisper-local", "openai", "deepgram"];
 
 /// Labels shown in the refiner `pick_list`, in display order.
 pub const REFINE_LABELS: [&str; 4] = ["noop", "openai", "anthropic", "llama-local"];
+
+/// Labels shown in the speaker-embedding-model `pick_list`, in display
+/// order.
+pub const EMBEDDING_LABELS: [&str; 2] = ["cam-plus-plus", "eres2net"];
+
+/// Labels shown in the language-override `pick_list`, in display order.
+/// "auto" means no override (`Config.language == None`); every other entry
+/// is a BCP47 code passed straight through. A curated subset of whisper's
+/// supported languages, not an exhaustive list -- easy to extend later.
+pub const LANGUAGE_LABELS: [&str; 11] = [
+    "auto", "en", "ru", "es", "fr", "de", "it", "pt", "ja", "ko", "zh",
+];
 
 /// The label a `pick_list` should show as selected for the given choice.
 pub fn asr_label(choice: AsrChoice) -> &'static str {
@@ -53,6 +65,52 @@ pub fn refine_from_label(label: &str) -> RefineChoice {
         "anthropic" => RefineChoice::Anthropic,
         "llama-local" => RefineChoice::LlamaLocal,
         _ => RefineChoice::Noop,
+    }
+}
+
+/// The label a `pick_list` should show as selected for the given choice.
+pub fn embedding_label(choice: SpeakerEmbeddingChoice) -> &'static str {
+    match choice {
+        SpeakerEmbeddingChoice::CamPlusPlus => "cam-plus-plus",
+        SpeakerEmbeddingChoice::Eres2Net => "eres2net",
+    }
+}
+
+/// Recovers the `SpeakerEmbeddingChoice` for a label previously produced by
+/// `embedding_label`. Falls back to the default choice for any unrecognized
+/// label rather than panicking.
+pub fn embedding_from_label(label: &str) -> SpeakerEmbeddingChoice {
+    match label {
+        "eres2net" => SpeakerEmbeddingChoice::Eres2Net,
+        _ => SpeakerEmbeddingChoice::CamPlusPlus,
+    }
+}
+
+/// The label the language `pick_list` should show as selected for
+/// `Config.language`: "auto" for `None`, the code itself if it's one of
+/// `LANGUAGE_LABELS`, or "auto" for anything else (a language the user
+/// (or an older config file) set that isn't in this curated list -- rather
+/// than crash or silently invent a new pick_list entry, the picker just
+/// shows no confident match).
+pub fn language_label(language: &Option<String>) -> &'static str {
+    match language {
+        None => "auto",
+        Some(code) => LANGUAGE_LABELS
+            .iter()
+            .find(|&&label| label == code)
+            .copied()
+            .unwrap_or("auto"),
+    }
+}
+
+/// Recovers the `Config.language` value for a label previously produced by
+/// `language_label` (or picked directly from `LANGUAGE_LABELS`): `None` for
+/// "auto", `Some(label)` otherwise.
+pub fn language_from_label(label: &str) -> Option<String> {
+    if label == "auto" {
+        None
+    } else {
+        Some(label.to_string())
     }
 }
 
