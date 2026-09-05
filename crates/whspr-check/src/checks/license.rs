@@ -99,3 +99,49 @@ pub fn check_declared_license(root: &Path) -> Vec<CheckResult> {
 
     vec![z02, a04]
 }
+
+/// How many lines of the README count as its "first screen" for Z-04 - a
+/// generous approximation of what's visible without scrolling on GitHub's
+/// rendered view.
+const README_FIRST_SCREEN_LINES: usize = 20;
+
+/// Z-04: license is named on the README's first screen.
+pub fn check_readme_names_license(root: &Path) -> CheckResult {
+    let path = root.join("README.md");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => return CheckResult::fail("Z-04", format!("could not read {}: {e}", path.display())),
+    };
+
+    let first_screen: String = text
+        .lines()
+        .take(README_FIRST_SCREEN_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lower = first_screen.to_lowercase();
+
+    let mentions_license_word = lower.contains("license");
+    let mentions_a_license_id = KNOWN_SPDX_IDS
+        .iter()
+        .any(|id| lower.contains(&id.to_lowercase()))
+        || lower.contains("agpl"); // AGPL-3.0 (short form) isn't in KNOWN_SPDX_IDS verbatim
+
+    if mentions_license_word && mentions_a_license_id {
+        CheckResult::pass(
+            "Z-04",
+            format!(
+                "README's first {README_FIRST_SCREEN_LINES} lines mention \"license\" and a \
+                 license id"
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "Z-04",
+            format!(
+                "README's first {README_FIRST_SCREEN_LINES} lines don't clearly name a license \
+                 (mentions \"license\": {mentions_license_word}, mentions a known license id: \
+                 {mentions_a_license_id})"
+            ),
+        )
+    }
+}
