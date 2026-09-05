@@ -19,6 +19,10 @@ whspr-core = { workspace = true, features = ["testkit"] }
 whspr-inject.workspace = true
 whspr-audio.workspace = true
 whspr-config.workspace = true
+# Not in the root workspace's [workspace.dependencies] -- this is the only
+# crate that diarizes recordings, so it's declared directly here rather than
+# growing the shared dependency set.
+whspr-diarize = { path = "../whspr-diarize" }
 tokio.workspace = true
 tracing.workspace = true
 # whspr-audio doesn't expose a device-listing helper (it only starts capture
@@ -30,6 +34,12 @@ cpal.workspace = true
 serde_json.workspace = true
 # Locates the platform data dir the history file would live in.
 directories.workspace = true
+# Native file-picker dialog for "pick a recording to diarize". Not in the
+# root workspace's [workspace.dependencies] -- declared directly here.
+rfd = "0.15"
 
 [dev-dependencies]
 tempfile.workspace = true
+# Synthesizes a throwaway WAV fixture for `speakers::run_diarize_scan`'s
+# test, same as `whspr-cli`'s e2e tests do.
+hound.workspace = true
