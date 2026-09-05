@@ -3,6 +3,7 @@
 //! the repo root found by `crate::repo::find_repo_root`.
 
 use crate::report::CheckResult;
+use crate::util::{head, tail};
 use std::path::Path;
 
 /// A-01 (one-command build works) and A-03 (Cargo.lock present).
@@ -92,32 +93,4 @@ pub fn check_fmt(root: &Path) -> CheckResult {
         ),
         Err(e) => CheckResult::fail("AA-14", format!("could not run cargo fmt: {e}")),
     }
-}
-
-/// Last `n` bytes of `s`, snapped forward to the nearest UTF-8 char
-/// boundary so this never panics on a multi-byte character straddling the
-/// cut point.
-fn tail(s: &str, n: usize) -> &str {
-    if s.len() <= n {
-        return s;
-    }
-    let mut idx = s.len() - n;
-    while !s.is_char_boundary(idx) {
-        idx += 1;
-    }
-    &s[idx..]
-}
-
-/// First `n` bytes of `s`, snapped backward to the nearest UTF-8 char
-/// boundary so this never panics on a multi-byte character straddling the
-/// cut point.
-fn head(s: &str, n: usize) -> &str {
-    if s.len() <= n {
-        return s;
-    }
-    let mut idx = n;
-    while !s.is_char_boundary(idx) {
-        idx -= 1;
-    }
-    &s[..idx]
 }
