@@ -5,6 +5,7 @@ mod history;
 mod hotkey_capture;
 mod hub;
 mod state;
+mod stats;
 
 fn main() -> iced::Result {
     app::run()
