@@ -242,6 +242,6 @@ mod tests {
         assert_eq!(loaded.profiles[0].id, "Speaker 1");
         assert_eq!(loaded.profiles[0].name, Some("Test Speaker".to_string()));
         assert_eq!(loaded.profiles[0].samples, 1);
-        assert!(loaded.profiles[0].centroid.len() > 0);
+        assert!(!loaded.profiles[0].centroid.is_empty());
     }
 }
