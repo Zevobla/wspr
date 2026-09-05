@@ -5806,11 +5806,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "whspr-asr",
  "whspr-audio",
  "whspr-config",
  "whspr-core",
  "whspr-diarize",
  "whspr-inject",
+ "whspr-refine",
 ]
 
 [[package]]
