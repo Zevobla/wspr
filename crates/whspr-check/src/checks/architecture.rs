@@ -4,8 +4,87 @@
 
 use crate::repo;
 use crate::report::CheckResult;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
+
+/// Runs `cargo metadata --format-version 1` and parses its JSON, shared by
+/// every check in this file that needs the resolved dependency graph
+/// (AA-02, AA-10) rather than just reading Cargo.toml files directly.
+fn run_cargo_metadata(root: &Path) -> anyhow::Result<Value> {
+    let output = repo::run(root, "cargo", &["metadata", "--format-version", "1"])?;
+    if !output.success {
+        anyhow::bail!("`cargo metadata` failed: {}", output.stderr);
+    }
+    serde_json::from_str(&output.stdout)
+        .map_err(|e| anyhow::anyhow!("could not parse cargo metadata JSON: {e}"))
+}
+
+/// Crates that make `whspr-core` no longer "light": native-compiling ASR/
+/// LLM backends, the GUI toolkit, and OS-integration libraries. Per
+/// CLAUDE.md, whspr-core is supposed to depend on nothing else in the
+/// workspace and only light deps (async-trait, thiserror, serde, tokio,
+/// tracing) - this check verifies that claim against the real, resolved
+/// manifest instead of trusting the doc comment.
+const HEAVY_DEPS: &[&str] = &[
+    "whisper-rs",
+    "llama-cpp-2",
+    "iced",
+    "cpal",
+    "global-hotkey",
+    "enigo",
+    "arboard",
+    "reqwest",
+];
+
+/// AA-02: the domain crate (whspr-core) is free of heavy framework deps.
+pub fn check_core_free_of_heavy_deps(root: &Path) -> CheckResult {
+    let meta = match run_cargo_metadata(root) {
+        Ok(m) => m,
+        Err(e) => return CheckResult::fail("AA-02", e.to_string()),
+    };
+    let Some(packages) = meta["packages"].as_array() else {
+        return CheckResult::fail("AA-02", "cargo metadata JSON had no `packages` array");
+    };
+    let Some(core) = packages.iter().find(|p| p["name"] == "whspr-core") else {
+        return CheckResult::fail("AA-02", "no whspr-core package in cargo metadata output");
+    };
+    let Some(deps) = core["dependencies"].as_array() else {
+        return CheckResult::fail("AA-02", "whspr-core package has no `dependencies` array");
+    };
+
+    let normal_deps: Vec<&str> = deps
+        .iter()
+        .filter(|d| d["kind"].is_null()) // normal deps only, not dev/build
+        .filter_map(|d| d["name"].as_str())
+        .collect();
+    let heavy_found: Vec<&str> = normal_deps
+        .iter()
+        .filter(|d| HEAVY_DEPS.contains(d))
+        .copied()
+        .collect();
+
+    if heavy_found.is_empty() {
+        CheckResult::pass(
+            "AA-02",
+            format!(
+                "whspr-core's declared normal dependencies are: {} - none of the {} known \
+                 heavy/framework deps ({}) are among them",
+                normal_deps.join(", "),
+                HEAVY_DEPS.len(),
+                HEAVY_DEPS.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "AA-02",
+            format!(
+                "whspr-core directly depends on heavy/framework crate(s): {}",
+                heavy_found.join(", ")
+            ),
+        )
+    }
+}
 
 /// The library crates AA-16 holds to a no-direct-printing standard.
 /// Deliberately excludes the binary crates (`whspr-cli`, `whspr-app`),

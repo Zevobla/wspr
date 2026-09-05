@@ -80,6 +80,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
 
     results.push(architecture::check_file_size_sanity(root));
     results.push(architecture::check_logging_single_interface(root));
+    results.push(architecture::check_core_free_of_heavy_deps(root));
 
     results
 }
