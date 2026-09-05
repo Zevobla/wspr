@@ -215,6 +215,11 @@ pub const CATALOG: &[Criterion] = &[
         group: "AB",
         title: "Test-suite runtime is bounded",
     },
+    Criterion {
+        id: "AB-12",
+        group: "AB",
+        title: "Tests give identical outcomes across repeat runs",
+    },
     // --- AD: Growth-monotonicity(git) ---
     Criterion {
         id: "AD-01",
