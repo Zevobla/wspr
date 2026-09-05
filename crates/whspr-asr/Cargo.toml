@@ -17,6 +17,7 @@ whisper-rs.workspace = true
 [dev-dependencies]
 wiremock.workspace = true
 tokio = { workspace = true, features = ["macros"] }
+hound.workspace = true
 
 [features]
 # Re-exports whspr-core's MockAsr for convenience; does not pull in any

@@ -455,4 +455,60 @@ mod tests {
         // Total size should be 44 byte header + samples.len() * 2 bytes for i16 PCM data
         assert!(wav_data.len() >= 44 + samples.len() * 2);
     }
+
+    /// Real end-to-end WhisperLocal transcription against a small committed
+    /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
+    /// synthesized speech saying "one two three").
+    ///
+    /// Requires a real GGML model on disk, which this repo deliberately
+    /// never ships or downloads automatically. Get one and run this
+    /// explicitly with:
+    ///
+    /// ```sh
+    /// mkdir -p ~/.cache/whspr
+    /// curl -L -o ~/.cache/whspr/ggml-base.bin \
+    ///   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+    /// cargo test -p whspr-asr -- --ignored
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn whisper_local_transcribes_real_speech_fixture() {
+        let model_path = PathBuf::from(std::env::var("HOME").expect("HOME not set"))
+            .join(".cache/whspr/ggml-base.bin");
+        if !model_path.exists() {
+            eprintln!(
+                "skipping whisper_local_transcribes_real_speech_fixture: no model at {} \
+                 (see this test's doc comment for the download command)",
+                model_path.display()
+            );
+            return;
+        }
+
+        let fixture_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/one-two-three.wav"
+        ));
+        let mut reader = hound::WavReader::open(fixture_path).expect("failed to open fixture WAV");
+        let samples: Vec<f32> = reader
+            .samples::<i16>()
+            .map(|s| s.expect("failed to read WAV sample") as f32 / 32768.0)
+            .collect();
+        let audio = AudioBuffer::new(samples, 16000);
+
+        let asr = WhisperLocal::new(model_path);
+        let opts = AsrOptions {
+            language: Some("en".to_string()),
+        };
+
+        let transcript = asr
+            .transcribe(&audio, &opts)
+            .await
+            .expect("transcription failed");
+
+        assert!(
+            !transcript.text.trim().is_empty(),
+            "expected a non-empty transcript, got: {:?}",
+            transcript.text
+        );
+    }
 }
