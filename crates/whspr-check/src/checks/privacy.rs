@@ -19,18 +19,22 @@ const POISON_ENV: &[(&str, &str)] = &[
 /// pipeline (MockAsr + NoopRefiner) ever started making a real HTTP call,
 /// this would fail fast against the unreachable proxy address instead.
 pub fn check_transcribe_offline(bin: &Path, root: &Path) -> CheckResult {
+    let fixture = repo::fixture_wav_path(root);
+    let Some(fixture_str) = fixture.to_str() else {
+        return CheckResult::fail("P-01", "fixture WAV path isn't valid UTF-8");
+    };
     let output = repo::run_env(
         root,
         bin.to_str().unwrap_or("whspr"),
-        &["transcribe", "/dev/null"],
+        &["transcribe", fixture_str],
         POISON_ENV,
     );
     match output {
         Ok(out) if out.success && out.stdout.contains("the quick brown fox") => CheckResult::pass(
             "P-01",
-            "`whspr transcribe /dev/null` still succeeds with HTTP_PROXY/HTTPS_PROXY/ALL_PROXY \
-             pointed at an unreachable address - the default mock/local pipeline makes no \
-             network call",
+            "`whspr transcribe` on a real WAV fixture still succeeds with HTTP_PROXY/HTTPS_PROXY/\
+             ALL_PROXY pointed at an unreachable address - the default mock/local pipeline makes \
+             no network call",
         ),
         Ok(out) => CheckResult::fail(
             "P-01",
