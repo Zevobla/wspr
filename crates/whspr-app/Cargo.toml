@@ -26,3 +26,5 @@ tracing.workspace = true
 # directly rather than growing whspr-audio's public API for one small list
 # call. See the final report for the reasoning.
 cpal.workspace = true
+# Tolerant parsing of the (schema-less-to-us) JSONL history file.
+serde_json.workspace = true
