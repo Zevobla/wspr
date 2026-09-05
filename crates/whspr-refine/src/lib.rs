@@ -1,13 +1,16 @@
 //! Text refiner implementations. Everything here implements
 //! `whspr_core::TextRefiner`. `NoopRefiner` is real and always available
-//! (it's the "no LLM cleanup" choice, not just a test double); the LLM-backed
-//! refiners are `todo!()` until the refine team wires up the real HTTP/local
-//! inference calls — this crate must keep compiling without llama-cpp-2 in
-//! the meantime.
+//! (it's the "no LLM cleanup" choice, not just a test double). `OpenAiRefiner`
+//! and `AnthropicRefiner` are real cloud-backed implementations. `LlamaLocal`
+//! returns a runtime error: llama-cpp-2 requires `cmake` to build its native
+//! sources, and `cmake` is not present in this project's nix devShell, so
+//! wiring it up isn't possible from this crate alone (see the `refine` method
+//! below for details).
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
-use whspr_core::{RefineContext, Result, TextRefiner};
+use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
 /// Passes text through unchanged. The default `RefineChoice`.
 pub struct NoopRefiner;
@@ -27,6 +30,7 @@ impl TextRefiner for NoopRefiner {
 pub struct OpenAiRefiner {
     pub api_key: String,
     pub model: String,
+    base_url: String,
 }
 
 impl OpenAiRefiner {
@@ -34,14 +38,128 @@ impl OpenAiRefiner {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            base_url: "https://api.openai.com".to_string(),
         }
     }
+
+    /// For testing: override the API base URL.
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn build_cleanup_prompt(&self, raw: &str, ctx: &RefineContext) -> String {
+        let mut prompt = String::from(
+            "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
+            You must:\n\
+            - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
+            - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
+            - Add proper punctuation and capitalization\n\
+            - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
+            - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
+        );
+
+        if let Some(ref app_name) = ctx.app_name {
+            prompt.push_str(&format!(
+                "\nNote: This text is being dictated into {}. Format accordingly.\n",
+                app_name
+            ));
+        }
+
+        if let Some(ref instructions) = ctx.instructions {
+            prompt.push_str(&format!(
+                "\nAdditional formatting instructions: {}\n",
+                instructions
+            ));
+        }
+
+        if let Some(ref prior_text) = ctx.prior_text {
+            prompt.push_str(&format!(
+                "\nPrior text for context (do NOT include this in your output): {}\n",
+                prior_text
+            ));
+        }
+
+        prompt.push_str(&format!("\nRaw text to clean up:\n{}", raw));
+        prompt
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiRequest {
+    model: String,
+    messages: Vec<OpenAiRequestMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiRequestMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiResponse {
+    choices: Vec<OpenAiChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiChoice {
+    message: OpenAiResponseMessage,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct OpenAiResponseMessage {
+    role: String,
+    content: String,
 }
 
 #[async_trait]
 impl TextRefiner for OpenAiRefiner {
-    async fn refine(&self, _raw: &str, _ctx: &RefineContext) -> Result<String> {
-        todo!("whspr-refine: wire up OpenAI chat completion call")
+    async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
+        let cleanup_prompt = self.build_cleanup_prompt(raw, ctx);
+
+        let request = OpenAiRequest {
+            model: self.model.clone(),
+            messages: vec![OpenAiRequestMessage {
+                role: "user".to_string(),
+                content: cleanup_prompt,
+            }],
+        };
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/v1/chat/completions", self.base_url);
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| WhsprError::Refine(format!("OpenAI request failed: {}", e)))?;
+
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| WhsprError::Refine(format!("Failed to read OpenAI response: {}", e)))?;
+
+        let parsed: OpenAiResponse = serde_json::from_str(&response_text)
+            .map_err(|e| WhsprError::Refine(format!("Failed to parse OpenAI response: {}", e)))?;
+
+        parsed
+            .choices
+            .first()
+            .and_then(|choice| {
+                let content = choice.message.content.trim().to_string();
+                if content.is_empty() {
+                    None
+                } else {
+                    Some(content)
+                }
+            })
+            .ok_or_else(|| {
+                WhsprError::Refine("OpenAI response had no choices or empty content".to_string())
+            })
     }
 
     fn id(&self) -> &'static str {
@@ -53,6 +171,7 @@ impl TextRefiner for OpenAiRefiner {
 pub struct AnthropicRefiner {
     pub api_key: String,
     pub model: String,
+    base_url: String,
 }
 
 impl AnthropicRefiner {
@@ -60,14 +179,127 @@ impl AnthropicRefiner {
         Self {
             api_key: api_key.into(),
             model: model.into(),
+            base_url: "https://api.anthropic.com".to_string(),
         }
     }
+
+    /// For testing: override the API base URL.
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn build_cleanup_prompt(&self, raw: &str, ctx: &RefineContext) -> String {
+        let mut prompt = String::from(
+            "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
+            You must:\n\
+            - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
+            - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
+            - Add proper punctuation and capitalization\n\
+            - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
+            - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
+        );
+
+        if let Some(ref app_name) = ctx.app_name {
+            prompt.push_str(&format!(
+                "\nNote: This text is being dictated into {}. Format accordingly.\n",
+                app_name
+            ));
+        }
+
+        if let Some(ref instructions) = ctx.instructions {
+            prompt.push_str(&format!(
+                "\nAdditional formatting instructions: {}\n",
+                instructions
+            ));
+        }
+
+        if let Some(ref prior_text) = ctx.prior_text {
+            prompt.push_str(&format!(
+                "\nPrior text for context (do NOT include this in your output): {}\n",
+                prior_text
+            ));
+        }
+
+        prompt.push_str(&format!("\nRaw text to clean up:\n{}", raw));
+        prompt
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicRequest {
+    model: String,
+    max_tokens: u32,
+    system: String,
+    messages: Vec<AnthropicRequestMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicRequestMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicContent>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct AnthropicContent {
+    #[serde(rename = "type")]
+    content_type: String,
+    text: Option<String>,
 }
 
 #[async_trait]
 impl TextRefiner for AnthropicRefiner {
-    async fn refine(&self, _raw: &str, _ctx: &RefineContext) -> Result<String> {
-        todo!("whspr-refine: wire up Anthropic messages call")
+    async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
+        let cleanup_prompt = self.build_cleanup_prompt(raw, ctx);
+
+        let system_message = "You are a text cleanup assistant for speech-to-text output. \
+            Remove filler words, resolve self-corrections, add punctuation and capitalization. \
+            Output ONLY the cleaned text, nothing else.";
+
+        let request = AnthropicRequest {
+            model: self.model.clone(),
+            max_tokens: 1024,
+            system: system_message.to_string(),
+            messages: vec![AnthropicRequestMessage {
+                role: "user".to_string(),
+                content: cleanup_prompt,
+            }],
+        };
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/v1/messages", self.base_url);
+
+        let response = client
+            .post(&url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| WhsprError::Refine(format!("Anthropic request failed: {}", e)))?;
+
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| WhsprError::Refine(format!("Failed to read Anthropic response: {}", e)))?;
+
+        let parsed: AnthropicResponse = serde_json::from_str(&response_text).map_err(|e| {
+            WhsprError::Refine(format!("Failed to parse Anthropic response: {}", e))
+        })?;
+
+        parsed
+            .content
+            .first()
+            .and_then(|c| c.text.as_ref())
+            .map(|text| text.trim().to_string())
+            .ok_or_else(|| WhsprError::Refine("Anthropic response had no text content".to_string()))
     }
 
     fn id(&self) -> &'static str {
@@ -75,9 +307,15 @@ impl TextRefiner for AnthropicRefiner {
     }
 }
 
-/// Local cleanup via a small llama.cpp model (llama-cpp-2). Opt in the
-/// `llama-cpp-2` workspace dep from this crate's own Cargo.toml when
-/// implementing.
+/// Local cleanup via a small llama.cpp model (llama-cpp-2).
+///
+/// Blocked: llama-cpp-2 builds llama.cpp's native C/C++ sources via `cmake`,
+/// and `cmake` is not available in this project's nix devShell
+/// (`nix develop -c which cmake` fails; `cargo build --features llama` dies
+/// in the `llama-cpp-sys-2` build script with "is `cmake` not installed?").
+/// Adding `cmake` requires editing `flake.nix`, which is out of scope for
+/// this crate. `refine` below returns a clear runtime error instead of
+/// pretending this backend works.
 pub struct LlamaLocal {
     pub model_path: std::path::PathBuf,
 }
@@ -93,10 +331,174 @@ impl LlamaLocal {
 #[async_trait]
 impl TextRefiner for LlamaLocal {
     async fn refine(&self, _raw: &str, _ctx: &RefineContext) -> Result<String> {
-        todo!("whspr-refine: wire up llama-cpp-2 local inference")
+        Err(WhsprError::Refine(
+            "LlamaLocal not available: llama-cpp-2 build requires cmake in the nix devShell. \
+             See the project flake.nix to add cmake to the build environment."
+                .to_string(),
+        ))
     }
 
     fn id(&self) -> &'static str {
         "llama-local"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn test_openai_refiner_success() {
+        let mock_server = MockServer::start().await;
+
+        // Mock the OpenAI response
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(header("authorization", "Bearer test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello world."
+                    }
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refiner = OpenAiRefiner::new("test-key", "gpt-4").with_base_url(mock_server.uri());
+
+        let result = refiner
+            .refine("hello um world", &RefineContext::default())
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Hello world.");
+    }
+
+    #[tokio::test]
+    async fn test_openai_refiner_with_context() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "Cleaned text with context."
+                    }
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refiner = OpenAiRefiner::new("test-key", "gpt-4").with_base_url(mock_server.uri());
+
+        let ctx = RefineContext {
+            app_name: Some("Gmail".to_string()),
+            prior_text: Some("Hi there,".to_string()),
+            instructions: Some("Keep it professional".to_string()),
+        };
+
+        let result = refiner.refine("uh some text", &ctx).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Cleaned text with context.");
+    }
+
+    #[tokio::test]
+    async fn test_anthropic_refiner_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("x-api-key", "test-key"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [{
+                    "type": "text",
+                    "text": "Goodbye world."
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refiner =
+            AnthropicRefiner::new("test-key", "claude-3-sonnet").with_base_url(mock_server.uri());
+
+        let result = refiner
+            .refine("goodbye um world", &RefineContext::default())
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Goodbye world.");
+    }
+
+    #[tokio::test]
+    async fn test_anthropic_refiner_with_context() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [{
+                    "type": "text",
+                    "text": "Professional response text."
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refiner =
+            AnthropicRefiner::new("test-key", "claude-3-sonnet").with_base_url(mock_server.uri());
+
+        let ctx = RefineContext {
+            app_name: Some("Outlook".to_string()),
+            prior_text: Some("Dear Sir,".to_string()),
+            instructions: Some("Use formal tone".to_string()),
+        };
+
+        let result = refiner.refine("uh formal text here", &ctx).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Professional response text.");
+    }
+
+    #[test]
+    fn test_noop_refiner() {
+        let refiner = NoopRefiner;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        let result =
+            rt.block_on(refiner.refine("hello um world uh here", &RefineContext::default()));
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "hello um world uh here");
+    }
+
+    #[test]
+    fn test_noop_refiner_id() {
+        assert_eq!(NoopRefiner.id(), "noop");
+    }
+
+    #[test]
+    fn test_openai_refiner_id() {
+        let refiner = OpenAiRefiner::new("key", "gpt-4");
+        assert_eq!(refiner.id(), "openai");
+    }
+
+    #[test]
+    fn test_anthropic_refiner_id() {
+        let refiner = AnthropicRefiner::new("key", "claude-3");
+        assert_eq!(refiner.id(), "anthropic");
+    }
+
+    #[test]
+    fn test_llama_local_id() {
+        let refiner = LlamaLocal::new("/path/to/model.gguf");
+        assert_eq!(refiner.id(), "llama-local");
     }
 }
