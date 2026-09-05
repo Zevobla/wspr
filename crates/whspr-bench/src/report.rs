@@ -207,8 +207,11 @@ mod tests {
         let report = Report::from_case_results(cases);
         let json = report.format_json().unwrap();
 
-        assert!(json.contains("\"file\":\"test.wav\""));
-        assert!(json.contains("\"wer\":0.5"));
-        assert!(json.contains("\"cer\":0.25"));
+        // Parse as JSON to verify it's valid and contains expected fields
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("cases").is_some());
+        assert_eq!(parsed["cases"][0]["file"], "test.wav");
+        assert_eq!(parsed["cases"][0]["wer"], 0.5);
+        assert_eq!(parsed["cases"][0]["cer"], 0.25);
     }
 }

@@ -15,7 +15,7 @@ fn create_test_wav(path: &Path, sample_count: usize) -> anyhow::Result<()> {
 
     // Write a simple ramp
     for i in 0..sample_count {
-        let sample = ((i % 1000) as i16 * 32);
+        let sample = (i % 1000) as i16 * 32;
         writer.write_sample(sample)?;
     }
 
