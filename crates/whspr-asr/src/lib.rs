@@ -595,6 +595,15 @@ mod tests {
         assert_eq!(strip_special_tokens("[_EOT_]"), "");
     }
 
+    #[test]
+    fn strip_special_tokens_removes_all_caps_service_tags() {
+        assert_eq!(strip_special_tokens("[BLANK_AUDIO]"), "");
+        assert_eq!(strip_special_tokens("hello [MUSIC] world"), "hello world");
+        assert_eq!(strip_special_tokens("[NO SPEECH]"), "");
+        // The removal must not leave a doubled space behind.
+        assert_eq!(strip_special_tokens("a [MUSIC] b"), "a b");
+    }
+
     /// Real end-to-end WhisperLocal transcription against a small committed
     /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
     /// synthesized speech saying "one two three").
