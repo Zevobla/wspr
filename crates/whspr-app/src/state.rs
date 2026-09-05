@@ -35,6 +35,9 @@ pub struct State {
     /// completes during this session (session-only, not written back to
     /// disk -- see `crate::app`'s persistence note).
     pub history: Vec<HistoryEntry>,
+    /// The active iced theme, toggled between `Theme::Light`/`Theme::Dark`
+    /// by the Hub's theme button (see `crate::app`'s `.theme` wiring).
+    pub theme: iced::Theme,
 }
 
 impl State {
@@ -52,6 +55,7 @@ impl State {
             hotkey_capturing: false,
             captured_hotkey: None,
             history: Vec::new(),
+            theme: iced::Theme::Light,
         }
     }
 }
@@ -75,4 +79,6 @@ pub enum Message {
     /// on (see `update`), but the subscription hands over every event since
     /// `Subscription` has no `filter_map` combinator to narrow it upstream.
     HotkeyCaptureKeyEvent(iced::keyboard::Event),
+    /// The user toggled between light and dark theme in the Hub.
+    ThemeToggled,
 }
