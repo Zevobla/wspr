@@ -183,6 +183,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn normalizing_refiner_applies_extended_numeric_passes() {
+        // Proves the currency (F-13) and phone (F-15) passes run through the
+        // real refiner path, and that dedup (F-19) collapses "the the".
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine(
+                "the the meeting costs five dollars call 555 123 4567",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "the meeting costs $5 call 5551234567");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_extended_token_passes() {
+        // Proves email (F-16), URL (F-17), percent (F-14) and acronym (F-18)
+        // passes all run, in the right order, through the real refiner path.
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine(
+                "email me at john dot doe at example dot com visit example dot com \
+                 slash help fifty percent nasa",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(
+            result,
+            "email me at john.doe@example.com visit example.com/help 50 % NASA"
+        );
+    }
+
+    #[tokio::test]
     async fn normalizing_refiner_respects_disabled_toggles() {
         let settings = NormalizeSettings {
             numbers: false,
