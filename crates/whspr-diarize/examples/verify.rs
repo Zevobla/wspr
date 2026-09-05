@@ -5,12 +5,13 @@
 //! neither of which the workspace test suite may depend on. Run it by hand:
 //!
 //! ```sh
-//! cargo run -p whspr-diarize --example verify -- <model_dir> <wav_file>
+//! cargo run -p whspr-diarize --example verify -- <model_dir> <wav_file> [embedding_choice]
 //! ```
 //!
-//! `model_dir` must contain `segmentation.onnx` and `embedding.onnx` (see
-//! the crate's top-level doc comment for exactly where those come from and
-//! how to obtain them). `wav_file` must be 16kHz mono PCM (matching
+//! `model_dir` must contain `segmentation.onnx` and whichever embedding
+//! model file `embedding_choice` names (default `cam-plus-plus`; see the
+//! crate's top-level doc comment for exactly where those come from and how
+//! to obtain them). `wav_file` must be 16kHz mono PCM (matching
 //! `sherpa_rs::read_audio_file`'s requirement, which mirrors what the rest
 //! of whspr always hands a `Diarizer`).
 //!
@@ -19,6 +20,9 @@
 //! eyeball whether turns from the same speaker cluster together (high
 //! similarity) and turns from different speakers don't (low similarity).
 
+use std::str::FromStr;
+
+use whspr_config::SpeakerEmbeddingChoice;
 use whspr_core::{AudioBuffer, Diarizer};
 use whspr_diarize::SherpaDiarizer;
 
@@ -26,18 +30,24 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let model_dir = args.next().expect("usage: verify <model_dir> <wav_file>");
     let wav_path = args.next().expect("usage: verify <model_dir> <wav_file>");
+    let embedding_choice = match args.next() {
+        Some(s) => SpeakerEmbeddingChoice::from_str(&s).expect("unknown embedding_choice"),
+        None => SpeakerEmbeddingChoice::default(),
+    };
 
     let (samples, sample_rate) =
         sherpa_rs::read_audio_file(&wav_path).expect("failed to read wav file");
     let audio = AudioBuffer::new(samples, sample_rate);
     println!(
-        "loaded {} ({:.2}s @ {}Hz)",
+        "loaded {} ({:.2}s @ {}Hz), embedding_choice={:?}",
         wav_path,
         audio.duration_secs(),
-        sample_rate
+        sample_rate,
+        embedding_choice
     );
 
-    let diarizer = SherpaDiarizer::new(&model_dir).expect("failed to load models from model_dir");
+    let diarizer = SherpaDiarizer::new(&model_dir, embedding_choice)
+        .expect("failed to load models from model_dir");
     let turns = diarizer.diarize(&audio).expect("diarize() failed");
 
     println!("found {} turn(s):", turns.len());
