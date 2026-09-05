@@ -47,6 +47,19 @@ pub struct State {
     /// The most recent error reported by the pipeline worker (hotkey
     /// listener startup, mic capture, or a pipeline run), if any.
     pub last_error: Option<String>,
+    /// The persisted speaker-enrollment database (see
+    /// `whspr_config::SpeakerDb`): every distinct speaker discovered across
+    /// past diarization scans. Loaded at boot, written back to
+    /// `speakers.json` on every rename or completed scan.
+    pub speaker_db: whspr_config::SpeakerDb,
+    /// Live contents of the rename `text_input` for whichever speaker
+    /// profile is currently being edited, keyed by `SpeakerProfile::id` so
+    /// different rows' drafts don't clobber each other.
+    pub speaker_rename_drafts: std::collections::HashMap<String, String>,
+    /// Status/progress text for an in-flight or just-finished diarization
+    /// scan (e.g. "Diarizing recording.wav..." or an error), shown in the
+    /// Speakers section. `None` when nothing is happening.
+    pub diarize_status: Option<String>,
 }
 
 impl State {
@@ -68,6 +81,9 @@ impl State {
             theme: iced::Theme::Light,
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
+            speaker_db: whspr_config::SpeakerDb::default(),
+            speaker_rename_drafts: std::collections::HashMap::new(),
+            diarize_status: None,
         }
     }
 }
@@ -99,4 +115,16 @@ pub enum Message {
     /// An event from the background pipeline worker (see `crate::worker`):
     /// a pipeline state change, a completed dictation turn, or a failure.
     Worker(crate::worker::WorkerEvent),
+    /// The user clicked "Diarize a recording" -- opens a native file picker.
+    PickRecordingToDiarize,
+    /// The file picker resolved (`None` if the user cancelled).
+    RecordingPicked(Option<std::path::PathBuf>),
+    /// A background diarization run finished: the updated speaker db and
+    /// how many turns were found, or an error message.
+    DiarizeFinished(Result<(whspr_config::SpeakerDb, usize), String>),
+    /// The user edited a speaker's rename `text_input`: (speaker id, new
+    /// draft text).
+    SpeakerRenameInputChanged(String, String),
+    /// The user pressed "Save" on a speaker's rename: speaker id.
+    SpeakerRenameSubmitted(String),
 }
