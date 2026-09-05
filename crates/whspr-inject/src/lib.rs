@@ -372,6 +372,66 @@ mod tests {
         assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
     }
 
+    /// An in-memory [`Clipboard`] test double, so the save/stage/restore
+    /// sequence can be exercised with no display server or real clipboard.
+    struct MockClipboard {
+        /// Current clipboard contents (`None` = empty / no text payload).
+        content: Option<String>,
+        /// When true, every `set_text` fails, simulating a denied clipboard.
+        set_fails: bool,
+        /// Every value passed to `set_text`, in order — lets tests assert
+        /// the exact stage-then-restore sequence.
+        writes: Vec<String>,
+    }
+
+    impl MockClipboard {
+        fn with_content(content: Option<&str>) -> Self {
+            Self {
+                content: content.map(str::to_string),
+                set_fails: false,
+                writes: Vec::new(),
+            }
+        }
+    }
+
+    impl Clipboard for MockClipboard {
+        fn get_text(&mut self) -> Result<String> {
+            self.content
+                .clone()
+                .ok_or_else(|| WhsprError::Inject("clipboard is empty".into()))
+        }
+
+        fn set_text(&mut self, text: &str) -> Result<()> {
+            if self.set_fails {
+                return Err(WhsprError::Inject("clipboard access denied".into()));
+            }
+            self.content = Some(text.to_string());
+            self.writes.push(text.to_string());
+            Ok(())
+        }
+
+        fn clear(&mut self) -> Result<()> {
+            self.content = None;
+            Ok(())
+        }
+    }
+
+    /// The happy path: stage our text, run the paste, then put the user's
+    /// original clipboard back — in that order.
+    #[test]
+    fn stage_and_paste_restores_original_after_successful_paste() {
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || Ok(()));
+
+        assert!(matches!(outcome, PasteOutcome::Pasted(Ok(()))));
+        // Our text was staged first, then the original was restored.
+        let writes: Vec<&str> = clipboard.writes.iter().map(String::as_str).collect();
+        assert_eq!(writes, ["injected text", "user's data"]);
+        // The clipboard ends up back exactly where it started.
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+    }
+
     /// Verifies the arboard integration is real: setting text actually
     /// round-trips through the system clipboard, including non-ASCII text
     /// (the case `paste_from_clipboard` exists for). This is the one piece
