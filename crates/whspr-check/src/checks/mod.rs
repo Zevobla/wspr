@@ -5,6 +5,7 @@
 
 pub mod build;
 pub mod cli;
+pub mod config;
 pub mod docs;
 pub mod git_growth;
 pub mod license;
@@ -67,6 +68,10 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
         }
     }
     results.push(privacy::check_default_backends_are_local());
+
+    results.push(config::check_config_created_on_first_run());
+    results.push(config::check_config_format_is_toml());
+    results.push(config::check_config_in_platform_dir(root));
 
     results
 }
