@@ -10,6 +10,7 @@ whspr-core.workspace = true
 hound.workspace = true
 rubato.workspace = true
 cpal.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
