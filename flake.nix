@@ -93,7 +93,9 @@
         packages = {
           whspr-cli = whspr-cli;
           whspr-app = whspr-app;
-          default = whspr-cli;
+          # whspr-app (the iced GUI) is the actual product; whspr-cli stays
+          # available as `nix build .#whspr-cli` for the headless binary.
+          default = whspr-app;
         };
 
         checks = {
