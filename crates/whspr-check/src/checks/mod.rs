@@ -18,6 +18,16 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.extend(build::check_build_and_lock(root));
     results.push(build::check_clippy(root));
     results.push(build::check_fmt(root));
-    results.extend(tests_isolation::check_test_suite(root));
+
+    let test_results = tests_isolation::check_test_suite(root);
+    let tests_passed = test_results
+        .iter()
+        .all(|r| r.verdict == crate::report::Verdict::Pass);
+    results.extend(test_results);
+    results.push(tests_isolation::check_mic_model_independence(
+        root,
+        tests_passed,
+    ));
+
     results
 }

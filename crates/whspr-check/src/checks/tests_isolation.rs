@@ -22,6 +22,86 @@ fn run_tests_with_poisoned_network(root: &Path) -> anyhow::Result<CmdOutput> {
     repo::run_env(root, "cargo", &["test", "--workspace"], POISON_ENV)
 }
 
+const MODEL_WEIGHT_EXTENSIONS: &[&str] = &[".gguf", ".bin", ".ggml"];
+
+/// AB-06: unit tests run without a mic or model files present.
+///
+/// `tests_passed` is threaded in from `check_test_suite` rather than
+/// re-running the suite a third time; this function's own job is the two
+/// static facts that make a passing suite *mean* "doesn't need a mic or
+/// model": no model-weight file is tracked in the repo, and the one real
+/// microphone entry point (`whspr_audio::start_capture`) is never called
+/// anywhere except its own definition (i.e. not from a test).
+pub fn check_mic_model_independence(root: &Path, tests_passed: bool) -> CheckResult {
+    if !tests_passed {
+        return CheckResult::fail(
+            "AB-06",
+            "test suite did not pass (see A-13); can't credit mic/model independence",
+        );
+    }
+
+    let tracked = match repo::git_ls_files(root) {
+        Ok(files) => files,
+        Err(e) => return CheckResult::fail("AB-06", format!("could not list tracked files: {e}")),
+    };
+    let model_files: Vec<&String> = tracked
+        .iter()
+        .filter(|p| {
+            let lower = p.to_lowercase();
+            MODEL_WEIGHT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+        })
+        .collect();
+    if !model_files.is_empty() {
+        return CheckResult::fail(
+            "AB-06",
+            format!(
+                "model-weight-shaped files are tracked in git: {}",
+                model_files
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+    }
+
+    let capture_refs = match repo::git_grep(root, &["-F"], "start_capture(") {
+        Ok(lines) => lines,
+        Err(e) => {
+            return CheckResult::fail("AB-06", format!("could not grep for start_capture(: {e}"))
+        }
+    };
+    let call_sites: Vec<&String> = capture_refs
+        .iter()
+        .filter(|line| !line.contains("fn start_capture"))
+        .collect();
+    if !call_sites.is_empty() {
+        return CheckResult::fail(
+            "AB-06",
+            format!(
+                "start_capture() is invoked outside its own definition (possible live-mic \
+                 dependency): {}",
+                call_sites
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        );
+    }
+
+    CheckResult::pass(
+        "AB-06",
+        format!(
+            "suite passes; 0 tracked model-weight files ({} extensions checked); \
+             start_capture() has {} tracked reference(s), all at its own definition (no test \
+             invokes it)",
+            MODEL_WEIGHT_EXTENSIONS.len(),
+            capture_refs.len()
+        ),
+    )
+}
+
 /// A-13 (tests pass with a single command) and AB-13 (tests are isolated
 /// from the network), verified by the same subprocess run: we run the
 /// *whole* suite once, under the poisoned-network guard above. A plain
