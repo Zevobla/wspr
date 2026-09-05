@@ -24,6 +24,14 @@ let
     url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx";
     hash = "sha256-xG+tELX4HhqkpgwWJxQghXcJNlUHbFRQ+MRp5SLsVO8=";
   };
+
+  # 3D-Speaker ERes2Net speaker-embedding ONNX checkpoint -- an alternate
+  # choice, same English VoxCeleb training domain as the CAM++ default
+  # above but a different architecture, from the same (typo'd) release tag.
+  sherpa-embedding-eres2net-src = pkgs.fetchurl {
+    url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx";
+    hash = "sha256-xZFYN5JVrWbhYWecymr41S1R44njIkq316e6rilcLbU=";
+  };
 in
 
 {
@@ -37,10 +45,13 @@ in
 
   # Single directory holding the sherpa-onnx diarization checkpoints,
   # renamed to what the diarize crate expects, so `whspr diarize` finds them
-  # reproducibly with no manual download.
+  # reproducibly with no manual download. Two embedding checkpoints ship
+  # side by side so SpeakerEmbeddingChoice (campplus default, eres2net) has
+  # a real second option to select between.
   speaker-models = pkgs.runCommand "speaker-models" { } ''
     mkdir -p $out
     cp ${sherpa-segmentation-src}/model.onnx $out/segmentation.onnx
     cp ${sherpa-embedding-campplus-src} $out/embedding-campplus.onnx
+    cp ${sherpa-embedding-eres2net-src} $out/embedding-eres2net.onnx
   '';
 }
