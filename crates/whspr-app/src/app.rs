@@ -18,6 +18,7 @@
 use iced::widget::{container, text};
 use iced::{window, Element, Task, Theme};
 
+use crate::config_ui;
 use crate::state::{Message, State};
 
 const HUB_TITLE: &str = "whspr";
@@ -39,6 +40,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::HubOpened(id) => {
             state.hub_window = Some(id);
+            Task::none()
+        }
+        Message::AsrSelected(label) => {
+            state.config.asr = config_ui::asr_from_label(label);
             Task::none()
         }
     }

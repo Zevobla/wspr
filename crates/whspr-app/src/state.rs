@@ -30,4 +30,6 @@ impl State {
 pub enum Message {
     /// The Hub window finished opening; `window::open` resolves with its id.
     HubOpened(window::Id),
+    /// The user picked a new ASR backend label in the Hub.
+    AsrSelected(&'static str),
 }
