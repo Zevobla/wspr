@@ -12,6 +12,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     container(
         column![
             header(state),
+            error_banner(state),
             settings_section(state),
             device_section(state),
             hotkey_section(state),
@@ -76,6 +77,13 @@ fn header(state: &State) -> Element<'_, Message> {
         button(text(theme_label)).on_press(Message::ThemeToggled),
     ]
     .into()
+}
+
+fn error_banner(state: &State) -> Element<'_, Message> {
+    match &state.last_error {
+        Some(error) => text(format!("Last worker error: {error}")).into(),
+        None => column![].into(),
+    }
 }
 
 fn history_section(state: &State) -> Element<'_, Message> {
