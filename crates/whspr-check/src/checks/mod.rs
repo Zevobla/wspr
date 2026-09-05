@@ -37,7 +37,9 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
         tests_passed,
     ));
     results.push(tests_isolation::check_ci_configured(root));
-    results.push(tests_isolation::check_test_suite_runtime(root));
+    results.extend(tests_isolation::check_test_suite_runtime_and_determinism(
+        root,
+    ));
 
     results.push(license::check_license_file_present(root));
     results.extend(license::check_declared_license(root));
