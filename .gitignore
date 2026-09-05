@@ -1,9 +1,16 @@
+# --- whspr (nix / models / os) ---
 /target
 result
 result-*
+/models
 .direnv/
 *.gguf
 *.bin
 *.ggml
 .DS_Store
-/models
+
+# --- Rust / Cargo (upstream template) ---
+debug
+**/*.rs.bk
+*.pdb
+**/mutants.out*/

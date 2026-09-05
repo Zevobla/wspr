@@ -36,6 +36,17 @@
           libGL
         ]);
 
+        # whisper-rs (asr) and llama-cpp-2 (refine) compile native C/C++ via
+        # cmake and generate bindings via bindgen, which needs cmake/clang as
+        # build tools plus a real libclang (and, on darwin, the SDK sysroot
+        # so it can find system headers) at bindgen-run time.
+        nativeCTools = [ pkgs.cmake pkgs.llvmPackages.clang ];
+
+        libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+        bindgenExtraClangArgs = lib.optionalString pkgs.stdenv.isDarwin
+          "-isysroot ${pkgs.apple-sdk}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
+
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -45,7 +56,7 @@
           pname = "whspr-workspace";
           version = "0.1.0";
 
-          nativeBuildInputs = [ pkgs.pkg-config ];
+          nativeBuildInputs = [ pkgs.pkg-config ] ++ nativeCTools;
 
           # The full dependency set the eventual GUI/audio/ASR/refine
           # backends need, so no later team has to touch this file. Only
@@ -57,6 +68,9 @@
             pkgs.whisper-cpp
             pkgs.llama-cpp
           ] ++ linuxLibs ++ darwinFrameworks;
+
+          LIBCLANG_PATH = libclangPath;
+          BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
         };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -84,7 +98,13 @@
 
         devShells.default = pkgs.mkShell {
           inputsFrom = [ whspr-cli ];
-          packages = [ toolchain pkgs.pkg-config ];
+          # inputsFrom only carries over buildInputs/nativeBuildInputs, not
+          # arbitrary env vars, so cmake/clang and LIBCLANG_PATH/
+          # BINDGEN_EXTRA_CLANG_ARGS are repeated here explicitly.
+          packages = [ toolchain pkgs.pkg-config ] ++ nativeCTools;
+
+          LIBCLANG_PATH = libclangPath;
+          BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
         };
       });
 }
