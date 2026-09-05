@@ -6,6 +6,7 @@
 mod abbreviations;
 mod currency;
 mod dates;
+mod dedup;
 mod emails;
 mod numbers;
 mod percents;
@@ -72,6 +73,7 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
         text = emails::normalize_emails(&text);
         text = urls::normalize_urls(&text);
         text = abbreviations::normalize_abbreviations(&text);
+        text = dedup::collapse_duplicate_words(&text);
     }
     text
 }
