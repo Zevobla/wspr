@@ -1,0 +1,9 @@
+/target
+result
+result-*
+.direnv/
+*.gguf
+*.bin
+*.ggml
+.DS_Store
+/models
