@@ -15,7 +15,7 @@
 //! `State::config`/`State` fields only for this pass; they don't survive a
 //! restart. This is a deliberate, documented scope choice, not an oversight.
 
-use iced::{window, Element, Task, Theme};
+use iced::{window, Element, Task};
 
 use crate::config_ui;
 use crate::state::{Message, State};
@@ -25,7 +25,7 @@ const HUB_TITLE: &str = "whspr";
 pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
-        .theme(Theme::Light)
+        .theme(|state: &State, _window| state.theme.clone())
         .subscription(subscription)
         .run()
 }
@@ -80,6 +80,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     Some(crate::hotkey_capture::format_key_combo(modifiers, &key));
                 state.hotkey_capturing = false;
             }
+            Task::none()
+        }
+        Message::ThemeToggled => {
+            state.theme = match state.theme {
+                iced::Theme::Dark => iced::Theme::Light,
+                _ => iced::Theme::Dark,
+            };
             Task::none()
         }
     }
