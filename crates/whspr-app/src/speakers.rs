@@ -54,3 +54,46 @@ pub async fn run_diarize_scan(
     .await
     .map_err(|e| format!("diarize task panicked: {e}"))?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Writes a minimal silent WAV file to `path` so `run_diarize_scan` has
+    /// something real to decode. Mirrors `whspr-cli`'s e2e test fixture
+    /// helper (`create_test_wav` in `crates/whspr-cli/tests/e2e.rs`).
+    fn write_test_wav(path: &std::path::Path) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).expect("failed to create test wav");
+        for _ in 0..16_000 {
+            writer.write_sample(0i16).expect("failed to write sample");
+        }
+        writer.finalize().expect("failed to finalize test wav");
+    }
+
+    #[tokio::test]
+    async fn run_diarize_scan_against_mock_diarizer() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let wav_path = dir.path().join("recording.wav");
+        write_test_wav(&wav_path);
+        let db_path = dir.path().join("speakers.json");
+
+        // `MockDiarizer::default()`'s two canned embeddings are orthogonal
+        // (cosine similarity 0.0), so the real default similarity threshold
+        // (`SpeakerSettings::default().similarity_threshold`, 0.7) is enough
+        // to exercise two *distinct* speakers being enrolled, as intended.
+        let result = run_diarize_scan(wav_path, None, 0.7, SpeakerDb::default(), db_path.clone())
+            .await
+            .expect("run_diarize_scan should succeed with the mock diarizer");
+
+        let (db, count) = result;
+        assert_eq!(count, 2);
+        assert_eq!(db.profiles.len(), 2);
+        assert!(db_path.is_file());
+    }
+}

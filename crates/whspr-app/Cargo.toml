@@ -40,3 +40,6 @@ rfd = "0.15"
 
 [dev-dependencies]
 tempfile.workspace = true
+# Synthesizes a throwaway WAV fixture for `speakers::run_diarize_scan`'s
+# test, same as `whspr-cli`'s e2e tests do.
+hound.workspace = true
