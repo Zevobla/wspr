@@ -35,6 +35,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.extend(license::check_declared_license(root));
     results.push(license::check_readme_names_license(root));
     results.push(license::check_model_weights_ignored_and_absent(root));
+    results.push(license::check_no_secrets_in_history(root));
 
     results
 }
