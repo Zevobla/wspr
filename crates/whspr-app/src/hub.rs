@@ -1,6 +1,6 @@
 //! The Hub window: settings, device list, hotkey config, history, and stats.
 
-use iced::widget::{column, container, pick_list, text, text_input};
+use iced::widget::{button, column, container, pick_list, text, text_input};
 use iced::{Element, Length};
 
 use crate::config_ui::{self, ASR_LABELS, REFINE_LABELS};
@@ -13,6 +13,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             text("whspr").size(28),
             settings_section(state),
             device_section(state),
+            hotkey_section(state),
         ]
         .spacing(20)
         .padding(20)
@@ -34,6 +35,30 @@ fn device_section(state: &State) -> Element<'_, Message> {
         column![text("Input device"), device_picker].spacing(6),
     ]
     .spacing(12)
+    .into()
+}
+
+fn hotkey_section(state: &State) -> Element<'_, Message> {
+    let capture_label = if state.hotkey_capturing {
+        "Press any key..."
+    } else {
+        "Preview a new hotkey"
+    };
+    let capture_button = button(text(capture_label)).on_press(Message::StartHotkeyCapture);
+
+    let preview: Element<'_, Message> = match &state.captured_hotkey {
+        Some(combo) => text(format!("Captured: {combo} (preview only, not yet applied)")).into(),
+        None => text("No preview captured yet").into(),
+    };
+
+    column![
+        text("Hotkey").size(20),
+        text("Active hotkey: Ctrl+Space (fixed -- whspr-inject doesn't yet support \
+              registering a different combo at runtime)"),
+        capture_button,
+        preview,
+    ]
+    .spacing(8)
     .into()
 }
 
