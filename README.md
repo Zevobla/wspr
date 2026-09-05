@@ -188,9 +188,117 @@ CLI flag that changes them yet.
 directory (via `directories`), env var overrides, and wiring these values
 into `whspr-cli` / `whspr-app` so they actually select a backend.
 
-## Original feature
+## Original feature: speaker fingerprinting
 
-TBD — to be filled in once that feature lands.
+**whspr can tell *who* is speaking, not just *what* was said.** Point it at a
+recording with more than one voice and it segments the audio into speaker
+turns (via a real speaker-change segmentation model, not naive VAD
+chunking), extracts one embedding vector per turn, and matches each
+embedding against a persisted, cross-recording database of enrolled
+speakers by cosine similarity — reusing an existing speaker's identity if
+a turn's voice matches closely enough, or enrolling a brand-new speaker if
+it doesn't. The database (`speakers.json`) is rewritten, not appended, on
+every scan, so a speaker enrolled from one recording is recognized again
+in a completely different one later. The GUI (Hub → Speakers) exposes this
+as a "Diarize a recording..." file picker, a menu to choose which
+speaker-embedding model to use, and an editable, renameable list of every
+speaker enrolled so far, each showing how many scans it's appeared in.
+This is squarely beyond what a dictation tool does: `whspr transcribe`
+answers "what was said"; `whspr diarize` answers "who said it, and have we
+heard this voice before" — speaker identity that a multi-person meeting or
+interview recording needs and a single-speaker dictation pipeline has no
+reason to build.
+
+### Try it
+
+```sh
+whspr diarize <FILE> [--model-dir <DIR>] [--embedding cam-plus-plus|eres2net] [--json]
+```
+
+- `<FILE>` — a WAV file (mono or multi-channel; it's decoded and downmixed/resampled to 16kHz mono like every other whspr audio input).
+- `--embedding` — which speaker-embedding model to load: `cam-plus-plus` (WeSpeaker CAM++, the default) or `eres2net` (3D-Speaker ERes2Net). Falls back to the config file's `[speaker].embedding-model` if omitted.
+- `--model-dir` — directory containing the sherpa-onnx model files (see "Offline by default" below). Falls back to `[speaker].model-dir` in the config file, then to the `SPEAKER_MODEL_DIR` environment variable.
+- `--json` — print a JSON array of `{start_secs, end_secs, speaker, score}` instead of plain-text `[start-end] SpeakerN` lines.
+
+Every run matches its turns against `speakers.json` in the platform data
+directory (`~/Library/Application Support/whspr` on macOS,
+`~/.local/share/whspr` on Linux — confirmed by resolving whspr's actual
+`ProjectDirs` lookup) and rewrites it, so identity persists *across*
+invocations, not just within one scan. Run it against two different
+recordings of the same voice and the second run reuses the first run's
+speaker id instead of minting a new one. Verified end to end (offline
+mock backend — see below — two separate 1-second silent WAVs, same
+`--data-dir`):
+
+```
+$ whspr diarize a.wav --json --data-dir /tmp/demo
+[{"end_secs":2.5,"score":0.949999988079071,"speaker":"Speaker 1","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"Speaker 2","start_secs":2.5}]
+$ whspr diarize b.wav --json --data-dir /tmp/demo
+[{"end_secs":2.5,"score":0.949999988079071,"speaker":"Speaker 1","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"Speaker 2","start_secs":2.5}]
+$ cat /tmp/demo/speakers.json   # both a.wav and b.wav recorded under each profile's "scans"
+```
+
+Both runs assign the same two speaker ids and `speakers.json` ends up with
+both files' paths recorded under each profile's `scans` list — the
+persisted match-or-enroll logic is real. (`--data-dir` is a hidden,
+test-only flag that redirects `speakers.json` into a sandbox directory
+like the one above; real usage omits it and lets `speakers.json` live in
+the platform data directory.)
+
+### Offline by default
+
+`whspr diarize` never touches the network. If no model directory is
+resolvable (from `--model-dir`, `[speaker].model-dir`, or the
+`SPEAKER_MODEL_DIR` environment variable), it falls back to a
+deterministic, model-free `MockDiarizer` that always returns the same two
+canned turns/embeddings regardless of the input audio — that's the
+backend the example above exercises. It proves the *database* logic
+(matching, enrollment, persistence) for real, but since `MockDiarizer`
+never actually listens to the audio, it isn't demonstrating real
+acoustic voice recognition.
+
+For real acoustic diarization, point `SPEAKER_MODEL_DIR` (or
+`--model-dir`) at a directory containing `segmentation.onnx` plus the
+chosen embedding model file; `nix build .#speaker-models` builds exactly
+that directory from pinned, reproducibly-fetched sherpa-onnx checkpoints
+(see `nix/models.nix`) — no manual download needed. The project's
+`nix develop` shell already sets `SPEAKER_MODEL_DIR` to this, so
+`whspr diarize` uses the real sherpa backend by default inside the dev
+shell; feed it a real multi-speaker recording there (not a silent test
+fixture — the real segmentation model finds zero turns in silence, which
+is why the offline demo above deliberately uses the mock fallback) to see
+genuine speaker-turn segmentation and voice-based re-identification.
+
+### Tests
+
+- `crates/whspr-diarize/src/lib.rs` — unit tests for `SherpaDiarizer`'s model-dir resolution precedence, segment-range clamping, and missing-model-file error paths.
+- `crates/whspr-config/src/speaker.rs` — unit tests for `SpeakerDb::match_or_enroll` (new speaker, matching speaker, orthogonal embedding creates a new speaker), `rename`, and save/load round-tripping.
+- `crates/whspr-cli/tests/diarize_e2e.rs` — `assert_cmd`-driven end-to-end tests: mock-backend labeling, cross-run persistence, nonexistent-model-dir/unknown-embedding error paths, and the `SPEAKER_MODEL_DIR` fallback.
+- `crates/whspr-app/src/speakers.rs` — a test covering `run_diarize_scan`'s mock-fallback and `SPEAKER_MODEL_DIR`-fallback paths for the GUI's background diarization task.
+- `whspr_core::testkit::MockDiarizer` — the shared, deterministic double all of the above (and the demo above) run against; two orthogonal canned embeddings so matching-vs-enrolling is exercised meaningfully with no real model files.
+
+All of the above run under `cargo test --workspace` and stay green with no model files, no network, and no GPU.
+
+### Config toggle — honest gap
+
+`whspr-config::SpeakerSettings` has an `enabled: bool` field (default
+`true`), meant to let a user turn the whole feature off. It's real as a
+config value — it round-trips through `config.toml` and has test
+coverage — but **nothing currently reads it**: neither `whspr-cli`'s
+`diarize_cmd::run` nor `whspr-app`'s `speakers::run_diarize_scan` checks
+`config.speaker.enabled` before running. Setting `enabled = false` in
+`config.toml` today has no effect; `whspr diarize` still runs regardless.
+This is a real gap, not something claimed to work here.
+
+### Doesn't touch base dictation
+
+Even without that toggle wired up, the feature is structurally isolated:
+`whspr transcribe` builds its `Pipeline` from an `AsrBackend` and a
+`TextRefiner` only — it never constructs a `Diarizer`, never touches
+`whspr-diarize` or `SpeakerDb`, and has no code path into either.
+Diarization lives entirely behind its own subcommand and GUI section;
+nothing about running it (or not) changes `transcribe`'s behavior,
+dependencies, or test results.
 
 ## Contributing
 
