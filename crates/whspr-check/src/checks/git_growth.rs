@@ -89,21 +89,32 @@ pub fn check_commit_timing(root: &Path) -> Vec<CheckResult> {
         }
     };
 
-    let mut timestamps: Vec<i64> = commits.iter().map(|c| c.timestamp).collect();
-    timestamps.sort_unstable();
+    let mut by_time: Vec<&CommitMeta> = commits.iter().collect();
+    by_time.sort_unstable_by_key(|c| c.timestamp);
 
-    if timestamps.len() < 2 {
-        let evidence = format!("only {} commit(s) on {git_ref}; need >= 2 to measure gaps", timestamps.len());
+    if by_time.len() < 2 {
+        let evidence = format!("only {} commit(s) on {git_ref}; need >= 2 to measure gaps", by_time.len());
         return vec![
             CheckResult::needs_bench("AD-02", evidence.clone()),
             CheckResult::needs_bench("AD-03", evidence),
         ];
     }
 
-    let mut deltas: Vec<i64> = timestamps.windows(2).map(|w| w[1] - w[0]).collect();
-    deltas.sort_unstable();
-    let median = median_of_sorted(&deltas);
-    let max_gap = *deltas.last().expect("checked len >= 2 above, so >= 1 delta");
+    // (gap length in seconds, hash of the commit the gap leads into) - the
+    // hash lets AD-03's evidence point at exactly which commit follows the
+    // longest gap, not just report a bare number.
+    let gaps: Vec<(i64, &str)> = by_time
+        .windows(2)
+        .map(|w| (w[1].timestamp - w[0].timestamp, w[1].hash.as_str()))
+        .collect();
+
+    let mut seconds_sorted: Vec<i64> = gaps.iter().map(|(secs, _)| *secs).collect();
+    seconds_sorted.sort_unstable();
+    let median = median_of_sorted(&seconds_sorted);
+    let (max_gap, max_gap_next_hash) = *gaps
+        .iter()
+        .max_by_key(|(secs, _)| *secs)
+        .expect("checked len >= 2 above, so >= 1 gap");
 
     const MIN_MEDIAN_SECS: f64 = 1.0;
     let ad02 = if median >= MIN_MEDIAN_SECS {
@@ -112,7 +123,7 @@ pub fn check_commit_timing(root: &Path) -> Vec<CheckResult> {
             format!(
                 "median inter-commit interval is {median:.0}s across {} gaps (threshold: >= \
                  {MIN_MEDIAN_SECS:.0}s, ruling out sub-second/scripted timestamps)",
-                deltas.len()
+                gaps.len()
             ),
         )
     } else {
@@ -130,8 +141,10 @@ pub fn check_commit_timing(root: &Path) -> Vec<CheckResult> {
         CheckResult::pass(
             "AD-03",
             format!(
-                "max gap between consecutive commits is {:.1}h (threshold: <= {}h)",
+                "max gap between consecutive commits is {:.1}h, immediately before {:.7} \
+                 (threshold: <= {}h)",
                 max_gap as f64 / 3600.0,
+                max_gap_next_hash,
                 MAX_GAP_SECS / 3600
             ),
         )
@@ -139,8 +152,10 @@ pub fn check_commit_timing(root: &Path) -> Vec<CheckResult> {
         CheckResult::fail(
             "AD-03",
             format!(
-                "max gap between consecutive commits is {:.1}h, over the {}h threshold",
+                "max gap between consecutive commits is {:.1}h, immediately before {:.7} \
+                 (over the {}h threshold)",
                 max_gap as f64 / 3600.0,
+                max_gap_next_hash,
                 MAX_GAP_SECS / 3600
             ),
         )
