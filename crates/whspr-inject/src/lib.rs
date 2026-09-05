@@ -556,10 +556,12 @@ mod tests {
             .expect("insert should succeed with a display and Accessibility permission granted");
     }
 
-    /// `EnigoTextSink::insert` for long text sets the clipboard (tested
-    /// above) and then simulates a real paste keystroke (Cmd+V / Ctrl+V)
-    /// into whatever window has OS focus. Same non-hermetic constraints as
-    /// `type_text_sends_real_keystrokes` above.
+    /// `EnigoTextSink::insert` for long text saves the current clipboard,
+    /// stages the text, simulates a real paste keystroke (Cmd+V / Ctrl+V)
+    /// into whatever window has OS focus, then restores the original
+    /// clipboard. Same non-hermetic constraints as
+    /// `type_text_sends_real_keystrokes` above; the save/restore logic
+    /// itself is covered hermetically by the `stage_and_paste_*` tests.
     #[test]
     #[ignore = "pastes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
     fn paste_from_clipboard_sends_real_paste_keystroke() {
