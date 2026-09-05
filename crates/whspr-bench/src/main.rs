@@ -5,9 +5,8 @@ mod stand;
 
 use anyhow::Result;
 use clap::Parser;
-use std::path::PathBuf;
 use whspr_asr::WhisperLocal;
-use whspr_core::{testkit::MockAsr, AsrBackend, AsrOptions, AudioBuffer};
+use whspr_core::{testkit::MockAsr, AsrBackend, AsrOptions};
 use whspr_audio::decode_wav;
 
 use cli::Args;

@@ -20,18 +20,22 @@ pub struct Case {
 
     /// Voice name (e.g., "Milena").
     #[serde(rename = "голос")]
+    #[allow(dead_code)]
     pub voice: String,
 
     /// Speech tempo in WPM or similar.
     #[serde(rename = "темп")]
+    #[allow(dead_code)]
     pub tempo: u32,
 
     /// Audio duration in seconds.
     #[serde(rename = "длительность")]
+    #[allow(dead_code)]
     pub duration: f32,
 
     /// Special feature description (e.g., "чистая запись").
     #[serde(rename = "особенность")]
+    #[allow(dead_code)]
     pub feature: String,
 }
 
@@ -40,10 +44,12 @@ pub struct Case {
 pub struct StandSet {
     /// Audio sample rate (e.g., 16000).
     #[serde(rename = "частота")]
+    #[allow(dead_code)]
     pub sample_rate: u32,
 
     /// Total number of test cases.
     #[serde(rename = "случаев")]
+    #[allow(dead_code)]
     pub count: usize,
 
     /// Array of test cases.
@@ -63,6 +69,7 @@ impl StandSet {
     }
 
     /// Extract the criterion prefix (everything before the first hyphen) for grouping.
+    #[allow(dead_code)]
     pub fn criterion_prefix(criterion: &str) -> String {
         criterion
             .split('-')
