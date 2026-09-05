@@ -12,8 +12,8 @@ use iced::futures::sink::SinkExt;
 use iced::futures::Stream;
 
 use whspr_core::testkit::{MockAsr, NoopRefiner};
-use whspr_core::{HotkeyEvent, HotkeyListener, Pipeline, PipelineState, RefineContext};
-use whspr_inject::{EnigoTextSink, GlobalHotkeyListener};
+use whspr_core::{Pipeline, PipelineState, RefineContext};
+use whspr_inject::{DebounceAction, DebouncedHotkeyListener, EnigoTextSink, GlobalHotkeyListener};
 
 /// Events the worker reports back to the iced app.
 #[derive(Debug, Clone)]
@@ -31,6 +31,40 @@ pub enum WorkerEvent {
 /// subscribed to -- see `crate::app::subscription`.
 pub fn pipeline_worker() -> impl Stream<Item = WorkerEvent> {
     iced::stream::channel(100, run)
+}
+
+/// What the worker should do with the currently active capture (if any) in
+/// response to a debounced hotkey action. Pure, so the CancelRecording-vs-
+/// StopRecording distinction -- the entire reason this debounce wiring
+/// exists -- is unit-testable without a real hotkey listener, microphone,
+/// or pipeline run. Mirrors `whspr_inject`'s own pattern of pulling a
+/// decision out as a pure fn (`map_hotkey_state`, `HotkeyDebouncer`'s
+/// `is_real_hold`/`is_double_press`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaptureDecision {
+    /// Start a new capture.
+    Start,
+    /// Finalize the active capture: stop it and run the pipeline.
+    Finalize,
+    /// Discard the active capture without running the pipeline -- the D-10
+    /// outcome for a hold too short to be a real recording.
+    Discard,
+    /// Nothing to do.
+    Ignore,
+}
+
+fn capture_decision(action: DebounceAction, capture_active: bool) -> CaptureDecision {
+    match action {
+        DebounceAction::StartRecording => CaptureDecision::Start,
+        DebounceAction::StopRecording if capture_active => CaptureDecision::Finalize,
+        DebounceAction::CancelRecording if capture_active => CaptureDecision::Discard,
+        // A Stop/Cancel with no active capture (a stray/duplicate event we
+        // never started one for) and an explicit Ignore both mean the same
+        // thing here: nothing to do.
+        DebounceAction::StopRecording
+        | DebounceAction::CancelRecording
+        | DebounceAction::Ignore => CaptureDecision::Ignore,
+    }
 }
 
 async fn run(mut output: mpsc::Sender<WorkerEvent>) {
@@ -79,22 +113,25 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
         }
     };
 
-    let mut hotkey_events = listener.subscribe();
+    let debounced = DebouncedHotkeyListener::new(listener);
+    let mut actions = debounced.subscribe_actions();
     let mut capture: Option<whspr_audio::CaptureHandle> = None;
 
-    while let Some(event) = hotkey_events.recv().await {
-        match event {
-            HotkeyEvent::Pressed => {
-                if capture.is_none() {
-                    match whspr_audio::start_capture() {
-                        Ok(handle) => capture = Some(handle),
-                        Err(error) => {
-                            let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
-                        }
-                    }
+    while let Some(action) = actions.recv().await {
+        match capture_decision(action, capture.is_some()) {
+            CaptureDecision::Start => match whspr_audio::start_capture() {
+                Ok(handle) => capture = Some(handle),
+                Err(error) => {
+                    let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
                 }
+            },
+            CaptureDecision::Discard => {
+                // Drop the handle without ever calling `.stop()`/the
+                // pipeline: the D-10 too-short-hold outcome, so an
+                // accidental tap never produces an empty transcript.
+                capture = None;
             }
-            HotkeyEvent::Released => {
+            CaptureDecision::Finalize => {
                 let Some(handle) = capture.take() else {
                     continue;
                 };
@@ -121,6 +158,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                     }
                 }
             }
+            CaptureDecision::Ignore => {}
         }
     }
 }
