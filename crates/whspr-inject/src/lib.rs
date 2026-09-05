@@ -164,6 +164,43 @@ impl<C: Clipboard> Drop for ClipboardRestoreGuard<'_, C> {
     }
 }
 
+/// What happened when we tried to inject via the clipboard.
+enum PasteOutcome {
+    /// Our text was staged on the clipboard and the paste ran; carries the
+    /// paste's own result (which may itself be an error). The original
+    /// clipboard has already been restored.
+    Pasted(Result<()>),
+    /// We couldn't even stage our text on the clipboard (access denied,
+    /// etc.), so the caller should fall back to another injection method.
+    /// The clipboard was left untouched.
+    Unstaged,
+}
+
+/// Saves the current clipboard, stages `text`, runs `paste`, then restores
+/// the original clipboard.
+///
+/// The restore happens via a [`ClipboardRestoreGuard`], so the user's
+/// clipboard is put back even if `paste` returns an error or panics. If our
+/// text can't be staged in the first place, returns [`PasteOutcome::Unstaged`]
+/// without touching the clipboard, leaving the caller to fall back.
+fn stage_and_paste<C, F>(clipboard: &mut C, text: &str, paste: F) -> PasteOutcome
+where
+    C: Clipboard,
+    F: FnOnce() -> Result<()>,
+{
+    // Save whatever is on the clipboard now so we can put it back later.
+    let original = clipboard.get_text().ok();
+
+    if clipboard.set_text(text).is_err() {
+        return PasteOutcome::Unstaged;
+    }
+
+    // From here on the clipboard holds our text; the guard restores the
+    // saved contents when this scope ends, however `paste` turns out.
+    let _guard = ClipboardRestoreGuard::new(clipboard, original);
+    PasteOutcome::Pasted(paste())
+}
+
 /// Delivers text to the focused application via synthetic keystrokes
 /// (falling back to clipboard paste for long text).
 pub struct EnigoTextSink;
