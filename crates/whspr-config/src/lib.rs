@@ -27,6 +27,11 @@ pub enum AsrChoice {
     WhisperLocal,
     OpenAi,
     Deepgram,
+    /// Deterministic, offline stand-in (`whspr_core::testkit::MockAsr`) -
+    /// never a real transcription backend. An explicit opt-in only (e.g.
+    /// `whspr transcribe --asr mock`), so tests and CI can ask for it by
+    /// name now that `WhisperLocal` is the CLI's real, no-flag default.
+    Mock,
 }
 
 impl FromStr for AsrChoice {
@@ -37,6 +42,7 @@ impl FromStr for AsrChoice {
             "whisper-local" | "whisper_local" | "whisperloca" => Ok(AsrChoice::WhisperLocal),
             "openai" | "open-ai" | "open_ai" => Ok(AsrChoice::OpenAi),
             "deepgram" => Ok(AsrChoice::Deepgram),
+            "mock" => Ok(AsrChoice::Mock),
             _ => Err(format!("unknown ASR choice: {}", s)),
         }
     }
@@ -311,6 +317,12 @@ mod tests {
         assert_eq!(cfg.asr, AsrChoice::Deepgram);
         assert_eq!(cfg.refine, RefineChoice::Noop); // default
         assert_eq!(cfg.language, None); // default
+    }
+
+    #[test]
+    fn asr_choice_from_str_accepts_mock() {
+        assert_eq!(AsrChoice::from_str("mock"), Ok(AsrChoice::Mock));
+        assert_eq!(AsrChoice::from_str("MOCK"), Ok(AsrChoice::Mock));
     }
 
     #[test]

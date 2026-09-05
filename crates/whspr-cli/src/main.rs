@@ -10,7 +10,7 @@
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
-//!   --asr ID                        ASR backend (openai, deepgram, whisper-local; default from config)
+//!   --asr ID                        ASR backend (openai, deepgram, whisper-local, mock; default: whisper-local)
 //!   --refine ID                     Text refiner (noop, openai, anthropic, llama-local; default from config)
 //!   --language LANG                 BCP47 language code (e.g. en, es, fr; not yet wired to ASR)
 //!   --embedding CHOICE               Speaker embedding model for `diarize` (cam-plus-plus, eres2net; default from config)
@@ -46,7 +46,7 @@ enum Command {
         /// Path to audio file (WAV format), or - for stdin.
         file: PathBuf,
 
-        /// ASR backend id (openai, deepgram, whisper-local).
+        /// ASR backend id (openai, deepgram, whisper-local, mock; default: whisper-local).
         #[arg(long)]
         asr: Option<String>,
 
@@ -173,23 +173,19 @@ enum Command {
     },
 }
 
-/// Builds an ASR backend from command-line flags, falling back to `MockAsr`
-/// when `--asr` is not explicitly passed.
+/// Builds an ASR backend from command-line flags, defaulting to a real
+/// `WhisperLocal` backend when `--asr` is not explicitly passed.
 ///
-/// This deliberately does *not* fall back to `config.asr` the way
-/// `build_refiner` falls back to `config.refine`. `RefineChoice`'s default
-/// (`Noop`, via `NoopRefiner`) is a real, always-available backend, so
-/// honoring it as an implicit default is safe. `AsrChoice`'s default
-/// (`WhisperLocal`) is not: it's indistinguishable from "nothing configured"
-/// (there's no `AsrChoice::Unset`, and no way to tell "the user's config
-/// file explicitly said whisper-local" apart from "no config file at all"),
-/// and `WhisperLocal` requires a whisper-rs build (cmake) that isn't
-/// available in the default dev environment. If we honored `config.asr`
-/// here, the CLI's most basic invocation — `whspr transcribe <file>` with no
-/// flags at all — would silently try to build a real `WhisperLocal` backend
-/// and fail immediately. Defaulting to `MockAsr` keeps the no-flag path
-/// deterministic and always available offline; a real backend is only
-/// constructed when the user explicitly opts in via `--asr <id>`.
+/// No-flag now mirrors `AsrChoice`'s own default (`WhisperLocal`) instead of
+/// silently substituting `MockAsr`: the model path comes from
+/// `config.whisper.model_path` if the user has set one, else the
+/// `WHISPER_MODEL_PATH` environment variable (set automatically inside the
+/// project's Nix devShell), else this returns an honest error telling the
+/// user to configure one — see `WhisperLocal::resolve_model_path`.
+/// `MockAsr` is still available, just no longer implicit: it's built only
+/// for the explicit `AsrChoice::Mock` opt-in (`--asr mock`), which is what
+/// the deterministic/offline test suite and `whspr-check` pass so neither
+/// depends on a whisper model being present.
 fn build_asr_backend(
     config: &whspr_config::Config,
     asr_id: Option<&str>,
@@ -198,11 +194,23 @@ fn build_asr_backend(
 ) -> anyhow::Result<Box<dyn AsrBackend>> {
     let choice = match asr_id {
         Some(id) => AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?,
-        None => return Ok(Box::new(MockAsr::default())),
+        None => AsrChoice::WhisperLocal,
     };
 
     match choice {
-        AsrChoice::WhisperLocal => Ok(Box::new(WhisperLocal::new("model.bin"))),
+        AsrChoice::Mock => Ok(Box::new(MockAsr::default())),
+        AsrChoice::WhisperLocal => {
+            let model_path = WhisperLocal::resolve_model_path(config.whisper.model_path.clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "no whisper model configured: set [whisper].model_path in the config \
+                         file or the WHISPER_MODEL_PATH environment variable (set automatically \
+                         inside `nix develop`), or pass --asr mock for a deterministic offline \
+                         test transcript"
+                    )
+                })?;
+            Ok(Box::new(WhisperLocal::new(model_path)))
+        }
         AsrChoice::OpenAi => {
             let api_key = match asr_api_key {
                 Some(key) => key.to_string(),

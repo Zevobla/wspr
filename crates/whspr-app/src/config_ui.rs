@@ -32,6 +32,10 @@ pub fn asr_label(choice: AsrChoice) -> &'static str {
         AsrChoice::WhisperLocal => "whisper-local",
         AsrChoice::OpenAi => "openai",
         AsrChoice::Deepgram => "deepgram",
+        // Test-only backend, deliberately not in ASR_LABELS (never offered
+        // in the Hub's pick_list) - matched here only to keep this
+        // exhaustive.
+        AsrChoice::Mock => "mock",
     }
 }
 
