@@ -160,6 +160,17 @@ pub fn git_ls_files(root: &Path) -> anyhow::Result<Vec<String>> {
     Ok(output.stdout.lines().map(str::to_string).collect())
 }
 
+/// Path to a small, real, valid WAV fixture (0.1s of 16kHz mono silence)
+/// checked into this crate, for CLI smoke checks that need `whspr
+/// transcribe` to actually succeed (Y-13, Y-14, Y-15, P-01). Before
+/// whspr-cli's `transcribe` was wired to a real `decode_wav`, those checks
+/// used `/dev/null` - which worked when the old mock ignored file content
+/// entirely, but isn't a valid WAV and makes every one of those checks fail
+/// on the real implementation (see the regression this fixture fixes).
+pub fn fixture_wav_path(root: &Path) -> PathBuf {
+    root.join("crates/whspr-check/fixtures/sample.wav")
+}
+
 /// Runs `git grep -n <extra_args> <pattern>` against the tracked working
 /// tree, restricted to `pathspecs` (an empty slice means "the whole tree"),
 /// and returns matching lines (`path:lineno:content`). Git uses exit code 1

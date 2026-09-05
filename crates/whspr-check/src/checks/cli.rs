@@ -94,36 +94,42 @@ fn check_nonzero_exit_on_error(bin: &Path, root: &Path) -> CheckResult {
 
 /// Y-15: progress/log output goes to stderr, not stdout.
 ///
-/// `whspr transcribe` doesn't emit any progress/state-transition output
-/// today (`whspr-cli`'s `main.rs` never wires a `StateCallback` into the
-/// `Pipeline`) - so this can't yet verify "progress goes to stderr" in the
-/// strong sense of *checking a progress line's destination*. What it does
-/// check, honestly: stdout carries exactly the one final transcript line
-/// and nothing else, i.e. today's total absence of progress output at
-/// least isn't leaking onto stdout by accident. This needs re-checking
-/// once a state callback is actually wired in - see the evidence text.
+/// Runs `transcribe` against a real WAV fixture (see
+/// `repo::fixture_wav_path`) so the pipeline actually completes, then
+/// confirms stdout is exactly the one transcript line *and* that
+/// whspr-cli's progress messages ("Loading audio...", etc.) show up on
+/// stderr instead. A real check now that `transcribe` actually runs end to
+/// end - not merely "nothing leaked onto stdout because nothing ran",
+/// which is what this looked like against `/dev/null` before whspr-cli's
+/// `decode_wav` was wired up for real.
 fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
-    match run_whspr(bin, root, &["transcribe", "/dev/null"]) {
+    let fixture = repo::fixture_wav_path(root);
+    let Some(fixture_str) = fixture.to_str() else {
+        return CheckResult::fail("Y-15", "fixture WAV path isn't valid UTF-8");
+    };
+    match run_whspr(bin, root, &["transcribe", fixture_str]) {
         Ok(out) if out.success => {
             let stdout_lines: Vec<&str> = out.stdout.lines().collect();
-            if stdout_lines.len() == 1 {
+            if stdout_lines.len() == 1 && !out.stderr.trim().is_empty() {
                 CheckResult::pass(
                     "Y-15",
                     format!(
-                        "`whspr transcribe` stdout is exactly one line ({:?}); no progress/log \
-                         noise on stdout. Caveat: no progress reporting is wired up at all yet \
-                         (no StateCallback in whspr-cli's main.rs), so this only confirms \
-                         stdout stays clean *today* - re-check once progress output exists",
-                        stdout_lines[0]
+                        "`whspr transcribe {}` stdout is exactly one line ({:?}); progress \
+                         output ({} stderr line(s)) goes to stderr instead",
+                        fixture.display(),
+                        stdout_lines[0],
+                        out.stderr.lines().count()
                     ),
                 )
             } else {
                 CheckResult::fail(
                     "Y-15",
                     format!(
-                        "expected exactly 1 stdout line (just the transcript), got {}: {:?}",
+                        "expected exactly 1 stdout line plus non-empty stderr progress output; \
+                         got {} stdout line(s) ({:?}), {} stderr line(s)",
                         stdout_lines.len(),
-                        out.stdout
+                        out.stdout,
+                        out.stderr.lines().count()
                     ),
                 )
             }
@@ -131,7 +137,8 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
         Ok(out) => CheckResult::fail(
             "Y-15",
             format!(
-                "`whspr transcribe /dev/null` exited non-zero: {}",
+                "`whspr transcribe {}` exited non-zero: {}",
+                fixture.display(),
                 out.stderr
             ),
         ),
