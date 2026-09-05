@@ -2950,9 +2950,18 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
+ "directories",
+ "hound",
  "predicates",
+ "serde_json",
+ "tempfile",
  "tokio",
+ "whspr-asr",
+ "whspr-audio",
+ "whspr-config",
  "whspr-core",
+ "whspr-refine",
+ "wiremock",
 ]
 
 [[package]]
