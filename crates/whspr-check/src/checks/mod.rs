@@ -8,6 +8,7 @@ pub mod cli;
 pub mod docs;
 pub mod git_growth;
 pub mod license;
+pub mod privacy;
 pub mod tests_isolation;
 
 use crate::report::CheckResult;
@@ -52,7 +53,20 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(git_growth::check_single_authorship(root));
     results.extend(git_growth::check_rs_commit_shape(root));
 
-    results.extend(cli::run_cli_checks(root));
+    match crate::repo::ensure_binary_built(root, "whspr-cli", "whspr") {
+        Ok(bin) => {
+            results.extend(cli::run_cli_checks(&bin, root));
+            results.push(privacy::check_transcribe_offline(&bin, root));
+        }
+        Err(e) => {
+            results.extend(cli::build_failure_results(&e.to_string()));
+            results.push(CheckResult::fail(
+                "P-01",
+                format!("could not build whspr-cli: {e}"),
+            ));
+        }
+    }
+    results.push(privacy::check_default_backends_are_local());
 
     results
 }
