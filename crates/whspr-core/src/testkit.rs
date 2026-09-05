@@ -97,3 +97,16 @@ impl Diarizer for MockDiarizer {
         "mock"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_diarizer_returns_its_canned_turns() {
+        let mock = MockDiarizer::default();
+        let audio = AudioBuffer::new(vec![0.0; 100], 16_000);
+        let turns = mock.diarize(&audio).unwrap();
+        assert_eq!(turns, mock.canned);
+    }
+}
