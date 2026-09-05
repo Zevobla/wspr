@@ -5,6 +5,15 @@
 //! from the start, since the Flow Bar overlay needs a second, independently
 //! styled window and `daemon`'s `view`/`theme`/`title` all take a
 //! `window::Id` so each window can render its own content.
+//!
+//! ## Settings persistence (known gap)
+//! `whspr_config` only exposes `load`/`load_from` today -- there is no save
+//! path yet, and another in-flight branch may add first-run persistence
+//! around the same time this one lands. Rather than race that work by
+//! bolting a `save` function onto a shared crate, edits made in the Hub
+//! (backend pickers, language, device selection) are kept in the in-memory
+//! `State::config`/`State` fields only for this pass; they don't survive a
+//! restart. This is a deliberate, documented scope choice, not an oversight.
 
 use iced::widget::{container, text};
 use iced::{window, Element, Task, Theme};
@@ -21,8 +30,9 @@ pub fn run() -> iced::Result {
 }
 
 fn boot() -> (State, Task<Message>) {
+    let config = whspr_config::load();
     let (_id, open) = window::open(window::Settings::default());
-    (State::default(), open.map(Message::HubOpened))
+    (State::new(config), open.map(Message::HubOpened))
 }
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
