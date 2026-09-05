@@ -115,9 +115,9 @@ pub(super) fn split_punct(word: &str) -> (&str, &str, &str) {
 }
 
 /// Whether `core` (any case) is a recognized top-level domain. Used by the
-/// email and URL passes to decide that a dotted word run really is a domain
-/// - a curated list rather than a "2..=6 letters" shape test, so an ordinary
-/// phrase like "john dot doe" isn't mistaken for `john.doe`.
+/// email and URL passes to decide that a dotted word run really is a domain.
+/// A curated list is used rather than a "2..=6 letters" shape test, so an
+/// ordinary phrase like "john dot doe" isn't mistaken for a `john.doe` domain.
 pub(super) fn is_tld(core: &str) -> bool {
     const TLDS: &[&str] = &[
         "com", "org", "net", "edu", "gov", "mil", "int", "io", "co", "ai", "dev", "app", "me",
