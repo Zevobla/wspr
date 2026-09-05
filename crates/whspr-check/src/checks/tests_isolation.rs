@@ -191,3 +191,51 @@ pub fn check_test_suite(root: &Path) -> Vec<CheckResult> {
         ],
     }
 }
+
+/// AB-05: test-suite runtime is bounded.
+///
+/// A plain, unpoisoned `cargo test --workspace` timed with a wall clock -
+/// deliberately a separate run from `check_test_suite`'s poisoned-network
+/// one above, since AB-05 is about wall-clock time, not isolation, and
+/// timing a poisoned run wouldn't represent normal runtime.
+///
+/// 120s is this checker's own defensible threshold (matching the AD-group
+/// checks' style): today's suite runs in well under a second, so this
+/// leaves generous room to grow before flagging anything.
+pub fn check_test_suite_runtime(root: &Path) -> CheckResult {
+    let start = std::time::Instant::now();
+    let result = repo::run(root, "cargo", &["test", "--workspace"]);
+    let elapsed = start.elapsed();
+
+    const MAX_SECS: f64 = 120.0;
+    match result {
+        Ok(out) if out.success => {
+            if elapsed.as_secs_f64() <= MAX_SECS {
+                CheckResult::pass(
+                    "AB-05",
+                    format!(
+                        "`cargo test --workspace` completed in {:.2}s (threshold: <= {MAX_SECS:.0}s)",
+                        elapsed.as_secs_f64()
+                    ),
+                )
+            } else {
+                CheckResult::fail(
+                    "AB-05",
+                    format!(
+                        "`cargo test --workspace` took {:.2}s (threshold: <= {MAX_SECS:.0}s)",
+                        elapsed.as_secs_f64()
+                    ),
+                )
+            }
+        }
+        Ok(out) => CheckResult::fail(
+            "AB-05",
+            format!(
+                "test suite failed, so its runtime isn't a meaningful measurement; stderr tail: \
+                 {}",
+                tail(&out.stderr, 400)
+            ),
+        ),
+        Err(e) => CheckResult::fail("AB-05", format!("could not run cargo test: {e}")),
+    }
+}
