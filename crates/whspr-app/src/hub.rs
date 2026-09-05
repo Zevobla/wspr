@@ -18,6 +18,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             hotkey_section(state),
             history_section(state),
             stats_section(state),
+            speakers_section(state),
         ]
         .spacing(20)
         .padding(20)
@@ -121,6 +122,57 @@ fn stats_section(state: &State) -> Element<'_, Message> {
 
     column![text("Stats").size(20), count_line, wpm_line]
         .spacing(6)
+        .into()
+}
+
+fn speakers_section(state: &State) -> Element<'_, Message> {
+    let pick_button =
+        button(text("Diarize a recording...")).on_press(Message::PickRecordingToDiarize);
+
+    let status: Element<'_, Message> = match &state.diarize_status {
+        Some(status) => text(status.clone()).into(),
+        None => column![].into(),
+    };
+
+    let profiles: Element<'_, Message> = if state.speaker_db.profiles.is_empty() {
+        text("No speakers enrolled yet -- diarize a recording to populate this list.").into()
+    } else {
+        let rows: Vec<Element<'_, Message>> = state
+            .speaker_db
+            .profiles
+            .iter()
+            .map(|profile| {
+                let draft = state
+                    .speaker_rename_drafts
+                    .get(&profile.id)
+                    .cloned()
+                    .unwrap_or_else(|| profile.name.clone().unwrap_or_else(|| profile.id.clone()));
+                let id_for_input = profile.id.clone();
+                let id_for_submit = profile.id.clone();
+
+                row![
+                    text(profile.name.clone().unwrap_or_else(|| profile.id.clone()))
+                        .width(Length::Fixed(140.0)),
+                    text_input("Speaker name", &draft)
+                        .on_input(move |s| {
+                            Message::SpeakerRenameInputChanged(id_for_input.clone(), s)
+                        })
+                        .width(Length::Fixed(180.0)),
+                    button(text("Save")).on_press(Message::SpeakerRenameSubmitted(id_for_submit)),
+                    text(format!("{} scan(s)", profile.scans.len())),
+                ]
+                .spacing(10)
+                .into()
+            })
+            .collect();
+
+        scrollable(column(rows).spacing(8))
+            .height(Length::Fixed(160.0))
+            .into()
+    };
+
+    column![text("Speakers").size(20), pick_button, status, profiles]
+        .spacing(8)
         .into()
 }
 
