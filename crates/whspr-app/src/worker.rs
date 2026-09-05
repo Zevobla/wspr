@@ -263,6 +263,78 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use whspr_config::Config;
+
+    #[test]
+    fn build_asr_backend_mock_choice_succeeds() {
+        let config = Config {
+            asr: AsrChoice::Mock,
+            ..Default::default()
+        };
+
+        let backend = build_asr_backend(&config).expect("mock backend should always build");
+        assert_eq!(backend.id(), "mock");
+    }
+
+    #[test]
+    fn build_asr_backend_whisper_local_uses_explicit_model_path() {
+        let config = Config {
+            asr: AsrChoice::WhisperLocal,
+            whisper: whspr_config::WhisperConfig {
+                model_path: Some(PathBuf::from("/explicit/model.bin")),
+            },
+            ..Default::default()
+        };
+
+        let backend = build_asr_backend(&config)
+            .expect("an explicit model_path should be enough to build WhisperLocal");
+        assert_eq!(backend.id(), "whisper-local");
+    }
+
+    #[test]
+    fn build_asr_backend_openai_requires_an_api_key() {
+        let config = Config {
+            asr: AsrChoice::OpenAi,
+            ..Default::default()
+        };
+
+        // `Box<dyn AsrBackend>` isn't `Debug`, so `expect_err` isn't
+        // available -- match directly instead.
+        match build_asr_backend(&config) {
+            Ok(_) => panic!("no [api_keys].openai entry should fail, not build a backend"),
+            Err(error) => assert!(error.contains("OpenAI API key")),
+        }
+    }
+
+    #[test]
+    fn build_refiner_noop_choice_is_wrapped_in_normalizing_refiner() {
+        let config = Config {
+            refine: RefineChoice::Noop,
+            ..Default::default()
+        };
+
+        let refiner = build_refiner(&config).expect("noop refiner should always build");
+        // NormalizingRefiner::id() delegates to the inner refiner's id (see
+        // whspr-refine's normalize/mod.rs), so this also proves the wrapping
+        // happened rather than returning the bare NoopRefiner.
+        assert_eq!(refiner.id(), "noop");
+    }
+
+    #[test]
+    fn build_refiner_anthropic_requires_an_api_key() {
+        let config = Config {
+            refine: RefineChoice::Anthropic,
+            ..Default::default()
+        };
+
+        // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
+        // available -- match directly instead.
+        match build_refiner(&config) {
+            Ok(_) => panic!("no [api_keys].anthropic entry should fail, not build a refiner"),
+            Err(error) => assert!(error.contains("Anthropic API key")),
+        }
+    }
 
     #[test]
     fn start_recording_with_no_active_capture_starts_one() {
