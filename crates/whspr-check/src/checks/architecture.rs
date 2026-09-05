@@ -4,21 +4,8 @@
 
 use crate::repo;
 use crate::report::CheckResult;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
-
-/// Runs `cargo metadata --format-version 1` and parses its JSON, shared by
-/// every check in this file that needs the resolved dependency graph
-/// (AA-02, AA-10) rather than just reading Cargo.toml files directly.
-fn run_cargo_metadata(root: &Path) -> anyhow::Result<Value> {
-    let output = repo::run(root, "cargo", &["metadata", "--format-version", "1"])?;
-    if !output.success {
-        anyhow::bail!("`cargo metadata` failed: {}", output.stderr);
-    }
-    serde_json::from_str(&output.stdout)
-        .map_err(|e| anyhow::anyhow!("could not parse cargo metadata JSON: {e}"))
-}
 
 /// Crates that make `whspr-core` no longer "light": native-compiling ASR/
 /// LLM backends, the GUI toolkit, and OS-integration libraries. Per
@@ -39,7 +26,7 @@ const HEAVY_DEPS: &[&str] = &[
 
 /// AA-02: the domain crate (whspr-core) is free of heavy framework deps.
 pub fn check_core_free_of_heavy_deps(root: &Path) -> CheckResult {
-    let meta = match run_cargo_metadata(root) {
+    let meta = match repo::cargo_metadata(root) {
         Ok(m) => m,
         Err(e) => return CheckResult::fail("AA-02", e.to_string()),
     };
@@ -97,7 +84,7 @@ pub fn check_core_free_of_heavy_deps(root: &Path) -> CheckResult {
 /// guarantee, not a deep architectural finding; it's still verified from
 /// live data rather than assumed.
 pub fn check_no_circular_deps(root: &Path) -> CheckResult {
-    let meta = match run_cargo_metadata(root) {
+    let meta = match repo::cargo_metadata(root) {
         Ok(m) => m,
         Err(e) => return CheckResult::fail("AA-10", e.to_string()),
     };
