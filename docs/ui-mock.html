@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>whspr -- Material 3 redesign mock</title>
+<style>
+  /* ================================================================
+     Tokens -- copied 1:1 (same hex/px/ms/weight values) from
+     crates/whspr-app/src/theme/{color,shape,spacing,type_scale,motion}.rs
+     so this mock is an honest preview of what the Rust/iced build
+     actually renders, not an aspirational restyle that diverges from
+     it. See that module for the full role documentation.
+     ================================================================ */
+  :root,
+  :root[data-theme="light"] {
+    --primary: #6750a4;
+    --on-primary: #ffffff;
+    --primary-container: #eaddff;
+    --secondary-container: #e8def8;
+    --on-secondary-container: #1d192b;
+    --tertiary: #7d5260;
+    --tertiary-container: #ffd8e4;
+    --on-tertiary-container: #31111d;
+    --error: #b3261e;
+    --on-error: #ffffff;
+    --error-container: #f9dedc;
+    --on-error-container: #410e0b;
+    --surface: #fef7ff;
+    --on-surface: #1d1b20;
+    --on-surface-variant: #49454f;
+    --surface-container: #f3edf7;
+    --surface-container-low: #f7f2fa;
+    --surface-container-highest: #e6e0e9;
+    --outline: #79747e;
+    --outline-variant: #cac4d0;
+    --inverse-surface: #322f35;
+    --inverse-on-surface: #f5eff7;
+    --success-container: #c8e6c9;
+    --on-success-container: #1b5e20;
+    --page-bg: #ece6ee;
+    --page-fg: #1d1b20;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #d0bcff;
+      --on-primary: #381e72;
+      --primary-container: #4f378b;
+      --secondary-container: #4a4458;
+      --on-secondary-container: #e8def8;
+      --tertiary: #efb8c8;
+      --tertiary-container: #633b48;
+      --on-tertiary-container: #ffd8e4;
+      --error: #f2b8b5;
+      --on-error: #601410;
+      --error-container: #8c1d18;
+      --on-error-container: #f9dedc;
+      --surface: #141218;
+      --on-surface: #e6e0e9;
+      --on-surface-variant: #cac4d0;
+      --surface-container: #211f26;
+      --surface-container-low: #1d1b20;
+      --surface-container-highest: #36343b;
+      --outline: #938f99;
+      --outline-variant: #49454f;
+      --inverse-surface: #e6e0e9;
+      --inverse-on-surface: #322f35;
+      --success-container: #2e7d32;
+      --on-success-container: #c8e6c9;
+      --page-bg: #0b0a0d;
+      --page-fg: #e6e0e9;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --primary: #d0bcff;
+    --on-primary: #381e72;
+    --primary-container: #4f378b;
+    --secondary-container: #4a4458;
+    --on-secondary-container: #e8def8;
+    --tertiary: #efb8c8;
+    --tertiary-container: #633b48;
+    --on-tertiary-container: #ffd8e4;
+    --error: #f2b8b5;
+    --on-error: #601410;
+    --error-container: #8c1d18;
+    --on-error-container: #f9dedc;
+    --surface: #141218;
+    --on-surface: #e6e0e9;
+    --on-surface-variant: #cac4d0;
+    --surface-container: #211f26;
+    --surface-container-low: #1d1b20;
+    --surface-container-highest: #36343b;
+    --outline: #938f99;
+    --outline-variant: #49454f;
+    --inverse-surface: #e6e0e9;
+    --inverse-on-surface: #322f35;
+    --success-container: #2e7d32;
+    --on-success-container: #c8e6c9;
+    --page-bg: #0b0a0d;
+    --page-fg: #e6e0e9;
+    color-scheme: dark;
+  }
+
+  :root {
+    /* shape */
+    --radius-xs: 4px;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-full: 9999px;
+    /* spacing (4dp grid) */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    /* motion */
+    --duration-medium4: 400ms;
+    --duration-long2: 500ms;
+    --duration-extralong2: 800ms;
+    --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --ease-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: var(--space-xl) var(--space-lg) 64px;
+    background: var(--page-bg);
+    color: var(--page-fg);
+    font-family:
+      -apple-system, "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xl);
+  }
+
+  .page-header {
+    width: 100%;
+    max-width: 1080px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+  }
+
+  .page-header h1 {
+    font-size: 1.375rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .page-header p {
+    margin: 4px 0 0;
+    color: var(--on-surface-variant);
+    font-size: 0.875rem;
+    max-width: 60ch;
+  }
+
+  .theme-toggle {
+    appearance: none;
+    border: 1px solid var(--outline);
+    background: var(--surface-container-highest);
+    color: var(--on-surface);
+    border-radius: var(--radius-full);
+    padding: 8px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .theme-toggle:hover { border-color: var(--on-surface); }
+
+  .layout {
+    width: 100%;
+    max-width: 1080px;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+    gap: var(--space-xl);
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    min-width: 0;
+  }
+
+  .pane-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--on-surface-variant);
+  }
+
+  /* ---------- Hub window mock ---------- */
+
+  .hub {
+    background: var(--surface);
+    color: var(--on-surface);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--outline-variant);
+    padding: var(--space-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    overflow: hidden;
+  }
+
+  .hub-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+  }
+  .hub-header h2 {
+    flex: 1;
+    margin: 0;
+    font-size: 1.375rem; /* title-large, 22sp */
+    font-weight: 400;
+  }
+  .text-button {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--primary);
+    font-size: 0.875rem; /* label-large, 14sp */
+    font-weight: 500;
+    padding: 8px 12px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+  }
+  .text-button:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+
+  .divider {
+    height: 1px;
+    background: var(--outline-variant);
+    border: none;
+    margin: 0;
+  }
+
+  .snackbar {
+    background: var(--inverse-surface);
+    color: var(--inverse-on-surface);
+    border-radius: var(--radius-xs);
+    padding: var(--space-md);
+    font-size: 0.875rem;
+  }
+
+  .sections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl);
+    max-height: 560px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .card {
+    background: var(--surface-container-low);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+  .card h3 {
+    margin: 0;
+    font-size: 1rem; /* title-medium, 16sp */
+    font-weight: 500;
+  }
+
+  .field { display: flex; flex-direction: column; gap: var(--space-xs); }
+  .field label {
+    font-size: 0.75rem; /* label-medium, 12sp */
+    font-weight: 500;
+    color: var(--on-surface-variant);
+  }
+
+  .m3-select, .m3-input {
+    appearance: none;
+    width: 100%;
+    background: var(--surface-container-highest);
+    color: var(--on-surface);
+    border: 1px solid var(--outline);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    font-size: 0.875rem;
+    font-family: inherit;
+  }
+  .m3-select:focus, .m3-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    border-width: 2px;
+    padding: 9px 11px;
+  }
+
+  .body-text { font-size: 0.875rem; margin: 0; } /* body-medium, 14sp */
+  .muted { color: var(--on-surface-variant); }
+
+  .btn {
+    appearance: none;
+    border: none;
+    border-radius: var(--radius-full);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 10px 20px;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+  .btn-filled { background: var(--primary); color: var(--on-primary); }
+  .btn-filled:hover { background: color-mix(in srgb, var(--primary) 92%, var(--on-primary) 8%); }
+  .btn-tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
+  .btn-tonal:hover { background: color-mix(in srgb, var(--secondary-container) 92%, var(--on-secondary-container) 8%); }
+  .btn-outlined {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--outline);
+    padding: 8px 16px;
+  }
+  .btn-outlined:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  .btn-outlined:disabled {
+    color: color-mix(in srgb, var(--on-surface) 38%, transparent);
+    border-color: color-mix(in srgb, var(--on-surface) 12%, transparent);
+    cursor: not-allowed;
+  }
+
+  .speaker-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+  }
+  .speaker-name { width: 130px; font-size: 0.875rem; }
+  .speaker-row .m3-input { width: 170px; padding: 8px 10px; }
+  .scan-count { font-size: 0.875rem; color: var(--on-surface-variant); }
+
+  .history-list, .speaker-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-height: 150px;
+    overflow-y: auto;
+  }
+  .speaker-list { gap: var(--space-md); }
+
+  /* themed scrollbars -- carry the tokens too, not left at the OS default */
+  .sections::-webkit-scrollbar,
+  .history-list::-webkit-scrollbar,
+  .speaker-list::-webkit-scrollbar { width: 8px; }
+  .sections::-webkit-scrollbar-thumb,
+  .history-list::-webkit-scrollbar-thumb,
+  .speaker-list::-webkit-scrollbar-thumb {
+    background: var(--outline-variant);
+    border-radius: var(--radius-full);
+  }
+  .sections::-webkit-scrollbar-thumb:hover,
+  .history-list::-webkit-scrollbar-thumb:hover,
+  .speaker-list::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+  /* ---------- Flow Bar mock ---------- */
+
+  .flow-bar-frame {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+
+  .flow-bar {
+    width: 240px;
+    min-height: 56px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--outline-variant);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    padding: var(--space-md);
+    font-weight: 600; /* title-large, emphasized */
+    font-size: 1.375rem;
+  }
+
+  .flow-bar-caption {
+    font-size: 0.75rem;
+    color: var(--on-surface-variant);
+  }
+
+  .flow-idle {
+    background: var(--surface-container);
+    color: var(--on-surface-variant);
+  }
+
+  .flow-recording {
+    background: var(--error-container);
+    color: var(--on-error-container);
+    animation: pulse calc(var(--duration-long2) * 2) ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { background: var(--error-container); }
+    50% { background: color-mix(in srgb, var(--error-container) 65%, var(--error) 35%); }
+  }
+
+  .flow-thinking {
+    background: var(--tertiary-container);
+    color: var(--on-tertiary-container);
+  }
+  .sweep-track {
+    width: 160px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--tertiary-container);
+    border: 1px solid color-mix(in srgb, var(--on-tertiary-container) 20%, transparent);
+    overflow: hidden;
+  }
+  .sweep-fill {
+    height: 100%;
+    width: 40%;
+    border-radius: var(--radius-full);
+    background: var(--tertiary);
+    animation: sweep var(--duration-extralong2) var(--ease-emphasized) infinite;
+  }
+  @keyframes sweep {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+  }
+
+  .flow-done {
+    background: var(--success-container);
+    color: var(--on-success-container);
+    animation: fade-in-loop 2.4s var(--ease-emphasized-decelerate) infinite alternate;
+  }
+  @keyframes fade-in-loop {
+    from { background: var(--surface-container); color: var(--on-surface-variant); }
+    to { background: var(--success-container); color: var(--on-success-container); }
+  }
+
+  .flow-error {
+    background: var(--error);
+    color: var(--on-error);
+  }
+
+  /* ---------- Token legend ---------- */
+
+  .legend {
+    width: 100%;
+    max-width: 1080px;
+    background: var(--surface);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-md);
+    padding: var(--space-xl);
+    color: var(--on-surface);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+  .legend h2 { margin: 0; font-size: 1rem; font-weight: 500; }
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--space-md);
+  }
+  .swatch {
+    border-radius: var(--radius-sm);
+    padding: var(--space-md);
+    font-size: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  }
+  .swatch strong { font-size: 0.8125rem; }
+
+  .notes {
+    width: 100%;
+    max-width: 1080px;
+    color: var(--on-surface-variant);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+  }
+  .notes h2 { color: var(--page-fg); font-size: 1rem; margin: 0 0 8px; }
+  .notes ul { margin: 0; padding-left: 1.2em; }
+  .notes li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+  <header class="page-header">
+    <div>
+      <h1>whspr -- Material 3 redesign</h1>
+      <p>
+        A static preview of the Hub window and Flow Bar overlay as restyled in
+        <code>crates/whspr-app</code>. Every color, radius, spacing, type size,
+        and animation timing below is copied from the actual Rust token
+        module, not reinvented for this page.
+      </p>
+    </div>
+    <button class="theme-toggle" id="theme-toggle" type="button">Switch to dark</button>
+  </header>
+
+  <div class="layout">
+    <div class="pane">
+      <span class="pane-label">Hub window</span>
+      <div class="hub">
+        <div class="hub-header">
+          <h2>whspr</h2>
+          <button class="text-button" type="button">Switch to dark</button>
+        </div>
+        <hr class="divider" />
+
+        <div class="snackbar">Last worker error: hotkey listener unavailable: permission denied</div>
+
+        <div class="sections">
+
+          <section class="card">
+            <h3>Settings</h3>
+            <div class="field">
+              <label>ASR backend</label>
+              <select class="m3-select"><option>whisper-local</option><option>openai</option><option>deepgram</option></select>
+            </div>
+            <div class="field">
+              <label>Refiner</label>
+              <select class="m3-select"><option>noop</option><option>openai</option><option>anthropic</option><option>llama-local</option></select>
+            </div>
+            <div class="field">
+              <label>Language ('auto' = no override)</label>
+              <select class="m3-select"><option>auto</option><option>en</option><option>ru</option><option>es</option></select>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Microphone</h3>
+            <div class="field">
+              <label>Input device</label>
+              <select class="m3-select"><option>MacBook Pro Microphone</option></select>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Hotkey</h3>
+            <p class="body-text muted">
+              Active hotkey: Ctrl+Space (fixed -- whspr-inject doesn't yet
+              support registering a different combo at runtime)
+            </p>
+            <button class="btn btn-tonal" type="button">Preview a new hotkey</button>
+            <p class="body-text muted">No preview captured yet</p>
+          </section>
+
+          <section class="card">
+            <h3>Speakers</h3>
+            <div class="field">
+              <label>Embedding model</label>
+              <select class="m3-select"><option>cam-plus-plus</option><option>eres2net</option></select>
+            </div>
+            <button class="btn btn-filled" type="button">Diarize a recording...</button>
+            <p class="body-text muted">Diarization complete: 2 turn(s) found</p>
+            <div class="speaker-list">
+              <div class="speaker-row">
+                <span class="speaker-name">Speaker A</span>
+                <input class="m3-input" value="Alex" />
+                <button class="btn btn-outlined" type="button">Save</button>
+                <span class="scan-count">3 scan(s)</span>
+              </div>
+              <div class="speaker-row">
+                <span class="speaker-name">speaker-2</span>
+                <input class="m3-input" value="" placeholder="Speaker name" />
+                <button class="btn btn-outlined" type="button" disabled>Save</button>
+                <span class="scan-count">1 scan(s)</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>History</h3>
+            <div class="history-list">
+              <p class="body-text">Remember to send the deployment notes before end of day.</p>
+              <p class="body-text">Let's push the release a day so QA has time to sign off.</p>
+              <p class="body-text">Can you loop in design before we finalize the API shape?</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Stats</h3>
+            <p class="body-text">Transcriptions this session: 3</p>
+            <p class="body-text">Average speed: 128 wpm</p>
+          </section>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="pane">
+      <span class="pane-label">Flow Bar overlay -- per-state motion</span>
+      <div class="flow-bar-frame">
+        <div>
+          <div class="flow-bar flow-idle">Idle</div>
+          <p class="flow-bar-caption">Resting, low emphasis.</p>
+        </div>
+        <div>
+          <div class="flow-bar flow-recording">Recording</div>
+          <p class="flow-bar-caption">Breathes toward `error` on a 1s sine cycle.</p>
+        </div>
+        <div>
+          <div class="flow-bar flow-thinking">
+            Thinking
+            <span class="sweep-track"><span class="sweep-fill"></span></span>
+          </div>
+          <p class="flow-bar-caption">800ms sweep, MD3 "emphasized" easing.</p>
+        </div>
+        <div>
+          <div class="flow-bar flow-done">Done</div>
+          <p class="flow-bar-caption">
+            One-shot 400ms cross-fade in the app ("emphasized decelerate");
+            looped here so it's visible without waiting for a dictation turn.
+          </p>
+        </div>
+        <div>
+          <div class="flow-bar flow-error">Error</div>
+          <p class="flow-bar-caption">Static -- a rare alert doesn't need motion to earn attention.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="legend">
+    <h2>Token legend</h2>
+    <div class="swatch-grid">
+      <div class="swatch" style="background:var(--primary);color:var(--on-primary)"><strong>primary</strong><span>filled buttons</span></div>
+      <div class="swatch" style="background:var(--secondary-container);color:var(--on-secondary-container)"><strong>secondary-container</strong><span>tonal buttons</span></div>
+      <div class="swatch" style="background:var(--tertiary-container);color:var(--on-tertiary-container)"><strong>tertiary-container</strong><span>Thinking state</span></div>
+      <div class="swatch" style="background:var(--error-container);color:var(--on-error-container)"><strong>error-container</strong><span>Recording state</span></div>
+      <div class="swatch" style="background:var(--success-container);color:var(--on-success-container)"><strong>success-container*</strong><span>Done state (*custom role)</span></div>
+      <div class="swatch" style="background:var(--surface-container-low);color:var(--on-surface)"><strong>surface-container-low</strong><span>section cards</span></div>
+      <div class="swatch" style="background:var(--surface-container-highest);color:var(--on-surface);border-color:var(--outline)"><strong>surface-container-highest</strong><span>text fields / pick lists</span></div>
+      <div class="swatch" style="background:var(--inverse-surface);color:var(--inverse-on-surface)"><strong>inverse-surface</strong><span>error snackbar</span></div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <h2>Design decisions</h2>
+    <ul>
+      <li><strong>Layout, not just color.</strong> Every Hub section became an MD3 "card" (tonal <code>surface-container-low</code>, medium/12px shape) instead of a bare column, giving the window real visual hierarchy for the first time.</li>
+      <li><strong>State layers, not new fills.</strong> Hover/press on filled and tonal buttons overlay a translucent wash of the foreground color (8%/10% opacity) rather than swapping to a different color, per MD3's state-layer system.</li>
+      <li><strong>A real disabled state.</strong> The per-row "Save" button in Speakers used to silently no-op on an empty name; it's now visibly disabled (dimmed border/text at MD3's 12%/38% opacity) until there's something to save.</li>
+      <li><strong>Differentiated motion per Flow Bar state</strong> rather than one generic spinner: a breathing pulse for Recording (urgency), an eased sweep for Thinking (progress), a one-shot cross-fade for Done (completion), and no motion at all for Idle/Error -- motion conveys state, it isn't decoration.</li>
+      <li><strong>One added color role.</strong> <code>success-container</code>/<code>on-success-container</code> aren't part of the official MD3 role set (MD3 has no built-in "success" pair) -- they're a same-shape custom addition for the Done state, documented as such in <code>theme::color</code>.</li>
+    </ul>
+  </section>
+
+  <script>
+    const toggle = document.getElementById('theme-toggle');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    let dark = prefersDark;
+
+    function apply() {
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      const label = dark ? 'Switch to light' : 'Switch to dark';
+      toggle.textContent = label;
+      document.querySelectorAll('.text-button').forEach((el) => { el.textContent = label; });
+    }
+
+    toggle.addEventListener('click', () => {
+      dark = !dark;
+      apply();
+    });
+
+    apply();
+  </script>
+</body>
+</html>
