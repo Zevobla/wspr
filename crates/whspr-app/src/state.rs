@@ -17,16 +17,25 @@ pub struct State {
     /// `config.language: Option<String>` since a text widget needs a plain
     /// `String` to bind to (an empty string means "no override", i.e. `None`).
     pub language_input: String,
+    /// Names of the audio input devices found at boot (see `crate::devices`).
+    pub input_devices: Vec<String>,
+    /// The currently selected input device name, if any. Defaults to the
+    /// host's default input device.
+    pub selected_device: Option<String>,
 }
 
 impl State {
-    /// Builds the initial state from the config loaded at boot.
+    /// Builds the initial state from the config loaded at boot. Device
+    /// fields start empty; `crate::app::boot` fills them in separately since
+    /// enumerating devices is its own concern from loading config.
     pub fn new(config: Config) -> Self {
         let language_input = config.language.clone().unwrap_or_default();
         Self {
             hub_window: None,
             config,
             language_input,
+            input_devices: Vec::new(),
+            selected_device: None,
         }
     }
 }

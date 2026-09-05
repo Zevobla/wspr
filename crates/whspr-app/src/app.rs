@@ -31,8 +31,12 @@ pub fn run() -> iced::Result {
 
 fn boot() -> (State, Task<Message>) {
     let config = whspr_config::load();
+    let mut state = State::new(config);
+    state.input_devices = crate::devices::list_input_device_names();
+    state.selected_device = crate::devices::default_input_device_name();
+
     let (_id, open) = window::open(window::Settings::default());
-    (State::new(config), open.map(Message::HubOpened))
+    (state, open.map(Message::HubOpened))
 }
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
