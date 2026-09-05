@@ -42,6 +42,16 @@ impl Default for GlobalHotkeyListener {
     }
 }
 
+/// Translates a `global-hotkey` press/release state into our own
+/// `HotkeyEvent`. Split out as a pure function so the translation can be
+/// unit tested without needing a real OS-level hotkey to fire.
+fn map_hotkey_state(state: HotKeyState) -> HotkeyEvent {
+    match state {
+        HotKeyState::Pressed => HotkeyEvent::Pressed,
+        HotKeyState::Released => HotkeyEvent::Released,
+    }
+}
+
 impl HotkeyListener for GlobalHotkeyListener {
     fn subscribe(&self) -> mpsc::Receiver<HotkeyEvent> {
         let (tx, rx) = mpsc::channel(10);
@@ -53,10 +63,7 @@ impl HotkeyListener for GlobalHotkeyListener {
             let receiver = GlobalHotKeyEvent::receiver();
 
             while let Ok(event) = receiver.recv() {
-                let hk_event = match event.state {
-                    HotKeyState::Pressed => HotkeyEvent::Pressed,
-                    HotKeyState::Released => HotkeyEvent::Released,
-                };
+                let hk_event = map_hotkey_state(event.state);
 
                 // `blocking_send` is designed exactly for sending from a
                 // synchronous, non-async thread into a tokio mpsc channel —
@@ -81,11 +88,18 @@ pub struct EnigoTextSink;
 impl EnigoTextSink {
     /// The threshold (in characters) above which we switch from keystrokes to clipboard paste
     const LONG_TEXT_THRESHOLD: usize = 200;
+
+    /// Decides which injection strategy `insert` should use for `text`.
+    /// Split out as a pure function so the branching can be unit tested
+    /// without actually driving enigo or the clipboard.
+    fn use_clipboard_paste(text: &str) -> bool {
+        text.len() > Self::LONG_TEXT_THRESHOLD
+    }
 }
 
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
-        if text.len() > Self::LONG_TEXT_THRESHOLD {
+        if Self::use_clipboard_paste(text) {
             // For long text, use clipboard paste
             self.paste_from_clipboard(text)
         } else {
@@ -196,5 +210,105 @@ mod tests {
                 // Ok(event) both mean the background thread is alive.
             }
         }
+    }
+
+    #[test]
+    fn map_hotkey_state_translates_pressed_and_released() {
+        assert_eq!(map_hotkey_state(HotKeyState::Pressed), HotkeyEvent::Pressed);
+        assert_eq!(
+            map_hotkey_state(HotKeyState::Released),
+            HotkeyEvent::Released
+        );
+    }
+
+    #[test]
+    fn use_clipboard_paste_switches_at_the_length_threshold() {
+        let at_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD);
+        let over_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
+
+        assert!(!EnigoTextSink::use_clipboard_paste(""));
+        assert!(!EnigoTextSink::use_clipboard_paste(&at_threshold));
+        assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
+    }
+
+    /// Verifies the arboard integration is real: setting text actually
+    /// round-trips through the system clipboard, including non-ASCII text
+    /// (the case `paste_from_clipboard` exists for). This is the one piece
+    /// of `EnigoTextSink` that's exercisable without synthesizing keystrokes,
+    /// since it only touches the clipboard, not the focused window.
+    ///
+    /// Side effect: this overwrites the real system clipboard. We save and
+    /// best-effort restore whatever was there before.
+    #[test]
+    fn clipboard_round_trip_preserves_unicode_text() {
+        let mut clipboard = match arboard::Clipboard::new() {
+            Ok(c) => c,
+            Err(e) => {
+                // No clipboard/display server available (e.g. headless CI).
+                eprintln!("skipping test: no clipboard access in this environment: {e}");
+                return;
+            }
+        };
+
+        let previous = clipboard.get_text().ok();
+
+        let payload = "hello, world — café ☕ 日本語";
+        clipboard
+            .set_text(payload)
+            .expect("set_text should succeed once clipboard access is available");
+        let read_back = clipboard
+            .get_text()
+            .expect("get_text should succeed right after set_text");
+        assert_eq!(read_back, payload);
+
+        if let Some(previous) = previous {
+            let _ = clipboard.set_text(previous);
+        }
+    }
+
+    /// `EnigoTextSink::insert` for short text synthesizes real keystrokes
+    /// via enigo into whatever window currently has OS focus. That needs an
+    /// active display session and (on macOS) Accessibility permission
+    /// granted to the test process, and it types into whatever happens to
+    /// be focused when the test runs — not something to fire unattended in
+    /// CI. Kept here, `#[ignore]`d, so a developer with a real desktop
+    /// session and a scratch text field focused can run it deliberately via
+    /// `cargo test -p whspr-inject -- --ignored`.
+    #[test]
+    #[ignore = "types real keystrokes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
+    fn type_text_sends_real_keystrokes() {
+        let sink = EnigoTextSink;
+        sink.insert("whspr-inject manual keystroke test")
+            .expect("insert should succeed with a display and Accessibility permission granted");
+    }
+
+    /// `EnigoTextSink::insert` for long text sets the clipboard (tested
+    /// above) and then simulates a real paste keystroke (Cmd+V / Ctrl+V)
+    /// into whatever window has OS focus. Same non-hermetic constraints as
+    /// `type_text_sends_real_keystrokes` above.
+    #[test]
+    #[ignore = "pastes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
+    fn paste_from_clipboard_sends_real_paste_keystroke() {
+        let sink = EnigoTextSink;
+        let long_text = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
+        sink.insert(&long_text)
+            .expect("insert should succeed with a display and Accessibility permission granted");
+    }
+
+    /// End-to-end proof that a *real* OS-level key press actually reaches
+    /// `subscribe()`'s receiver requires a human physically pressing the
+    /// registered hotkey (Ctrl+Space) while the test is running — there's
+    /// no way to synthesize that OS-level input event from within the test
+    /// process itself. `subscribe_keeps_channel_open_without_immediate_close`
+    /// above covers everything that's automatable; this documents the gap
+    /// and gives a manual repro.
+    #[test]
+    #[ignore = "needs a human to physically press Ctrl+Space during the test; run manually"]
+    fn subscribe_delivers_a_real_hotkey_press() {
+        let listener = GlobalHotkeyListener::new().expect("failed to register global hotkey");
+        let mut rx = listener.subscribe();
+        eprintln!("press Ctrl+Space now...");
+        let event = rx.blocking_recv().expect("channel closed with no event");
+        assert_eq!(event, HotkeyEvent::Pressed);
     }
 }
