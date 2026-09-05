@@ -11,7 +11,13 @@
 //! the catalog entirely and counted in the report's "not yet automated"
 //! bucket — never guessed at or marked PASS on faith.
 
+mod criteria;
+
 fn main() -> anyhow::Result<()> {
-    println!("whspr-check: scaffold");
+    println!(
+        "whspr-check: {} criteria in catalog (of {} total in the acceptance matrix)",
+        criteria::CATALOG.len(),
+        criteria::TOTAL_CRITERIA
+    );
     Ok(())
 }
