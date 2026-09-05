@@ -6,7 +6,7 @@
 //! letters), which keeps an ordinary "look at something" from being turned
 //! into an address unless a real domain follows.
 
-use super::split_punct;
+use super::{is_tld, split_punct};
 
 /// True for the spoken "dot" separator (English or Russian).
 fn is_dot(core: &str) -> bool {
@@ -22,11 +22,6 @@ fn is_at(core: &str) -> bool {
 /// separator keywords.
 fn is_word(core: &str) -> bool {
     !core.is_empty() && core.chars().all(char::is_alphanumeric) && !is_dot(core) && !is_at(core)
-}
-
-/// A plausible top-level domain: 2..=6 ASCII letters.
-fn is_tld(core: &str) -> bool {
-    (2..=6).contains(&core.len()) && core.chars().all(|c| c.is_ascii_alphabetic())
 }
 
 /// Reads "word (dot word)*" starting at `i`, returning the segments and the
