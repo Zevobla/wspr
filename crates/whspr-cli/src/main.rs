@@ -3,14 +3,21 @@
 //! Usage:
 //!   whspr transcribe <FILE|->      Transcribe an audio file (- for stdin, must be WAV format)
 //!   whspr transcribe-batch <DIR>   Transcribe all .wav files in a directory
+//!   whspr diarize <FILE> [--model-dir <DIR>] [--embedding <CHOICE>] [--language <LANG>] [--json]
+//!                                  Diarize a multi-speaker audio file: find
+//!                                  speaker turns and match them against the
+//!                                  persisted speaker database
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
 //!   --asr ID                        ASR backend (openai, deepgram, whisper-local; default from config)
 //!   --refine ID                     Text refiner (noop, openai, anthropic, llama-local; default from config)
 //!   --language LANG                 BCP47 language code (e.g. en, es, fr; not yet wired to ASR)
+//!   --embedding CHOICE               Speaker embedding model for `diarize` (cam-plus-plus, eres2net; default from config)
 //!   --json                          Output JSON object instead of plain text
 //!   --no-store                      Don't save result to history file
+
+mod diarize_cmd;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -122,6 +129,47 @@ enum Command {
         /// being present on the machine running `cargo test`.
         #[arg(long, hide = true)]
         asr_api_key: Option<String>,
+    },
+
+    /// Diarize a multi-speaker audio file: find speaker turns and match
+    /// each one against the persisted speaker database.
+    Diarize {
+        /// Path to audio file (WAV format).
+        file: PathBuf,
+
+        /// Directory containing sherpa-onnx segmentation + embedding model
+        /// files. Falls back to the config file's `[speaker].model-dir` if
+        /// not given. If neither is set, uses a deterministic mock
+        /// diarizer (offline, no real model files needed) -- same
+        /// "explicit opt-in, else a safe default" philosophy as `--asr`.
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+
+        /// Which speaker-embedding model to use (e.g. "cam-plus-plus",
+        /// "eres2net"; see `whspr_config::SpeakerEmbeddingChoice`). Falls
+        /// back to the config file's `[speaker].embedding-model` choice if
+        /// not given -- never hardcoded to a single model.
+        #[arg(long)]
+        embedding: Option<String>,
+
+        /// BCP47 language code (e.g. en, es, fr). Falls back to
+        /// `config.language`. Accepted for consistency with `transcribe`
+        /// and future use; sherpa's segmentation/embedding models are
+        /// acoustic, not text-based, so diarization itself doesn't yet act
+        /// on this -- it's plumbed through so a future word-level
+        /// who-said-what alignment (v2) has it available from day one.
+        #[arg(long)]
+        language: Option<String>,
+
+        /// Output a JSON array of `{start_secs, end_secs, speaker, score}`
+        /// instead of plain text lines.
+        #[arg(long)]
+        json: bool,
+
+        /// Override the data directory (speakers.json lives here). Hidden:
+        /// test-only, so the e2e suite can redirect writes to a tempdir.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
     },
 }
 
@@ -450,6 +498,17 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+        }
+
+        Some(Command::Diarize {
+            file,
+            model_dir,
+            embedding,
+            language: _language,
+            json: output_json,
+            data_dir,
+        }) => {
+            diarize_cmd::run(&config, file, model_dir, embedding, data_dir, output_json).await?;
         }
 
         None => {

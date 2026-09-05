@@ -1,34 +1,13 @@
 //! Deterministic end-to-end tests for the whspr CLI. Verifies that the CLI
 //! binary correctly parses arguments, handles files, and produces expected output.
+//! (`whspr diarize` has its own suite in `diarize_e2e.rs`.)
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
-/// Creates a minimal test WAV file with a given sample rate.
-fn create_test_wav(
-    path: &std::path::Path,
-    sample_rate: u32,
-    duration_secs: f32,
-) -> anyhow::Result<()> {
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut writer = hound::WavWriter::create(path, spec)?;
-    let sample_count = (sample_rate as f32 * duration_secs) as usize;
-
-    // Write silent samples
-    for _ in 0..sample_count {
-        writer.write_sample(0i16)?;
-    }
-
-    writer.finalize()?;
-    Ok(())
-}
+mod common;
+use common::create_test_wav;
 
 #[test]
 fn version_flag_exits_zero() {
