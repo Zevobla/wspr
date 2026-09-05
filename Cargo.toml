@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/whspr/whspr"
+
+[workspace.dependencies]
+# Internal crates
+whspr-core = { path = "crates/whspr-core" }
+whspr-asr = { path = "crates/whspr-asr" }
+whspr-refine = { path = "crates/whspr-refine" }
+whspr-audio = { path = "crates/whspr-audio" }
+whspr-inject = { path = "crates/whspr-inject" }
+whspr-config = { path = "crates/whspr-config" }
+
+# Async runtime & traits
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync"] }
+async-trait = "0.1"
+
+# Errors & logging
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Serialization & config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.1"
+figment = "0.10"
+directories = "6.0"
+
+# CLI
+clap = { version = "4.6", features = ["derive"] }
+
+# Networking
+reqwest = { version = "0.13", features = ["json", "rustls-tls"] }
+
+# Audio
+hound = "3.5"
+rubato = "5.0"
+cpal = "0.18"
+
+# ASR / LLM backends
+whisper-rs = "0.16"
+llama-cpp-2 = "0.1"
+
+# Input injection & clipboard
+global-hotkey = "0.8"
+enigo = "0.6"
+arboard = "3.6"
+
+# GUI
+iced = "0.14"
+
+# Dev dependencies
+assert_cmd = "2.2"
+predicates = "3.1"
+insta = "1.48"
+wiremock = "0.6"
+tempfile = "3.27"
