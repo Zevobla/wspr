@@ -24,5 +24,8 @@ jobs:
       - name: rustfmt
         run: nix develop -c -- cargo fmt --all -- --check
 
+      - name: cargo check (all targets)
+        run: nix develop -c cargo check --workspace --all-targets
+
       - name: nix flake check
         run: nix flake check --print-build-logs
