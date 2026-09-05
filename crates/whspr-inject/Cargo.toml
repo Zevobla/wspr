@@ -8,3 +8,6 @@ repository.workspace = true
 [dependencies]
 whspr-core.workspace = true
 tokio.workspace = true
+global-hotkey.workspace = true
+enigo.workspace = true
+arboard.workspace = true
