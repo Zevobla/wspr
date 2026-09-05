@@ -64,6 +64,12 @@ enum Command {
         /// the real platform data dir.
         #[arg(long, hide = true)]
         data_dir: Option<PathBuf>,
+
+        /// Override the base URL for cloud ASR backends (openai, deepgram).
+        /// Hidden: test-only, so the e2e suite can point --asr openai /
+        /// --asr deepgram at a wiremock::MockServer instead of the real API.
+        #[arg(long, hide = true)]
+        asr_base_url: Option<String>,
     },
 
     /// Transcribe all .wav files in a directory.
@@ -96,6 +102,12 @@ enum Command {
         /// the real platform data dir.
         #[arg(long, hide = true)]
         data_dir: Option<PathBuf>,
+
+        /// Override the base URL for cloud ASR backends (openai, deepgram).
+        /// Hidden: test-only, so the e2e suite can point --asr openai /
+        /// --asr deepgram at a wiremock::MockServer instead of the real API.
+        #[arg(long, hide = true)]
+        asr_base_url: Option<String>,
     },
 }
 
@@ -119,6 +131,7 @@ enum Command {
 fn build_asr_backend(
     config: &whspr_config::Config,
     asr_id: Option<&str>,
+    asr_base_url: Option<&str>,
 ) -> anyhow::Result<Box<dyn AsrBackend>> {
     let choice = match asr_id {
         Some(id) => AsrChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?,
@@ -131,7 +144,11 @@ fn build_asr_backend(
             let api_key = api_key_for(config, "openai").ok_or_else(|| {
                 anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
             })?;
-            Ok(Box::new(OpenAiAsr::new(api_key)))
+            let backend: Box<dyn AsrBackend> = match asr_base_url {
+                Some(url) => Box::new(OpenAiAsr::with_base_url(api_key, url)),
+                None => Box::new(OpenAiAsr::new(api_key)),
+            };
+            Ok(backend)
         }
         AsrChoice::Deepgram => {
             let api_key = api_key_for(config, "deepgram").ok_or_else(|| {
@@ -139,7 +156,11 @@ fn build_asr_backend(
                     "Deepgram API key not configured (set [api_keys].deepgram in config)"
                 )
             })?;
-            Ok(Box::new(DeepgramAsr::new(api_key)))
+            let backend: Box<dyn AsrBackend> = match asr_base_url {
+                Some(url) => Box::new(DeepgramAsr::with_base_url(api_key, url)),
+                None => Box::new(DeepgramAsr::new(api_key)),
+            };
+            Ok(backend)
         }
     }
 }
@@ -266,12 +287,13 @@ async fn main() -> anyhow::Result<()> {
             json: output_json,
             no_store,
             data_dir,
+            asr_base_url,
         }) => {
             eprintln!("Loading audio...");
             let audio = load_audio(&file).await?;
 
             eprintln!("Building pipeline...");
-            let asr_backend = build_asr_backend(&config, asr.as_deref())?;
+            let asr_backend = build_asr_backend(&config, asr.as_deref(), asr_base_url.as_deref())?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
             let asr_id = asr_backend.id();
@@ -319,12 +341,13 @@ async fn main() -> anyhow::Result<()> {
             json: output_json,
             no_store,
             data_dir,
+            asr_base_url,
         }) => {
             if !dir.is_dir() {
                 anyhow::bail!("{} is not a directory", dir.display());
             }
 
-            let asr_backend = build_asr_backend(&config, asr.as_deref())?;
+            let asr_backend = build_asr_backend(&config, asr.as_deref(), asr_base_url.as_deref())?;
             let refiner = build_refiner(&config, refine.as_deref())?;
 
             let asr_id = asr_backend.id();
