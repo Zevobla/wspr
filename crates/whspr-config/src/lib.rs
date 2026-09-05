@@ -16,6 +16,10 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+mod speaker;
+
+pub use speaker::{SpeakerDb, SpeakerProfile};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AsrChoice {
@@ -62,6 +66,34 @@ impl FromStr for RefineChoice {
     }
 }
 
+/// Settings for the speaker-fingerprinting (diarization) feature.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct SpeakerSettings {
+    /// Whether the diarization/speaker-fingerprinting feature is turned on
+    /// at all. Lets a user who doesn't care about it skip the sherpa model
+    /// download entirely without anything else breaking.
+    pub enabled: bool,
+    /// Directory containing the sherpa-onnx segmentation + embedding model
+    /// files (see `whspr-diarize` for the expected filenames). `None` means
+    /// not configured yet — diarization fails with an honest error until
+    /// the user sets this.
+    pub model_dir: Option<std::path::PathBuf>,
+    /// Minimum cosine similarity to match a turn to an already-enrolled
+    /// speaker rather than creating a new one. See `SpeakerDb::match_or_enroll`.
+    pub similarity_threshold: f32,
+}
+
+impl Default for SpeakerSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model_dir: None,
+            similarity_threshold: 0.7,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -80,6 +112,8 @@ pub struct Config {
     /// interim placeholder. Never read from environment variables.
     #[serde(default)]
     pub api_keys: BTreeMap<String, String>,
+    #[serde(default)]
+    pub speaker: SpeakerSettings,
 }
 
 /// Loads the effective config from the platform config directory.
