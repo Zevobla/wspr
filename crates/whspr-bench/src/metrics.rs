@@ -18,8 +18,8 @@ pub fn levenshtein<T: PartialEq>(a: &[T], b: &[T]) -> usize {
     let mut curr = vec![0; n + 1];
 
     // Initialize first row (distance from empty string to prefixes of b)
-    for j in 0..=n {
-        prev[j] = j;
+    for (j, cell) in prev.iter_mut().enumerate().take(n + 1) {
+        *cell = j;
     }
 
     for i in 1..=m {

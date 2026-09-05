@@ -44,7 +44,7 @@ impl Report {
         let mut groups: BTreeMap<String, Vec<&CaseResult>> = BTreeMap::new();
         for case in &cases {
             let prefix = case.criterion.split('-').next().unwrap_or(&case.criterion).to_string();
-            groups.entry(prefix).or_insert_with(Vec::new).push(case);
+            groups.entry(prefix).or_default().push(case);
         }
 
         // Compute group stats
