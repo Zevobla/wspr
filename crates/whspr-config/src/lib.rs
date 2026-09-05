@@ -176,6 +176,18 @@ impl Default for NormalizeSettings {
     }
 }
 
+/// Whether whspr should launch automatically at login (B-10). `enabled`
+/// is just the persisted *intent* -- toggling it in the GUI also
+/// writes/removes the actual OS-level entry via
+/// `autostart::install_autostart`/`remove_autostart`, but this field
+/// alone doesn't prove that entry exists (e.g. it could have been deleted
+/// out from under whspr by the user or the OS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct AutostartSettings {
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -204,6 +216,10 @@ pub struct Config {
     /// `[normalize]` table.
     #[serde(default)]
     pub normalize: NormalizeSettings,
+    /// Launch-at-login setting, read from the config file's `[autostart]`
+    /// table.
+    #[serde(default)]
+    pub autostart: AutostartSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
