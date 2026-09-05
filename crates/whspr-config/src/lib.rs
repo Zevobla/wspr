@@ -1,9 +1,16 @@
 //! App configuration: backend selection and on-disk persistence.
-//! Loads configuration by merging (in priority order):
-//! 1. Default config (built-in fallback)
-//! 2. Platform config file (e.g. ~/.config/whspr/config.toml on Linux)
-//! 3. Environment variable overrides (WHSPR_ASR, WHSPR_LANGUAGE, etc.)
+//!
+//! Config comes from exactly two sources, merged in priority order:
+//! 1. Default config (compiled in, reproducible via the Nix build)
+//! 2. The user-editable TOML file in the platform config dir (e.g.
+//!    `~/.config/whspr/config.toml` on Linux), overlaid on top of the
+//!    defaults.
+//!
+//! Deliberately *not* a source: environment variables. There is no "local
+//! variable" override mechanism — the only way to change a setting is to
+//! edit the config file. Don't add `std::env::var` reads here.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -63,9 +70,19 @@ pub struct Config {
     pub refine: RefineChoice,
     #[serde(default)]
     pub language: Option<String>,
+    /// API keys for cloud backends, keyed by backend id (e.g. "openai",
+    /// matching `AsrBackend::id()` / `TextRefiner::id()`), read from the
+    /// config file's `[api_keys]` table.
+    ///
+    /// Stored in plaintext in the config file for now. Moving these into
+    /// the OS keystore (criterion P-06) is planned for a later privacy
+    /// wave and is *not* implemented here — this field is the honest
+    /// interim placeholder. Never read from environment variables.
+    #[serde(default)]
+    pub api_keys: BTreeMap<String, String>,
 }
 
-/// Loads the effective config from platform directories and environment.
+/// Loads the effective config from the platform config directory.
 /// Falls back gracefully to defaults on any error (config loading should never crash).
 pub fn load() -> Config {
     if let Some(project_dirs) = directories::ProjectDirs::from("", "", "whspr") {
@@ -83,7 +100,8 @@ pub fn load_from(config_dir: Option<&Path>) -> Config {
     // Start with defaults
     let mut config = Config::default();
 
-    // Load from TOML file if it exists
+    // Overlay the TOML file if it exists. This is the *only* override
+    // mechanism whspr has — no environment variables, no other source.
     if let Some(dir) = config_dir {
         let config_path = dir.join("config.toml");
         if config_path.exists() {
@@ -95,31 +113,15 @@ pub fn load_from(config_dir: Option<&Path>) -> Config {
         }
     }
 
-    // Environment variables override file config
-    if let Ok(asr_str) = std::env::var("WHSPR_ASR") {
-        if let Ok(asr) = asr_str.parse::<AsrChoice>() {
-            config.asr = asr;
-        }
-    }
-
-    if let Ok(refine_str) = std::env::var("WHSPR_REFINE") {
-        if let Ok(refine) = refine_str.parse::<RefineChoice>() {
-            config.refine = refine;
-        }
-    }
-
-    if let Ok(language) = std::env::var("WHSPR_LANGUAGE") {
-        config.language = Some(language);
-    }
-
     config
 }
 
-/// Looks up API keys from environment variables.
-/// Checks WHSPR_<CHOICE>_API_KEY, e.g. WHSPR_OPENAI_API_KEY.
-pub fn api_key_for(choice_id: &str) -> Option<String> {
-    let env_var = format!("WHSPR_{}_API_KEY", choice_id.to_uppercase());
-    std::env::var(&env_var).ok()
+/// Looks up an API key for a cloud backend by id (e.g. "openai") from the
+/// given config's `api_keys` table. Reads only `config`; never an
+/// environment variable. See `Config::api_keys` for the plaintext-for-now
+/// caveat.
+pub fn api_key_for(config: &Config, choice_id: &str) -> Option<String> {
+    config.api_keys.get(choice_id).cloned()
 }
 
 #[cfg(test)]
@@ -183,17 +185,43 @@ mod tests {
     }
 
     #[test]
-    fn api_key_for_looks_up_env_var() {
-        std::env::set_var("WHSPR_OPENAI_API_KEY", "test-key-123");
-        let key = api_key_for("openai");
-        assert_eq!(key, Some("test-key-123".to_string()));
-        std::env::remove_var("WHSPR_OPENAI_API_KEY");
+    fn load_from_ignores_environment_variables() {
+        // Regression test: env vars must never override the config file or
+        // defaults, even for names the old design specifically read.
+        std::env::set_var("WHSPR_ASR", "deepgram");
+        std::env::set_var("WHSPR_REFINE", "open-ai");
+        std::env::set_var("WHSPR_LANGUAGE", "fr");
+
+        let cfg = load_from(None);
+
+        std::env::remove_var("WHSPR_ASR");
+        std::env::remove_var("WHSPR_REFINE");
+        std::env::remove_var("WHSPR_LANGUAGE");
+
+        assert_eq!(cfg.asr, AsrChoice::WhisperLocal);
+        assert_eq!(cfg.refine, RefineChoice::Noop);
+        assert_eq!(cfg.language, None);
     }
 
     #[test]
-    fn api_key_for_returns_none_if_not_set() {
-        std::env::remove_var("WHSPR_UNKNOWN_API_KEY");
-        let key = api_key_for("unknown");
+    fn api_key_for_reads_from_config_file() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[api_keys]").expect("failed to write api_keys header");
+        writeln!(file, "openai = \"sk-test-123\"").expect("failed to write openai key");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert_eq!(api_key_for(&cfg, "openai"), Some("sk-test-123".to_string()));
+        assert_eq!(api_key_for(&cfg, "anthropic"), None);
+    }
+
+    #[test]
+    fn api_key_for_ignores_environment_variables() {
+        std::env::set_var("WHSPR_OPENAI_API_KEY", "should-be-ignored");
+        let key = api_key_for(&Config::default(), "openai");
+        std::env::remove_var("WHSPR_OPENAI_API_KEY");
         assert_eq!(key, None);
     }
 }
