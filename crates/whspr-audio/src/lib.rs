@@ -101,11 +101,46 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
     Ok(AudioBuffer::new(samples, sample_rate))
 }
 
-/// Resamples and downmixes an arbitrary `AudioBuffer` to 16kHz mono, the
-/// shape every `AsrBackend` expects.
+/// Resamples an `AudioBuffer` to 16kHz mono.
+///
+/// By design, `AudioBuffer` has no channels field, so it's always treated as mono
+/// at the time of decode (see `decode_wav`). This function only handles sample-rate
+/// conversion to 16000 Hz using linear interpolation for simplicity.
+///
+/// If the input is already at 16kHz, returns a cheap passthrough (cloned buffer).
 pub fn resample_to_16k_mono(input: &AudioBuffer) -> Result<AudioBuffer> {
-    let _ = input;
-    todo!("whspr-audio: resample via rubato")
+    if input.sample_rate == 16000 {
+        return Ok(input.clone());
+    }
+
+    // Ratio of output to input sample rate
+    let ratio = 16000.0 / input.sample_rate as f64;
+
+    // Calculate expected output length
+    let output_frames = (input.samples.len() as f64 * ratio).round() as usize;
+
+    // Simple linear interpolation resampling
+    let mut output_samples = Vec::with_capacity(output_frames);
+
+    for out_idx in 0..output_frames {
+        // Map output index to input index
+        let input_idx = out_idx as f64 / ratio;
+        let input_idx_floor = input_idx.floor() as usize;
+        let frac = input_idx - input_idx_floor as f64;
+
+        if input_idx_floor >= input.samples.len() - 1 {
+            // Clamp to last sample
+            output_samples.push(input.samples[input.samples.len() - 1]);
+        } else {
+            // Linear interpolation between two adjacent samples
+            let s0 = input.samples[input_idx_floor];
+            let s1 = input.samples[input_idx_floor + 1];
+            let interpolated = s0 * (1.0 - frac as f32) + s1 * (frac as f32);
+            output_samples.push(interpolated);
+        }
+    }
+
+    Ok(AudioBuffer::new(output_samples, 16000))
 }
 
 /// Handle for an in-progress microphone capture session.
