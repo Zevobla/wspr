@@ -330,4 +330,9 @@ pub const CATALOG: &[Criterion] = &[
         group: "AC",
         title: "No unused workspace dependencies (cargo-udeps)",
     },
+    Criterion {
+        id: "AC-06",
+        group: "AC",
+        title: "Dead code absent (clippy -D warnings, dead_code lint)",
+    },
 ];
