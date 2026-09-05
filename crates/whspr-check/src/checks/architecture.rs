@@ -86,6 +86,112 @@ pub fn check_core_free_of_heavy_deps(root: &Path) -> CheckResult {
     }
 }
 
+/// AA-10: no circular dependencies between workspace crates.
+///
+/// Builds the workspace-internal subgraph of `cargo metadata`'s
+/// `resolve.nodes` (edges to non-workspace crates.io deps are dropped) and
+/// runs Kahn's algorithm: a graph has a cycle iff topological sort can't
+/// visit every node. Note this can only ever legitimately FAIL to build
+/// (see AA-01/A-01) in the first place if there *were* a real cycle -
+/// Cargo itself refuses to resolve one - so a PASS here is a structural
+/// guarantee, not a deep architectural finding; it's still verified from
+/// live data rather than assumed.
+pub fn check_no_circular_deps(root: &Path) -> CheckResult {
+    let meta = match run_cargo_metadata(root) {
+        Ok(m) => m,
+        Err(e) => return CheckResult::fail("AA-10", e.to_string()),
+    };
+    let Some(members) = meta["workspace_members"].as_array() else {
+        return CheckResult::fail("AA-10", "cargo metadata JSON had no `workspace_members`");
+    };
+    let member_ids: std::collections::HashSet<&str> =
+        members.iter().filter_map(|m| m.as_str()).collect();
+    let Some(nodes) = meta["resolve"]["nodes"].as_array() else {
+        return CheckResult::fail("AA-10", "cargo metadata JSON had no `resolve.nodes`");
+    };
+    let packages = meta["packages"].as_array().cloned().unwrap_or_default();
+    let name_of = |id: &str| -> String {
+        packages
+            .iter()
+            .find(|p| p["id"] == id)
+            .and_then(|p| p["name"].as_str())
+            .unwrap_or(id)
+            .to_string()
+    };
+
+    let mut graph: HashMap<String, Vec<String>> = HashMap::new();
+    for node in nodes {
+        let Some(id) = node["id"].as_str() else {
+            continue;
+        };
+        if !member_ids.contains(id) {
+            continue;
+        }
+        let deps: Vec<String> = node["deps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|d| d["pkg"].as_str())
+            .filter(|pkg_id| member_ids.contains(pkg_id))
+            .map(str::to_string)
+            .collect();
+        graph.insert(id.to_string(), deps);
+    }
+
+    // Kahn's algorithm.
+    let mut in_degree: HashMap<String, usize> = graph.keys().map(|k| (k.clone(), 0)).collect();
+    for deps in graph.values() {
+        for d in deps {
+            *in_degree.entry(d.clone()).or_insert(0) += 1;
+        }
+    }
+    let mut queue: Vec<String> = in_degree
+        .iter()
+        .filter(|(_, &c)| c == 0)
+        .map(|(k, _)| k.clone())
+        .collect();
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    while let Some(n) = queue.pop() {
+        visited.insert(n.clone());
+        if let Some(deps) = graph.get(&n) {
+            for d in deps {
+                if let Some(e) = in_degree.get_mut(d) {
+                    *e -= 1;
+                    if *e == 0 {
+                        queue.push(d.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    if visited.len() == graph.len() {
+        CheckResult::pass(
+            "AA-10",
+            format!(
+                "topological sort visits all {} crates in the workspace-internal dependency \
+                 graph from `cargo metadata`'s resolve.nodes - no cycle",
+                graph.len()
+            ),
+        )
+    } else {
+        let stuck: Vec<String> = graph
+            .keys()
+            .filter(|k| !visited.contains(*k))
+            .map(|id| name_of(id))
+            .collect();
+        CheckResult::fail(
+            "AA-10",
+            format!(
+                "{} crate(s) never reached a zero in-degree during topological sort - part of a \
+                 cycle: {}",
+                stuck.len(),
+                stuck.join(", ")
+            ),
+        )
+    }
+}
+
 /// The library crates AA-16 holds to a no-direct-printing standard.
 /// Deliberately excludes the binary crates (`whspr-cli`, `whspr-app`),
 /// which legitimately own their own stdout for direct user-facing program
