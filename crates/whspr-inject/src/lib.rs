@@ -468,6 +468,24 @@ mod tests {
         assert_eq!(clipboard.content.as_deref(), Some("user's data"));
     }
 
+    /// When our text can't even be staged (clipboard access denied), the
+    /// sequence reports `Unstaged` without running the paste and leaves the
+    /// clipboard untouched — signalling the caller to fall back to typing.
+    #[test]
+    fn stage_and_paste_reports_unstaged_when_set_text_fails() {
+        let mut clipboard = MockClipboard::with_content(Some("user's data"));
+        clipboard.set_fails = true;
+
+        let outcome = stage_and_paste(&mut clipboard, "injected text", || {
+            panic!("paste must not run when staging failed")
+        });
+
+        assert!(matches!(outcome, PasteOutcome::Unstaged));
+        // The clipboard was never modified.
+        assert_eq!(clipboard.content.as_deref(), Some("user's data"));
+        assert!(clipboard.writes.is_empty());
+    }
+
     /// Verifies the arboard integration is real: setting text actually
     /// round-trips through the system clipboard, including non-ASCII text
     /// (the case `paste_from_clipboard` exists for). This is the one piece
