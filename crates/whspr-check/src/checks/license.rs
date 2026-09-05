@@ -200,8 +200,17 @@ const BENIGN_MARKERS: &[&str] = &[
 /// the current branch) for the patterns above. This is a pattern-based
 /// heuristic, not an exhaustive secret scanner (that's a whole product
 /// category on its own) - documented as such in the evidence either way.
+///
+/// Excludes `crates/whspr-check` itself: without that, this check flags
+/// its own `SECRET_PATTERNS`/`BENIGN_MARKERS` constants (which necessarily
+/// contain the literal strings "AKIA", "ghp_", etc. in order to search for
+/// them) as if they were real committed secrets.
 pub fn check_no_secrets_in_history(root: &Path) -> CheckResult {
-    let output = match repo::run(root, "git", &["log", "--all", "-p"]) {
+    let output = match repo::run(
+        root,
+        "git",
+        &["log", "--all", "-p", "--", ".", ":!crates/whspr-check"],
+    ) {
         Ok(o) => o,
         Err(e) => return CheckResult::fail("Z-16", format!("could not run git log: {e}")),
     };
