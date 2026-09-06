@@ -181,6 +181,45 @@ fn last_emitted() -> &'static Mutex<Option<char>> {
     LAST.get_or_init(|| Mutex::new(None))
 }
 
+/// Injects text via `paste`, falling back to `type_text` if the paste path
+/// fails, so a failed clipboard paste never silently drops the user's
+/// dictation. Succeeds if either path succeeds; returns the fallback's error
+/// only when both fail. Logs which path delivered the text.
+///
+/// Split out with injectable closures so the fallback decision is
+/// unit-testable without a real display, clipboard, or keystroke synthesis.
+fn inject_with_fallback<P, T>(paste: P, type_text: T) -> Result<()>
+where
+    P: FnOnce() -> Result<()>,
+    T: FnOnce() -> Result<()>,
+{
+    match paste() {
+        Ok(()) => {
+            tracing::debug!("text injected via clipboard paste");
+            Ok(())
+        }
+        Err(paste_err) => {
+            tracing::warn!(
+                error = %paste_err,
+                "clipboard paste failed; falling back to keystroke typing"
+            );
+            match type_text() {
+                Ok(()) => {
+                    tracing::info!("text injected via keystroke fallback");
+                    Ok(())
+                }
+                Err(type_err) => {
+                    tracing::error!(
+                        error = %type_err,
+                        "keystroke fallback also failed; injection lost"
+                    );
+                    Err(type_err)
+                }
+            }
+        }
+    }
+}
+
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
         if text.is_empty() {
@@ -196,9 +235,12 @@ impl TextSink for EnigoTextSink {
 
         // Clipboard paste is the default path: it lands text reliably in
         // editors, terminals, and vim, where raw synthetic keystrokes
-        // misbehave. `paste_from_clipboard` falls back to typing on its own
-        // when the clipboard is unavailable. (AM-08)
-        let result = self.paste_from_clipboard(&payload);
+        // misbehave (AM-08). If the paste path fails for any reason, degrade
+        // to typing the same text rather than dropping the dictation.
+        let result = inject_with_fallback(
+            || self.paste_from_clipboard(&payload),
+            || self.type_text(&payload),
+        );
 
         // Remember what we actually emitted so the next utterance can decide
         // whether it needs a leading space. Only record on success.
