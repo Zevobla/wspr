@@ -1,5 +1,11 @@
 //! Rule-based text normalization. Pure, deterministic string transforms - no
 //! LLM, no network - toggleable via `whspr_config::NormalizeSettings`:
+//!   - `macros` (AJ-01/AJ-02) expands user-defined trigger phrases into
+//!     their configured expansion text. Applied unconditionally (an empty
+//!     macro table is a no-op) and *before* every other pass, so a trigger
+//!     containing a number/date word (e.g. "call five") is matched against
+//!     the refiner's literal output, not text the passes below have
+//!     already rewritten.
 //!   - `dates`  -> dates unified to `YYYY-MM-DD`
 //!   - `times`  -> times unified to 24-hour `HH:MM`
 //!   - `numbers` gates the number-word pass *and* the extended token passes
@@ -16,6 +22,7 @@ mod currency;
 mod dates;
 mod dedup;
 mod emails;
+mod macros;
 mod numbers;
 mod percents;
 mod phones;
@@ -71,7 +78,7 @@ impl TextRefiner for NormalizingRefiner {
 /// currency pass), emails before URLs (so an address is assembled before its
 /// bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
-    let mut text = text.to_string();
+    let mut text = macros::expand_macros(text, &settings.macros);
     if settings.dates {
         text = dates::normalize_dates(&text);
     }
@@ -221,11 +228,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn normalizing_refiner_applies_macros() {
+        // Proves macro expansion (AJ-01/AJ-02) runs through the real
+        // refiner path, not just the pure `expand_macros` fn in isolation.
+        let mut settings = NormalizeSettings::default();
+        settings
+            .macros
+            .insert("my email".to_string(), "me@example.com".to_string());
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("send my email please", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "send me@example.com please");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_macros_run_before_number_normalization() {
+        // A trigger containing a number word ("five") only matches if
+        // macros see the refiner's literal output before the numbers pass
+        // rewrites "five" to "5" -- proves the documented pass ordering.
+        let mut settings = NormalizeSettings::default();
+        settings
+            .macros
+            .insert("call five".to_string(), "5551234".to_string());
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("please call five now", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "please 5551234 now");
+    }
+
+    #[tokio::test]
     async fn normalizing_refiner_respects_disabled_toggles() {
         let settings = NormalizeSettings {
             numbers: false,
             dates: false,
             times: false,
+            ..Default::default()
         };
         let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
         let input = "meet at 14 30 on 5.9.2026, bring twenty five copies";
