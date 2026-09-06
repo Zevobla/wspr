@@ -5,6 +5,7 @@ mod flow_bar;
 mod history;
 mod hotkey_capture;
 mod hub;
+mod sound;
 mod speakers;
 mod state;
 mod stats;
