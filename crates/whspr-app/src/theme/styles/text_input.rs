@@ -85,6 +85,9 @@ mod tests {
     fn disabled_text_input_uses_on_surface_color() {
         let scheme = &color::LIGHT;
         let style = outlined(scheme, Status::Disabled);
-        assert_eq!(style.value, color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY));
+        assert_eq!(
+            style.value,
+            color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY)
+        );
     }
 }

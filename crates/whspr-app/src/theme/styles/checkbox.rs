@@ -101,6 +101,9 @@ mod tests {
         let scheme = &color::LIGHT;
         let status = Status::Disabled { is_checked: true };
         let style = field(scheme, status);
-        assert_eq!(style.icon_color, color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY));
+        assert_eq!(
+            style.icon_color,
+            color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY)
+        );
     }
 }

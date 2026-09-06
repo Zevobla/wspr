@@ -190,6 +190,9 @@ mod tests {
         let style = filled(scheme, Status::Disabled);
         assert!(style.background.is_some());
         // Disabled buttons use on_surface color, not their original color
-        assert_eq!(style.text_color, color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY));
+        assert_eq!(
+            style.text_color,
+            color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY)
+        );
     }
 }

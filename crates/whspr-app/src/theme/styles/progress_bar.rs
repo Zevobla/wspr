@@ -29,6 +29,9 @@ mod tests {
     fn thinking_progress_bar_has_container_background() {
         let scheme = &color::LIGHT;
         let style = thinking(scheme);
-        assert_eq!(style.background, Background::Color(scheme.tertiary_container));
+        assert_eq!(
+            style.background,
+            Background::Color(scheme.tertiary_container)
+        );
     }
 }
