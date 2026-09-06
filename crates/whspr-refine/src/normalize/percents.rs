@@ -20,17 +20,25 @@ fn is_percent_word(core: &str) -> bool {
     )
 }
 
-/// Maps a fraction-denominator word to its denominator value.
+/// Maps a fraction-denominator word to its denominator value. Covers the
+/// English ordinals plus the two Russian fraction-denominator forms that
+/// actually get spoken: the feminine `-ая`/`-ья` ("одна вторая" -> 1/2) and
+/// the genitive-plural `-ых`/`-их` ("две третьих" -> 2/3, "три четвёртых" ->
+/// 3/4), alongside the colloquial "четверть"/"треть" quarter/third words.
 fn fraction_denominator(core: &str) -> Option<u64> {
     Some(match core.to_lowercase().as_str() {
         "half" | "halves" | "половина" | "половины" | "половину" => 2,
-        "third" | "thirds" | "треть" | "трети" | "третей" => 3,
-        "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей" => {
-            4
-        }
+        // No English "second(s)" here: "two seconds" is a duration, not 2/2.
+        "вторая" | "вторых" => 2,
+        "third" | "thirds" | "треть" | "трети" | "третей" | "третья" | "третьих" => 3,
+        "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей"
+        | "четвёртая" | "четвёртых" | "четвертая" | "четвертых" => 4,
         "fifth" | "fifths" | "пятая" | "пятых" => 5,
         "sixth" | "sixths" | "шестая" | "шестых" => 6,
+        "seventh" | "sevenths" | "седьмая" | "седьмых" => 7,
         "eighth" | "eighths" | "восьмая" | "восьмых" => 8,
+        "ninth" | "ninths" | "девятая" | "девятых" => 9,
+        "tenth" | "tenths" | "десятая" | "десятых" => 10,
         _ => return None,
     })
 }
