@@ -14,12 +14,9 @@ use super::common::section;
 /// stats, stacked in the same order they used to appear as separate Hub
 /// cards.
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    column![
-        history_section(state, scheme),
-        stats_section(state, scheme),
-    ]
-    .spacing(spacing::XL)
-    .into()
+    column![history_section(state, scheme), stats_section(state, scheme),]
+        .spacing(spacing::XL)
+        .into()
 }
 
 fn history_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
