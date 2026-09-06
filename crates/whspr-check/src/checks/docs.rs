@@ -1,5 +1,6 @@
-//! README content checks: architecture diagram, settings table,
-//! model-swap docs, dependency/build docs, and the anti-slop honesty check.
+//! README and documentation checks: architecture diagram, settings table,
+//! model-swap docs, dependency/build docs, the anti-slop honesty check,
+//! and UNIQUENESS.md presence.
 
 use crate::repo;
 use crate::report::CheckResult;
@@ -235,6 +236,35 @@ pub fn check_readme_swap_docs(root: &Path) -> CheckResult {
     }
 }
 
+/// AE-10: UNIQUENESS.md file is present at repo root.
+///
+/// Checks for the existence of UNIQUENESS.md which documents the unique
+/// value proposition and distinguishes this project from similar
+/// alternatives (criterion AE-10).
+pub fn check_uniqueness_md_present(root: &Path) -> CheckResult {
+    let path = root.join("UNIQUENESS.md");
+    if path.is_file() {
+        match std::fs::read_to_string(&path) {
+            Ok(content) if !content.is_empty() => CheckResult::pass(
+                "AE-10",
+                format!("{} exists and contains content", path.display()),
+            ),
+            _ => CheckResult::fail(
+                "AE-10",
+                format!("{} exists but is empty or unreadable", path.display()),
+            ),
+        }
+    } else {
+        CheckResult::fail(
+            "AE-10",
+            format!(
+                "{} not found - UNIQUENESS.md should be present at the repo root",
+                path.display()
+            ),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +289,12 @@ mod tests {
                 "{phrase} should be all lowercase"
             );
         }
+    }
+
+    #[test]
+    fn uniqueness_md_filename_is_standard() {
+        let filename = "UNIQUENESS.md";
+        assert!(filename.ends_with(".md"));
+        assert!(filename.contains("UNIQUE"));
     }
 }
