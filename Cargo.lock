@@ -6678,8 +6678,11 @@ dependencies = [
  "cpal 0.18.2",
  "directories",
  "file-rotate",
+ "glib",
+ "gtk",
  "hound",
  "iced",
+ "objc2-app-kit 0.3.2",
  "rfd",
  "rodio",
  "serde_json",
@@ -6695,6 +6698,8 @@ dependencies = [
  "whspr-diarize",
  "whspr-inject",
  "whspr-refine",
+ "windows-sys 0.60.2",
+ "x11rb",
 ]
 
 [[package]]
