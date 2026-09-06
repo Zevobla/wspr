@@ -18,12 +18,14 @@ use serde::{Deserialize, Serialize};
 
 mod autostart;
 mod injection;
+mod language;
 mod normalize;
 mod sound;
 mod speaker;
 
 pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
 pub use injection::InjectionSettings;
+pub use language::LanguageSettings;
 pub use normalize::NormalizeSettings;
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile};
@@ -184,6 +186,10 @@ pub struct Config {
     /// `[normalize]` table.
     #[serde(default)]
     pub normalize: NormalizeSettings,
+    /// Language recognition and selection settings, read from the config
+    /// file's `[language-settings]` table.
+    #[serde(default)]
+    pub language_settings: LanguageSettings,
     /// Launch-at-login setting, read from the config file's `[autostart]`
     /// table.
     #[serde(default)]
