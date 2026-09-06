@@ -217,7 +217,10 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     while let Some(action) = actions.recv().await {
         match capture_decision(action, capture.is_some()) {
             CaptureDecision::Start => match whspr_audio::start_capture() {
-                Ok(handle) => capture = Some(handle),
+                Ok(handle) => {
+                    capture = Some(handle);
+                    crate::sound::play(crate::sound::Cue::Start, config.sound.enabled);
+                }
                 Err(error) => {
                     let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
                 }
@@ -232,6 +235,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 let Some(handle) = capture.take() else {
                     continue;
                 };
+                crate::sound::play(crate::sound::Cue::Stop, config.sound.enabled);
 
                 match handle.stop() {
                     Ok(audio) => {

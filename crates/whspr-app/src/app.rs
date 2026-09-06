@@ -58,6 +58,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::HubOpened(id) => {
             state.hub_window = Some(id);
+            // Lazily created here (never eagerly in `boot`/a `Task`) --
+            // by the time the Hub has actually opened, iced's winit event
+            // loop is unambiguously already running on this thread. See
+            // `crate::tray`'s module doc comment for why that matters.
+            if state.tray.is_none() {
+                state.tray = crate::tray::Handle::create(state.pipeline_state);
+            }
             Task::none()
         }
         Message::FlowBarOpened(id) => {
@@ -85,6 +92,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::AutostartToggled(enabled) => {
             state.config.autostart.enabled = enabled;
             apply_autostart(state, enabled);
+            persist_config(state);
+            Task::none()
+        }
+        Message::SoundFeedbackToggled(enabled) => {
+            state.config.sound.enabled = enabled;
             persist_config(state);
             Task::none()
         }
@@ -118,6 +130,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.pipeline_state_since = std::time::Instant::now();
                     }
                     state.pipeline_state = pipeline_state;
+                    if let Some(tray) = &state.tray {
+                        tray.set_state(pipeline_state);
+                    }
                 }
                 crate::worker::WorkerEvent::Completed {
                     text,
@@ -194,6 +209,18 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         // No state to update -- see the variant's doc comment.
         Message::AnimationTick => Task::none(),
+        Message::TrayPoll => match state
+            .tray
+            .as_ref()
+            .and_then(crate::tray::Handle::poll_action)
+        {
+            Some(crate::tray::Action::ShowHub) => match state.hub_window {
+                Some(id) => window::gain_focus(id),
+                None => Task::none(),
+            },
+            Some(crate::tray::Action::Quit) => iced::exit(),
+            None => Task::none(),
+        },
     }
 }
 
@@ -272,11 +299,25 @@ fn flow_bar_animation_subscription(state: &State) -> iced::Subscription<Message>
     }
 }
 
+/// Polls the tray icon for pending menu clicks (see `crate::tray`'s module
+/// doc comment for why this is polled rather than pushed). Only runs once
+/// `state.tray` actually exists -- `None` on Linux, or if creation failed
+/// -- so there's nothing to poll for the app's whole life there. 5Hz is
+/// plenty responsive for a "Show Hub"/"Quit" click.
+fn tray_poll_subscription(state: &State) -> iced::Subscription<Message> {
+    if state.tray.is_some() {
+        iced::time::every(std::time::Duration::from_millis(200)).map(|_| Message::TrayPoll)
+    } else {
+        iced::Subscription::none()
+    }
+}
+
 fn subscription(state: &State) -> iced::Subscription<Message> {
     iced::Subscription::batch([
         hotkey_capture_subscription(state),
         worker_subscription(state),
         flow_bar_animation_subscription(state),
+        tray_poll_subscription(state),
     ])
 }
 

@@ -60,9 +60,6 @@ arboard = "3.6"
 iced = "0.14"
 tray-icon = "0.24"
 
-# Active window detection (style-by-window)
-active-win-pos-rs = "0.11"
-
 # Dev dependencies
 assert_cmd = "2.2"
 predicates = "3.1"
