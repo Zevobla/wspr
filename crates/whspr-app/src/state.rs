@@ -115,6 +115,9 @@ pub enum Message {
     /// immediately and also writes/removes the OS-level autostart entry
     /// -- see `crate::app`'s `AutostartToggled` handler.
     AutostartToggled(bool),
+    /// The user toggled "Play a sound on start/stop" in the Hub. Persisted
+    /// immediately -- see `crate::app`'s `SoundFeedbackToggled` handler.
+    SoundFeedbackToggled(bool),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
     /// The user asked to preview a new hotkey by pressing it.

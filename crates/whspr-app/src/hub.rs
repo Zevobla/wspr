@@ -390,6 +390,12 @@ fn settings_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
         .on_toggle(Message::AutostartToggled)
         .into();
 
+    let sound_toggle: Element<'_, Message> = checkbox(state.config.sound.enabled)
+        .label("Play a sound on start/stop")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::SoundFeedbackToggled)
+        .into();
+
     section(
         scheme,
         "Settings",
@@ -402,6 +408,7 @@ fn settings_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
                 language_picker.into()
             ),
             autostart_toggle,
+            sound_toggle,
         ]
         .spacing(spacing::MD)
         .into(),

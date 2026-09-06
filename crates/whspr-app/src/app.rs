@@ -88,6 +88,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
             Task::none()
         }
+        Message::SoundFeedbackToggled(enabled) => {
+            state.config.sound.enabled = enabled;
+            persist_config(state);
+            Task::none()
+        }
         Message::DeviceSelected(device) => {
             state.selected_device = Some(device);
             Task::none()
