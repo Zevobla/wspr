@@ -77,10 +77,10 @@ mod tests {
     }
 
     #[test]
-    fn hotkey_event_copy_and_clone() {
+    fn hotkey_event_is_copy() {
         let event = HotkeyEvent::Released;
         let copied = event;
-        let cloned = event.clone();
-        assert_eq!(copied, cloned);
+        // `event` remains usable after the assignment because HotkeyEvent is Copy.
+        assert_eq!(copied, event);
     }
 }
