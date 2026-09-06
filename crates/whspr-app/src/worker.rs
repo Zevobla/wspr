@@ -140,6 +140,18 @@ fn capture_decision(action: DebounceAction, capture_active: bool) -> CaptureDeci
     }
 }
 
+/// The foreground app's name at the moment dictation finished, for
+/// per-app refine styling (J-04: `RefineContext::app_name`, consumed by
+/// `whspr_refine::build_cleanup_prompt`). `None` on any failure --
+/// unsupported platform, no active window, missing permissions -- since
+/// per-app styling is a nice-to-have, never a reason to fail a dictation
+/// turn.
+fn active_window_app_name() -> Option<String> {
+    active_win_pos_rs::get_active_window()
+        .ok()
+        .map(|window| window.app_name)
+}
+
 async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     let config = whspr_config::load();
 
@@ -217,7 +229,10 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     while let Some(action) = actions.recv().await {
         match capture_decision(action, capture.is_some()) {
             CaptureDecision::Start => match whspr_audio::start_capture() {
-                Ok(handle) => capture = Some(handle),
+                Ok(handle) => {
+                    capture = Some(handle);
+                    crate::sound::play(crate::sound::Cue::Start, config.sound.enabled);
+                }
                 Err(error) => {
                     let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
                 }
@@ -232,11 +247,16 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 let Some(handle) = capture.take() else {
                     continue;
                 };
+                crate::sound::play(crate::sound::Cue::Stop, config.sound.enabled);
 
                 match handle.stop() {
                     Ok(audio) => {
                         let duration_secs = audio.duration_secs();
-                        match pipeline.run(audio, &RefineContext::default()).await {
+                        let context = RefineContext {
+                            app_name: active_window_app_name(),
+                            ..RefineContext::default()
+                        };
+                        match pipeline.run(audio, &context).await {
                             Ok(text) => {
                                 let _ = output
                                     .send(WorkerEvent::Completed {
@@ -373,6 +393,15 @@ mod tests {
             capture_decision(DebounceAction::CancelRecording, false),
             CaptureDecision::Ignore
         );
+    }
+
+    /// Mirrors `crate::devices`' identically-reasoned
+    /// `list_input_device_names_does_not_panic`: we can't assert on the
+    /// actual active window in a sandboxed/headless CI environment (there
+    /// may be none), only that querying it is safe to call.
+    #[test]
+    fn active_window_app_name_does_not_panic() {
+        let _ = active_window_app_name();
     }
 
     #[test]
