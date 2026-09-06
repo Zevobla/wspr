@@ -282,6 +282,27 @@ pub fn load_from(config_dir: Option<&Path>) -> Config {
     config
 }
 
+/// Re-reads the config file from disk (B-05). Useful when the user has
+/// edited the config file and needs to pick up changes without a full
+/// restart. Falls back to defaults on any error, like `load_from`.
+pub fn config_reload(path: &Path) -> whspr_core::Result<Config> {
+    let config_path = path.join("config.toml");
+
+    if config_path.exists() {
+        let contents = std::fs::read_to_string(&config_path).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to read config file: {e}"))
+        })?;
+
+        toml::from_str::<Config>(&contents).map_err(|e| {
+            whspr_core::WhsprError::Config(format!("failed to parse config TOML: {e}"))
+        })
+    } else {
+        Err(whspr_core::WhsprError::Config(
+            "config file not found".to_string(),
+        ))
+    }
+}
+
 /// Writes `config` as TOML to `config_path`, creating `dir` (and any
 /// missing parent directories) first. Best-effort: a read-only or
 /// otherwise uncreatable config directory must never crash `load_from`,
@@ -538,5 +559,49 @@ mod tests {
             round_tripped.speaker.embedding_model,
             SpeakerEmbeddingChoice::Eres2Net
         );
+    }
+
+    #[test]
+    fn config_reload_reads_modified_file() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "asr = \"open-ai\"").expect("failed to write asr");
+        drop(file);
+
+        // First load
+        let cfg1 = config_reload(temp_dir.path()).expect("first reload should succeed");
+        assert_eq!(cfg1.asr, AsrChoice::OpenAi);
+
+        // Modify the file
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "asr = \"deepgram\"").expect("failed to write asr");
+        drop(file);
+
+        // Reload picks up the change
+        let cfg2 = config_reload(temp_dir.path()).expect("second reload should succeed");
+        assert_eq!(cfg2.asr, AsrChoice::Deepgram);
+    }
+
+    #[test]
+    fn config_reload_returns_error_on_missing_file() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let result = config_reload(temp_dir.path());
+        assert!(
+            result.is_err(),
+            "config_reload should return error on missing file"
+        );
+    }
+
+    #[test]
+    fn config_reload_returns_error_on_invalid_toml() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "asr = invalid syntax").expect("failed to write invalid toml");
+        drop(file);
+
+        let result = config_reload(temp_dir.path());
+        assert!(result.is_err(), "config_reload should return error on invalid TOML");
     }
 }
