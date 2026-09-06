@@ -1,9 +1,15 @@
-//! The Hub window: settings, device list, hotkey config, history, and
-//! stats -- restyled on the MD3 tokens in `crate::theme` (see that
-//! module's doc comment for the overall token system this app styles
-//! from). Every section is an M3 "card" (`section`, tonal
-//! `surface_container_low`); every field caption/control pair is grouped
-//! with `field`.
+//! The Hub window: a header, a top tab bar, and one screen at a time below
+//! it -- Dictate (the default), Speakers, History, Settings -- restyled on
+//! the MD3 tokens in `crate::theme` (see that module's doc comment for the
+//! overall token system this app styles from). Every screen module
+//! (`dictate`, `speakers`, `history`, `settings`) is an M3 "card" list
+//! (`common::section`, tonal `surface_container_low`); every field
+//! caption/control pair is grouped with `common::field`.
+//!
+//! whspr's core action -- record/dictate -- is Dictate, not buried among
+//! settings as an equally-weighted card the way the old single-column
+//! layout had it; see `crate::state::Screen` for the enum driving which
+//! screen is showing.
 
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
@@ -14,27 +20,36 @@ mod history;
 mod settings;
 mod speakers;
 
-use crate::state::{Message, State};
+use crate::state::{Message, Screen, State};
 use crate::theme::{self, color, spacing, styles, type_scale};
+
+/// Every tab, in the order the tab bar shows them.
+const SCREENS: [Screen; 4] = [
+    Screen::Dictate,
+    Screen::Speakers,
+    Screen::History,
+    Screen::Settings,
+];
 
 /// Renders the Hub window's content for the current state.
 pub fn view(state: &State) -> Element<'_, Message> {
     let scheme = theme::scheme(&state.theme);
 
-    let body = scrollable(
-        column![
-            settings::view(state, scheme),
-            dictate::view(state, scheme),
-            speakers::view(state, scheme),
-            history::view(state, scheme),
-        ]
-        .spacing(spacing::XL),
-    )
-    .style(move |_theme, status| styles::scrollable::rail(scheme, status));
+    let screen_content = match state.screen {
+        Screen::Dictate => dictate::view(state, scheme),
+        Screen::Speakers => speakers::view(state, scheme),
+        Screen::History => history::view(state, scheme),
+        Screen::Settings => settings::view(state, scheme),
+    };
+
+    let body = scrollable(screen_content)
+        .width(Length::Fill)
+        .style(move |_theme, status| styles::scrollable::rail(scheme, status));
 
     container(
         column![
             header(state, scheme),
+            tab_bar(state.screen, scheme),
             divider(scheme),
             error_banner(state, scheme),
             body
@@ -44,6 +59,50 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill),
     )
     .style(move |_theme| styles::container::surface(scheme))
+    .into()
+}
+
+/// The tab bar's button label for a screen -- pure so the wording is
+/// testable without standing up the whole tab bar (mirrors
+/// `theme_toggle_label`'s reasoning below).
+fn tab_label(screen: Screen) -> &'static str {
+    match screen {
+        Screen::Dictate => "Dictate",
+        Screen::Speakers => "Speakers",
+        Screen::History => "History",
+        Screen::Settings => "Settings",
+    }
+}
+
+/// The top tab bar: one button per `Screen`, the active one styled `tonal`
+/// (a secondary-container tint) and every other one styled `text` (no
+/// background) -- the same active/inactive mapping MD3 uses for segmented
+/// controls, reusing the button styles `crate::hub::settings`'s hotkey
+/// preview and this Hub's own header already style from.
+fn tab_bar(current: Screen, scheme: &'static color::Scheme) -> Element<'static, Message> {
+    row(SCREENS.map(|screen| tab_button(scheme, screen, current == screen)))
+        .spacing(spacing::SM)
+        .into()
+}
+
+fn tab_button(
+    scheme: &'static color::Scheme,
+    screen: Screen,
+    active: bool,
+) -> Element<'static, Message> {
+    button(
+        text(tab_label(screen))
+            .size(type_scale::LABEL_LARGE.size)
+            .font(type_scale::LABEL_LARGE.font()),
+    )
+    .style(move |_theme, status| {
+        if active {
+            styles::button::tonal(scheme, status)
+        } else {
+            styles::button::text(scheme, status)
+        }
+    })
+    .on_press(Message::TabSelected(screen))
     .into()
 }
 
