@@ -317,6 +317,30 @@ mod tests {
         assert!(needs_leading_space(Some('.'), "Next"));
     }
 
+    #[test]
+    fn spaced_payload_separates_consecutive_utterances() {
+        // First utterance: no previous text, emitted verbatim.
+        let (first, last_after_first) = spaced_payload(None, "hello");
+        assert_eq!(first, "hello");
+        assert_eq!(last_after_first, Some('o'));
+
+        // Second utterance would otherwise concatenate ("helloworld") — it
+        // gets a leading space so the target reads "hello world".
+        let (second, last_after_second) = spaced_payload(last_after_first, "world");
+        assert_eq!(second, " world");
+        assert_eq!(last_after_second, Some('d'));
+
+        // A follow-up that already starts with whitespace isn't doubled.
+        let (third, _) = spaced_payload(last_after_second, " again");
+        assert_eq!(third, " again");
+    }
+
+    #[test]
+    fn spaced_payload_carries_previous_char_for_empty_next() {
+        // Defensive: an empty follow-up keeps the remembered trailing char.
+        assert_eq!(spaced_payload(Some('o'), ""), (String::new(), Some('o')));
+    }
+
     /// `EnigoTextSink::type_text` (the clipboard-unavailable fallback)
     /// synthesizes real keystrokes via enigo into whatever window currently
     /// has OS focus. That needs an active display session and (on macOS)
