@@ -342,6 +342,13 @@ mod tests {
     }
 
     #[test]
+    fn pre_paste_delay_maps_millis_to_duration() {
+        // 0 ms means no pause.
+        assert_eq!(pre_paste_delay(0), Duration::ZERO);
+        assert_eq!(pre_paste_delay(150), Duration::from_millis(150));
+    }
+
+    #[test]
     fn needs_leading_space_only_between_two_non_whitespace_boundaries() {
         // No previous text: never add a leading space.
         assert!(!needs_leading_space(None, "world"));
