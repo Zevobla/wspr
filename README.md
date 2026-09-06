@@ -29,8 +29,18 @@ below is aspirational unless it's explicitly marked "planned."
 - `whspr-config`: `Config`, `AsrChoice`, `RefineChoice` types exist and
   `load()` returns their defaults. No file-based config yet — see Settings
   below.
-- `whspr-refine`: `NoopRefiner` (pass raw text through unchanged) is real
-  and is the default refiner.
+- `whspr-asr`: `WhisperLocal` (local whisper.cpp via `whisper-rs`),
+  `OpenAiAsr`, and `DeepgramAsr` are real, tested `AsrBackend`
+  implementations — not stubs.
+- `whspr-refine`: `NoopRefiner` (pass raw text through unchanged, the
+  default), `OpenAiRefiner`, `AnthropicRefiner`, and `LlamaLocal` (local
+  llama.cpp via `llama-cpp-2`) are all real, tested `TextRefiner`
+  implementations.
+- `whspr-audio`: mic capture, WAV decoding, resampling to 16kHz mono, and
+  silence trimming are real and exercised by the real pipeline.
+- `whspr-inject`: the global hotkey listener and text injection
+  (clipboard-paste-first, with debounce and clipboard save/restore) are
+  real `HotkeyListener`/`TextSink` implementations.
 - A Nix flake: `nix develop` gives a working dev shell (Rust toolchain,
   ffmpeg, whisper.cpp, llama.cpp, cmake/clang + libclang for bindgen);
   `nix build` builds the `whspr` binary; `nix flake check` builds it in
@@ -38,16 +48,6 @@ below is aspirational unless it's explicitly marked "planned."
 
 **Planned / not yet implemented**
 
-- Real ASR backends — `WhisperLocal` (local whisper.cpp), `OpenAiAsr`,
-  `DeepgramAsr` exist as typed structs in `whspr-asr` implementing
-  `AsrBackend`, but their bodies are `todo!()`.
-- Real refine backends — `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`
-  (local llama.cpp) exist as typed structs in `whspr-refine` implementing
-  `TextRefiner`, but their bodies are `todo!()`.
-- Audio capture, WAV decoding, and resampling (`whspr-audio`) — function
-  signatures are settled, bodies are `todo!()`.
-- Global hotkey listening and text injection (`whspr-inject`) — trait impls
-  exist, bodies are `todo!()`.
 - Wiring `whspr-cli`'s `--asr` / `--refine` flags to actually select a
   backend (they're accepted today but ignored — every run uses the mock
   pipeline).
@@ -64,26 +64,26 @@ trait:
 ```
 capture (whspr-audio)  →  ASR (whspr-asr)  →  refine / LLM (whspr-refine)  →  inject (whspr-inject)
    mic → 16kHz f32 PCM     AsrBackend trait     TextRefiner trait              TextSink trait
-   [planned]                [stub backends]      NoopRefiner real,             [planned]
-                                                   others stub
+   real                     real backends        real backends                real
 ```
 
 `whspr-core::Pipeline` owns this flow today for the ASR → refine → inject
-part (capture is wired in by the caller, e.g. `whspr-cli` currently
-synthesizes silent audio instead of recording): `transcribe()` →
-`refine()` → optionally `sink.insert()`, reporting `PipelineState`
-transitions (`Idle` / `Recording` / `Transcribing` / `Refining` /
-`Injecting` / `Error`) as it goes.
+part; capture, ASR, refine, and inject are all real, tested
+implementations, wired together by the caller (e.g. `whspr-cli`, or
+`whspr-app`'s worker): `transcribe()` → `refine()` → optionally
+`sink.insert()`, reporting `PipelineState` transitions (`Idle` /
+`Recording` / `Transcribing` / `Refining` / `Injecting` / `Error`) as it
+goes.
 
 The workspace is 8 crates:
 
 | Crate | Role | Status |
 |---|---|---|
 | `whspr-core` | Domain types, the 4 traits, `Pipeline` orchestrator | Real, tested |
-| `whspr-asr` | ASR backends (`WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`) | Stubs (`todo!()`) |
-| `whspr-refine` | Refine backends (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`) | `NoopRefiner` real; rest stubs |
-| `whspr-audio` | Capture / WAV decode / resample to 16kHz mono | Stubs (`todo!()`) |
-| `whspr-inject` | Global hotkey listener + text injection | Stubs (`todo!()`) |
+| `whspr-asr` | ASR backends (`WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`) | Real, tested |
+| `whspr-refine` | Refine backends (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`) | Real, tested |
+| `whspr-audio` | Capture / WAV decode / resample to 16kHz mono | Real, tested |
+| `whspr-inject` | Global hotkey listener + text injection | Real, tested |
 | `whspr-config` | `Config`, `AsrChoice`, `RefineChoice`, `load()` | Real, minimal (defaults only) |
 | `whspr-app` | Desktop GUI (Hub + Flow Bar, planned on `iced`) | Placeholder binary |
 | `whspr-cli` | CLI binary (`whspr`) | Real, mock-backed end-to-end |
