@@ -26,7 +26,13 @@ const MAX_INSTRUCTIONS: u32 = 1_000_000;
 /// leaving the read-only convenience functions (`os.date`, `os.time`,
 /// `os.clock`, `os.difftime`) usable.
 const UNSAFE_OS_FNS: &[&str] = &[
-    "execute", "exit", "remove", "rename", "tmpname", "getenv", "setlocale",
+    "execute",
+    "exit",
+    "remove",
+    "rename",
+    "tmpname",
+    "getenv",
+    "setlocale",
 ];
 
 /// Globals nilled out defensively even though the stdlibs that normally
