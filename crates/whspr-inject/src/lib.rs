@@ -34,7 +34,6 @@ impl GlobalHotkeyListener {
             WhsprError::Inject(format!("failed to create global hotkey manager: {}", e))
         })?;
 
-        // Register a default hotkey: Ctrl+Space
         let hotkey = HotKey::new(Some(Modifiers::CONTROL), Code::Space);
 
         manager
@@ -82,7 +81,6 @@ impl HotkeyListener for GlobalHotkeyListener {
         // Spawn a background thread that listens to global hotkey events
         // We use a separate thread because global_hotkey uses crossbeam channels
         thread::spawn(move || {
-            // Get the global hotkey event receiver
             let receiver = GlobalHotKeyEvent::receiver();
 
             while let Ok(event) = receiver.recv() {
@@ -294,32 +292,30 @@ impl EnigoTextSink {
             .map_err(|e| WhsprError::Inject(format!("failed to initialize enigo: {}", e)))?;
 
         #[cfg(target_os = "macos")]
-        {
-            enigo
-                .key(Key::Meta, Direction::Press)
-                .map_err(|e| WhsprError::Inject(format!("failed to press meta key: {}", e)))?;
-            enigo
-                .key(Key::Unicode('v'), Direction::Click)
-                .map_err(|e| WhsprError::Inject(format!("failed to click v key: {}", e)))?;
-            enigo
-                .key(Key::Meta, Direction::Release)
-                .map_err(|e| WhsprError::Inject(format!("failed to release meta key: {}", e)))?;
-        }
+        self.press_paste_keys(&mut enigo, Key::Meta)?;
         #[cfg(not(target_os = "macos"))]
-        {
-            enigo
-                .key(Key::Control, Direction::Press)
-                .map_err(|e| WhsprError::Inject(format!("failed to press control key: {}", e)))?;
-            enigo
-                .key(Key::Unicode('v'), Direction::Click)
-                .map_err(|e| WhsprError::Inject(format!("failed to click v key: {}", e)))?;
-            enigo
-                .key(Key::Control, Direction::Release)
-                .map_err(|e| WhsprError::Inject(format!("failed to release control key: {}", e)))?;
-        }
+        self.press_paste_keys(&mut enigo, Key::Control)?;
 
         // Let the target consume the clipboard before the caller restores it.
         thread::sleep(Self::PASTE_SETTLE_DELAY);
+
+        Ok(())
+    }
+
+    /// Presses the modifier key, simulates Cmd+V/Ctrl+V, and releases the
+    /// modifier, wrapping each step's error in a consistent error message.
+    fn press_paste_keys(&self, enigo: &mut Enigo, modifier: Key) -> Result<()> {
+        let press_err = |e| WhsprError::Inject(format!("failed to press modifier key: {}", e));
+        let click_err = |e| WhsprError::Inject(format!("failed to click v key: {}", e));
+        let release_err = |e| WhsprError::Inject(format!("failed to release modifier key: {}", e));
+
+        enigo.key(modifier, Direction::Press).map_err(press_err)?;
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(click_err)?;
+        enigo
+            .key(modifier, Direction::Release)
+            .map_err(release_err)?;
 
         Ok(())
     }
