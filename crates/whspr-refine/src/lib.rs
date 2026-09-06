@@ -116,9 +116,9 @@ struct OpenAiChoice {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct OpenAiResponseMessage {
-    role: String,
+    // Only `content` is consumed; serde ignores the response's other keys
+    // (e.g. `role`) by default, so they are simply not declared here.
     content: String,
 }
 
@@ -218,10 +218,9 @@ struct AnthropicResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct AnthropicContent {
-    #[serde(rename = "type")]
-    content_type: String,
+    // Only the `text` block is consumed; the `type` discriminator and any
+    // other keys serde encounters are ignored rather than declared.
     text: Option<String>,
 }
 
