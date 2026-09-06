@@ -5,6 +5,7 @@ mod flow_bar;
 mod history;
 mod hotkey_capture;
 mod hub;
+mod logging;
 mod sound;
 mod speakers;
 mod state;
@@ -13,5 +14,6 @@ mod theme;
 mod worker;
 
 fn main() -> iced::Result {
+    logging::init();
     app::run()
 }
