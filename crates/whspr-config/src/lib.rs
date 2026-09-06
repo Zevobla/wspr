@@ -17,18 +17,22 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 mod autostart;
+mod capture;
 mod device;
 mod injection;
 mod language;
 mod normalize;
+mod privacy;
 mod sound;
 mod speaker;
 
 pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
+pub use capture::CaptureSettings;
 pub use device::DeviceSettings;
 pub use injection::InjectionSettings;
 pub use language::LanguageSettings;
 pub use normalize::NormalizeSettings;
+pub use privacy::PrivacySettings;
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile};
 
@@ -208,6 +212,14 @@ pub struct Config {
     /// table.
     #[serde(default)]
     pub injection: InjectionSettings,
+    /// Privacy and security settings, read from the config file's
+    /// `[privacy]` table.
+    #[serde(default)]
+    pub privacy: PrivacySettings,
+    /// Capture and transcript handling settings, read from the config file's
+    /// `[capture]` table.
+    #[serde(default)]
+    pub capture: CaptureSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
