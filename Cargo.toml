@@ -60,6 +60,21 @@ arboard = "3.6"
 iced = "0.14"
 tray-icon = "0.24"
 
+# Active window detection (style-by-window, J-04) -- permissive crates
+# only, one per platform. See whspr-app/src/active_window.rs's module doc
+# for why active-win-pos-rs (GPL-tainted via its Linux hyprland backend)
+# was replaced with these instead.
+objc2-app-kit = "0.3"
+windows-sys = "0.60"
+x11rb = "0.13"
+
+# GTK/GLib bindings for a real Linux system tray (B-11): tray-icon's Linux
+# backend needs a live GLib main loop pumping on some thread to actually
+# deliver menu-click events, which iced's winit backend does not run on
+# its own. See whspr-app/src/tray.rs.
+gtk = "0.18"
+glib = "0.18"
+
 # Dev dependencies
 assert_cmd = "2.2"
 predicates = "3.1"

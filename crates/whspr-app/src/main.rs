@@ -1,3 +1,4 @@
+mod active_window;
 mod app;
 mod config_ui;
 mod devices;

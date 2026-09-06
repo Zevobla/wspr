@@ -42,12 +42,32 @@ rfd = "0.15"
 # Start/stop sound cues (AG-05): synthesizes and plays a short tone, no
 # bundled audio asset. See `crate::sound`.
 rodio.workspace = true
-# System tray icon (B-11, macOS/Windows only -- see `crate::tray`'s module
-# doc for why Linux isn't implemented).
+# System tray icon (B-11). See `crate::tray`.
 tray-icon.workspace = true
 # Size-based log rotation (O-19). See `crate::logging`.
 file-rotate.workspace = true
 tracing-subscriber.workspace = true
+
+# Foreground-app detection (J-04, `crate::active_window`), one permissive
+# crate per platform.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { workspace = true, features = ["NSWorkspace", "NSRunningApplication"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+] }
+
+# `x11rb` backs `crate::active_window`'s X11 query; `gtk`/`glib` back
+# `crate::tray`'s dedicated GLib-main-loop thread (see that module's doc
+# comment for why Linux needs one).
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb.workspace = true
+gtk.workspace = true
+glib.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
