@@ -240,7 +240,11 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 match handle.stop() {
                     Ok(audio) => {
                         let duration_secs = audio.duration_secs();
-                        match pipeline.run(audio, &RefineContext::default()).await {
+                        let context = RefineContext {
+                            app_name: crate::active_window::frontmost_app_name(),
+                            ..RefineContext::default()
+                        };
+                        match pipeline.run(audio, &context).await {
                             Ok(text) => {
                                 let _ = output
                                     .send(WorkerEvent::Completed {
