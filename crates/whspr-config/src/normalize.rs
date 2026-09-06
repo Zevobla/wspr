@@ -11,6 +11,17 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// How normalized numbers/dates/times are rendered in the output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NumberFormat {
+    /// Render as digits (e.g., "25", "2025-09-06").
+    #[default]
+    Digits,
+    /// Render as words (e.g., "twenty five", "twenty twenty five").
+    Words,
+}
+
 /// Each rule toggle is independently switchable so a user who wants LLM
 /// cleanup but not, say, forced digit-dates can turn just that one off. All
 /// on by default. `macros` is not a toggle but a lookup table -- see its
@@ -24,6 +35,8 @@ pub struct NormalizeSettings {
     pub dates: bool,
     /// Normalize recognized time expressions to 24-hour `HH:MM`.
     pub times: bool,
+    /// How normalized numbers/dates/times are rendered. See `NumberFormat`.
+    pub numbers_format: NumberFormat,
     /// Emacs-abbrev-style macro table (AJ-01/AJ-02): trigger phrase ->
     /// expansion text. A dictation containing a trigger phrase (matched
     /// case-insensitively, whole-phrase -- never inside a larger word) has
@@ -40,6 +53,7 @@ impl Default for NormalizeSettings {
             numbers: true,
             dates: true,
             times: true,
+            numbers_format: NumberFormat::Digits,
             macros: BTreeMap::new(),
         }
     }
@@ -57,9 +71,42 @@ mod tests {
                 numbers: true,
                 dates: true,
                 times: true,
+                numbers_format: NumberFormat::Digits,
                 macros: BTreeMap::new(),
             }
         );
+    }
+
+    #[test]
+    fn numbers_format_defaults_to_digits() {
+        assert_eq!(NumberFormat::default(), NumberFormat::Digits);
+    }
+
+    #[test]
+    fn numbers_format_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.normalize.numbers_format = NumberFormat::Words;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(round_tripped.normalize.numbers_format, NumberFormat::Words);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_numbers_format() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[normalize]").expect("failed to write normalize header");
+        writeln!(file, "numbers-format = \"words\"").expect("failed to write numbers-format");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert_eq!(cfg.normalize.numbers_format, NumberFormat::Words);
     }
 
     // `Config`/`load_from` live in the crate root, not this module, but
