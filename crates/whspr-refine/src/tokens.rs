@@ -69,10 +69,10 @@ fn is_service_tag(tag_inner: &str) -> bool {
             | "reflection" | "/reflection"
             | "summary" | "/summary"
             | "end" | "/end"
-            | "eog" | "/eog"  // End of generation
-            | "eos" | "/eos"  // End of sequence
-            | "bos" | "/bos"  // Beginning of sequence
-            | "pad" | "/pad"  // Padding
+            | "eog" | "/eog" // End of generation
+            | "eos" | "/eos" // End of sequence
+            | "bos" | "/bos" // Beginning of sequence
+            | "pad" | "/pad" // Padding
     )
 }
 
