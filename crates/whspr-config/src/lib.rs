@@ -415,11 +415,16 @@ mod tests {
         let config_path = temp_dir.path().join("config.toml");
         let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
         writeln!(file, "[api_keys]").expect("failed to write api_keys header");
-        writeln!(file, "openai = \"redacted-example-key\"").expect("failed to write openai key");
+        // Deliberately not shaped like a real provider key (no "sk-" prefix)
+        // so this fixture doesn't trip secret scanners looking at the repo.
+        writeln!(file, "openai = \"test-openai-key\"").expect("failed to write openai key");
         drop(file);
 
         let cfg = load_from(Some(temp_dir.path()));
-        assert_eq!(api_key_for(&cfg, "openai"), Some("redacted-example-key".to_string()));
+        assert_eq!(
+            api_key_for(&cfg, "openai"),
+            Some("test-openai-key".to_string())
+        );
         assert_eq!(api_key_for(&cfg, "anthropic"), None);
     }
 
