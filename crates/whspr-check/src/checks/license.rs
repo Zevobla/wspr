@@ -202,6 +202,22 @@ const BENIGN_MARKERS: &[&str] = &[
     "sample",
 ];
 
+/// Checks one already-known-to-be-an-added-line diff line against
+/// `SECRET_PATTERNS`, skipping it if a `BENIGN_MARKERS` word marks it as an
+/// obvious test fixture. Split out from `check_no_secrets_in_history` so
+/// the matching rules themselves are unit-testable without needing a real
+/// git history to scan.
+fn matched_secret_pattern(added_line: &str) -> Option<&'static str> {
+    let lower = added_line.to_lowercase();
+    if BENIGN_MARKERS.iter().any(|m| lower.contains(m)) {
+        return None;
+    }
+    SECRET_PATTERNS
+        .iter()
+        .find(|p| added_line.contains(**p))
+        .copied()
+}
+
 /// Z-16: no obvious secrets/API keys committed anywhere in git history.
 ///
 /// Scans `git log --all -p` (every added line, across every ref, not just
@@ -241,11 +257,7 @@ pub fn check_no_secrets_in_history(root: &Path) -> CheckResult {
         if !line.starts_with('+') || line.starts_with("+++") {
             continue;
         }
-        let lower = line.to_lowercase();
-        if BENIGN_MARKERS.iter().any(|m| lower.contains(m)) {
-            continue;
-        }
-        if let Some(pattern) = SECRET_PATTERNS.iter().find(|p| line.contains(**p)) {
+        if let Some(pattern) = matched_secret_pattern(line) {
             findings.push(format!(
                 "{current_commit}: matched \"{pattern}\" in: {}",
                 crate::util::head(line.trim(), 120)
