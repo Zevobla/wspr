@@ -267,20 +267,18 @@ impl EnigoTextSink {
     /// Copies text to the clipboard and simulates a paste keystroke,
     /// restoring the user's previous clipboard contents afterward.
     ///
-    /// If the clipboard can't be used (no display, permission denied, a
-    /// non-text payload we can't stage over, etc.) this falls back to
-    /// typing the text directly rather than failing the injection outright.
+    /// Returns an error — rather than falling back to typing here — if the
+    /// clipboard is unavailable, staging fails, or the paste chord fails.
+    /// The caller ([`inject_with_fallback`]) owns the fallback to typing, so
+    /// the whole degrade-instead-of-drop policy lives in one place.
     fn paste_from_clipboard(&self, text: &str) -> Result<()> {
-        // If we can't even open the clipboard, type the text instead.
-        let mut clipboard = match ArboardClipboard::new() {
-            Ok(clipboard) => clipboard,
-            Err(_) => return self.type_text(text),
-        };
+        let mut clipboard = ArboardClipboard::new()?;
 
         match stage_and_paste(&mut clipboard, text, || self.send_paste_keystroke()) {
             PasteOutcome::Pasted(result) => result,
-            // Couldn't stage our text on the clipboard; type it instead.
-            PasteOutcome::Unstaged => self.type_text(text),
+            PasteOutcome::Unstaged => Err(WhsprError::Inject(
+                "could not stage text on the clipboard".to_string(),
+            )),
         }
     }
 
