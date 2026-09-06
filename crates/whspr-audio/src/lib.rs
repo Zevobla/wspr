@@ -531,4 +531,37 @@ mod tests {
             max_amplitude
         );
     }
+
+    // C-13: a mic-failure error must name a concrete recovery step, not
+    // just say "capture failed". These test the two error-message builders
+    // directly rather than the live-capture entry point itself, which
+    // needs real (or absent) audio hardware to exercise deterministically
+    // and, per AB-06, must never be called from test code.
+
+    #[test]
+    fn no_input_device_error_names_recovery_steps() {
+        let msg = no_input_device_error().to_string();
+        let lower = msg.to_lowercase();
+        assert!(lower.contains("microphone"), "message was: {msg:?}");
+        assert!(
+            lower.contains("access") && msg.contains("Settings"),
+            "message was: {msg:?}"
+        );
+    }
+
+    #[test]
+    fn mic_access_error_includes_action_cause_and_recovery_steps() {
+        let msg = mic_access_error("get default input config", "permission denied").to_string();
+        let lower = msg.to_lowercase();
+        assert!(
+            lower.contains("get default input config"),
+            "message was: {msg:?}"
+        );
+        assert!(lower.contains("permission denied"), "message was: {msg:?}");
+        assert!(lower.contains("microphone"), "message was: {msg:?}");
+        assert!(
+            lower.contains("access") && msg.contains("Settings"),
+            "message was: {msg:?}"
+        );
+    }
 }
