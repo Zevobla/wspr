@@ -200,11 +200,12 @@ mod tests {
     }
 
     #[test]
-    fn action_is_clone_and_copy() {
+    fn action_is_copy() {
         let action = Action::ShowHub;
-        let _copy = action;
-        let _clone = action.clone();
-        assert_eq!(action, Action::ShowHub);
+        // `Action` is `Copy`, so this assignment copies rather than moves --
+        // `action` stays usable on the next line.
+        let copied = action;
+        assert_eq!(action, copied);
     }
 
     #[test]
