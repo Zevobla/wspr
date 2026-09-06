@@ -39,6 +39,18 @@ directories.workspace = true
 # Native file-picker dialog for "pick a recording to diarize". Not in the
 # root workspace's [workspace.dependencies] -- declared directly here.
 rfd = "0.15"
+# Start/stop sound cues (AG-05): synthesizes and plays a short tone, no
+# bundled audio asset. See `crate::sound`.
+rodio.workspace = true
+# Foreground-app detection for per-app refine styling (J-04). See
+# `crate::worker`'s `active_window_app_name`.
+active-win-pos-rs.workspace = true
+# System tray icon (B-11, macOS/Windows only -- see `crate::tray`'s module
+# doc for why Linux isn't implemented).
+tray-icon.workspace = true
+# Size-based log rotation (O-19). See `crate::logging`.
+file-rotate.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
