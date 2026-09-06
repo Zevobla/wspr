@@ -6,15 +6,14 @@
 //! styled window and `daemon`'s `view`/`theme`/`title` all take a
 //! `window::Id` so each window can render its own content.
 //!
-//! ## Settings persistence (partial)
-//! `whspr_config::Config::save` now exists, but this pass only wires it up
-//! for the language and speaker-embedding-model pick_lists (see
-//! `persist_config`, called from their `update` arms) -- those are the two
-//! settings this branch's scope specifically asked to make config-driven
-//! and persisted. The ASR/refiner backend pickers and device selection
-//! still only live in the in-memory `State::config`/`State` fields and
-//! don't survive a restart; broadening persistence to those is a
-//! deliberately separate, not-yet-scoped follow-up, not an oversight.
+//! ## Settings persistence
+//! Every Hub setting is written straight back to the config file the moment
+//! it changes, via `persist_config` (called from the relevant `update`
+//! arms): the ASR/refiner backend pickers, the language and
+//! speaker-embedding-model pick_lists, the launch-at-login and
+//! sound-feedback toggles, and the input-device picker. The chosen input
+//! device is stored in `Config::device.input_device` and restored in
+//! `boot` (falling back to the host default when nothing is persisted).
 
 use iced::{window, Element, Task};
 
@@ -44,7 +43,14 @@ fn boot() -> (State, Task<Message>) {
     let config = whspr_config::load();
     let mut state = State::new(config);
     state.input_devices = crate::devices::list_input_device_names();
-    state.selected_device = crate::devices::default_input_device_name();
+    // Restore the previously chosen input device if one was persisted,
+    // otherwise fall back to the host's default input device.
+    state.selected_device = state
+        .config
+        .device
+        .input_device
+        .clone()
+        .or_else(crate::devices::default_input_device_name);
     state.history = crate::history::history_file_path()
         .map(|path| crate::history::read_history_file(&path))
         .unwrap_or_default();
@@ -82,10 +88,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::AsrSelected(label) => {
             state.config.asr = config_ui::asr_from_label(label);
+            persist_config(state);
             Task::none()
         }
         Message::RefineSelected(label) => {
             state.config.refine = config_ui::refine_from_label(label);
+            persist_config(state);
             Task::none()
         }
         Message::LanguageChanged(label) => {
@@ -110,7 +118,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::DeviceSelected(device) => {
+            state.config.device.input_device = Some(device.clone());
             state.selected_device = Some(device);
+            persist_config(state);
             Task::none()
         }
         Message::StartHotkeyCapture => {

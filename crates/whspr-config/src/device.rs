@@ -6,9 +6,13 @@
 use serde::{Deserialize, Serialize};
 
 /// Settings for audio device and window tracking.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct DeviceSettings {
+    /// The name of the input device the user last selected in the Hub, if
+    /// any. `None` means "use the host's default input device". Persisted so
+    /// the chosen microphone survives a restart.
+    pub input_device: Option<String>,
     /// Whether to rescan the input-device list when a device is plugged or
     /// unplugged. Default true — most users want whspr to automatically
     /// pick up newly connected microphones.
@@ -32,6 +36,7 @@ pub struct DeviceSettings {
 impl Default for DeviceSettings {
     fn default() -> Self {
         Self {
+            input_device: None,
             device_hotplug: true,
             active_window: true,
             bluetooth_source: true,
@@ -52,6 +57,7 @@ mod tests {
         assert_eq!(
             DeviceSettings::default(),
             DeviceSettings {
+                input_device: None,
                 device_hotplug: true,
                 active_window: true,
                 bluetooth_source: true,
@@ -95,6 +101,26 @@ mod tests {
         assert!(!cfg.device.bluetooth_source);
         assert!(!cfg.device.virtual_source);
         assert!(!cfg.device.tray_static);
+    }
+
+    #[test]
+    fn device_settings_input_device_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.device.input_device = Some("Built-in Microphone".to_string());
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(
+            round_tripped.device.input_device,
+            Some("Built-in Microphone".to_string())
+        );
+    }
+
+    #[test]
+    fn device_settings_input_device_defaults_to_none() {
+        assert_eq!(DeviceSettings::default().input_device, None);
     }
 
     #[test]
