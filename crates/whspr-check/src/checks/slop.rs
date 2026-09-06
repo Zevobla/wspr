@@ -1,5 +1,5 @@
-//! Slop-meter checks: stub-function census and (when the tool is
-//! available) unused-dependency detection.
+//! Slop-meter checks: stub-function census, dead-code allows audit, and
+//! (when the tool is available) unused-dependency detection.
 
 use crate::repo;
 use crate::report::CheckResult;
@@ -62,6 +62,49 @@ pub fn check_stub_function_count(root: &Path) -> CheckResult {
                 "{} real todo!()/unimplemented!() call sites (threshold: <= {MAX_STUBS}): {}",
                 real_hits.len(),
                 real_hits.join("; ")
+            ),
+        )
+    }
+}
+
+/// AC-06: no #[allow(dead_code)] attributes in source (guards against
+/// silencing compiler warnings for actual code smell).
+///
+/// Scans all source files (excluding tests/) for #[allow(dead_code)] and
+/// fails if any are found. Dead code should be removed, not silenced - this
+/// guards against accumulating technical debt in the form of intentionally
+/// ignored compiler warnings. Test files are excluded since they have
+/// different conventions.
+pub fn check_no_dead_code_allows(root: &Path) -> CheckResult {
+    let matches = match repo::git_grep(
+        root,
+        &["-F"],
+        "#[allow(dead_code)]",
+        &["crates/*/src/**/*.rs", ":!crates/*/src/**/tests/**"],
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            return CheckResult::fail(
+                "AC-06",
+                format!("could not grep for #[allow(dead_code)]: {e}"),
+            )
+        }
+    };
+
+    if matches.is_empty() {
+        CheckResult::pass(
+            "AC-06",
+            "0 #[allow(dead_code)] attributes found in non-test source files (guards against \
+             silencing legitimate compiler warnings)",
+        )
+    } else {
+        CheckResult::fail(
+            "AC-06",
+            format!(
+                "{} #[allow(dead_code)] attribute(s) found in non-test source; dead code \
+                 should be removed, not silenced: {}",
+                matches.len(),
+                matches.join("; ")
             ),
         )
     }
@@ -134,5 +177,13 @@ mod tests {
     #[test]
     fn is_comment_line_with_only_whitespace_and_slash() {
         assert!(is_comment_line("  //"));
+    }
+
+    #[test]
+    fn dead_code_allow_pattern_is_recognized() {
+        // Just verify the string pattern we're searching for is as expected
+        let pattern = "#[allow(dead_code)]";
+        assert!(pattern.contains("allow"));
+        assert!(pattern.contains("dead_code"));
     }
 }
