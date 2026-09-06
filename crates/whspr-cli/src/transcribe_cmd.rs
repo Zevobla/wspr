@@ -22,9 +22,10 @@ use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefin
 /// No-flag now mirrors `AsrChoice`'s own default (`WhisperLocal`) instead of
 /// silently substituting `MockAsr`: the model path comes from
 /// `config.whisper.model_path` if the user has set one, else the
-/// `WHISPER_MODEL_PATH` environment variable (set automatically inside the
-/// project's Nix devShell), else this returns an honest error telling the
-/// user to configure one — see `WhisperLocal::resolve_model_path`.
+/// `WHISPER_MODEL_PATH` environment variable -- whspr is bring-your-own-
+/// model and doesn't ship or fetch one for you -- else this returns an
+/// honest error telling the user to configure one — see
+/// `WhisperLocal::resolve_model_path`.
 /// `MockAsr` is still available, just no longer implicit: it's built only
 /// for the explicit `AsrChoice::Mock` opt-in (`--asr mock`), which is what
 /// the deterministic/offline test suite and `whspr-check` pass so neither
@@ -51,9 +52,9 @@ fn build_asr_backend(
                 .ok_or_else(|| {
                     anyhow::anyhow!(
                         "no whisper model configured: set [whisper].model_path in the config \
-                         file or the WHISPER_MODEL_PATH environment variable (set automatically \
-                         inside `nix develop`), or pass --asr mock for a deterministic offline \
-                         test transcript"
+                         file or the WHISPER_MODEL_PATH environment variable to a GGML model \
+                         file you've downloaded (whspr doesn't ship or fetch one for you), or \
+                         pass --asr mock for a deterministic offline test transcript"
                     )
                 })?;
             Ok(Box::new(WhisperLocal::new(model_path)))
