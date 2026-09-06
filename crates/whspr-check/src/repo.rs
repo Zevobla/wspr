@@ -210,3 +210,43 @@ pub fn git_grep(
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cmd_output_struct_has_expected_fields() {
+        let output = CmdOutput {
+            success: true,
+            code: Some(0),
+            stdout: "test output".to_string(),
+            stderr: String::new(),
+        };
+        assert!(output.success);
+        assert_eq!(output.code, Some(0));
+        assert_eq!(output.stdout, "test output");
+        assert!(output.stderr.is_empty());
+    }
+
+    #[test]
+    fn cmd_output_nonzero_exit_code() {
+        let output = CmdOutput {
+            success: false,
+            code: Some(1),
+            stdout: String::new(),
+            stderr: "error message".to_string(),
+        };
+        assert!(!output.success);
+        assert_eq!(output.code, Some(1));
+    }
+
+    #[test]
+    fn fixture_wav_path_is_under_whspr_check() {
+        let root = std::path::PathBuf::from("/some/root");
+        let fixture = fixture_wav_path(&root);
+        let path_str = fixture.to_string_lossy();
+        assert!(path_str.contains("whspr-check"));
+        assert!(path_str.contains("sample.wav"));
+    }
+}
