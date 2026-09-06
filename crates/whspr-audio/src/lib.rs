@@ -4,6 +4,10 @@
 //! Cargo.toml — this crate must keep compiling without those in the
 //! meantime.
 
+mod device;
+
+pub use device::input_device_names;
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -310,16 +314,31 @@ fn mic_access_error(action: &str, cause: impl std::fmt::Display) -> WhsprError {
     ))
 }
 
-/// Starts recording from the default input device.
+/// Starts recording from the default input device. Equivalent to
+/// `start_capture_on_device(None)`, kept as its own zero-argument entry
+/// point so existing callers don't need to change just because device
+/// selection (C-05) exists now.
 ///
 /// Returns a `CaptureHandle` that can be stopped to retrieve the recorded audio
 /// as a 16kHz mono buffer.
 pub fn start_capture() -> Result<CaptureHandle> {
-    // Get the default host and input device
+    start_capture_on_device(None)
+}
+
+/// Starts recording from `device` by name if given (falling back to the
+/// default input device if no device matches that name - see
+/// `resolve_input_device`), or the default input device directly if
+/// `device` is `None`. C-05: lets a caller honor a user's chosen input
+/// device (e.g. the Hub's device picker) instead of always opening
+/// whatever the OS considers "default".
+pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(no_input_device_error)?;
+    let device = match device {
+        Some(name) => device::resolve_input_device(&host, name)?,
+        None => host
+            .default_input_device()
+            .ok_or_else(no_input_device_error)?,
+    };
 
     // Get the default config
     let config = device
