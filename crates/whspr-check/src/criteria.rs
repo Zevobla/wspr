@@ -341,3 +341,43 @@ pub const CATALOG: &[Criterion] = &[
         title: "Dead code absent (clippy -D warnings, dead_code lint)",
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groups_has_expected_entries() {
+        assert!(!GROUPS.is_empty());
+        assert_eq!(GROUPS.len(), 38);
+    }
+
+    #[test]
+    fn groups_first_entry_is_a_group() {
+        assert_eq!(GROUPS[0].0, "A");
+        assert!(!GROUPS[0].1.is_empty());
+    }
+
+    #[test]
+    fn lookup_finds_known_criterion() {
+        let criterion = lookup("A-01");
+        assert_eq!(criterion.id, "A-01");
+        assert_eq!(criterion.group, "A");
+    }
+
+    #[test]
+    #[should_panic(expected = "whspr-check bug")]
+    fn lookup_panics_on_unknown_criterion() {
+        lookup("UNKNOWN-99");
+    }
+
+    #[test]
+    fn catalog_has_non_zero_entries() {
+        assert!(!CATALOG.is_empty());
+    }
+
+    #[test]
+    fn total_criteria_matches_acceptance_matrix() {
+        assert_eq!(TOTAL_CRITERIA, 574);
+    }
+}
