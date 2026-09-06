@@ -1,4 +1,4 @@
-//! First-run/config checks. All three call `whspr_config` directly (a real
+//! First-run/config checks. Most call `whspr_config` directly (a real
 //! workspace dependency of this crate) rather than statically reading its
 //! source, so these are dynamic behavioral checks, not text scans.
 
@@ -67,6 +67,80 @@ pub fn check_config_format_is_toml() -> CheckResult {
             format!(
                 "wrote a TOML config file but load_from() returned asr = {:?}, not OpenAi",
                 config.asr
+            ),
+        )
+    }
+}
+
+/// Helper: checks if serialized config contains a specific TOML section/key.
+fn config_has_section_or_key(config_toml: &str, key: &str) -> bool {
+    // For section keys like "[normalize]" or "[speaker]", look for them as-is
+    if key.starts_with('[') {
+        return config_toml.contains(key);
+    }
+    // For nested keys like "numbers_format", look for key = or key: patterns
+    let with_equals = format!("{} =", key);
+    let with_colon = format!("{} :", key);
+    config_toml.contains(&with_equals) || config_toml.contains(&with_colon)
+}
+
+/// B-05: default config contains all required sections/keys.
+///
+/// Serializes the default Config via `toml::to_string_pretty` and checks
+/// that it contains the required TOML sections and keys representing the
+/// major configuration surfaces: normalize (numbers-format), speaker,
+/// device (device-hotplug, active-window), and privacy (mic-privacy).
+/// Note: TOML uses kebab-case for keys due to serde(rename_all="kebab-case").
+pub fn check_config_sections(_root: &Path) -> CheckResult {
+    // Get default config and serialize it
+    let config = whspr_config::Config::default();
+    let config_toml = match toml::to_string_pretty(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return CheckResult::fail(
+                "B-05",
+                format!("could not serialize default config to TOML: {e}"),
+            )
+        }
+    };
+
+    // List of required sections and keys that must be present.
+    // Note: Due to serde(rename_all="kebab-case"), underscores become dashes.
+    let required = vec![
+        "[normalize]",         // normalize section
+        "numbers-format",      // under normalize (kebab-case)
+        "[speaker]",           // speaker section
+        "[device]",            // device section
+        "device-hotplug",      // under device
+        "active-window",       // under device
+        "[privacy]",           // privacy section
+        "mic-privacy",         // under privacy
+    ];
+
+    let mut missing = Vec::new();
+    for key in &required {
+        if !config_has_section_or_key(&config_toml, key) {
+            missing.push(*key);
+        }
+    }
+
+    if missing.is_empty() {
+        CheckResult::pass(
+            "B-05",
+            format!(
+                "default config serializes with all {} required sections/keys: {}",
+                required.len(),
+                required.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "B-05",
+            format!(
+                "default config missing {} required section(s)/key(s): {} (out of {})",
+                missing.len(),
+                missing.join(", "),
+                required.len()
             ),
         )
     }
@@ -156,5 +230,26 @@ mod tests {
                 "whspr should appear in config path"
             );
         }
+    }
+
+    #[test]
+    fn config_has_section_or_key_finds_sections() {
+        let toml_content = "[normalize]\nnumbers_format = \"digits\"";
+        assert!(super::config_has_section_or_key(toml_content, "[normalize]"));
+        assert!(super::config_has_section_or_key(toml_content, "numbers_format"));
+    }
+
+    #[test]
+    fn config_has_section_or_key_returns_false_for_missing() {
+        let toml_content = "[normalize]\nnumbers_format = \"digits\"";
+        assert!(!super::config_has_section_or_key(toml_content, "[missing]"));
+        assert!(!super::config_has_section_or_key(toml_content, "nonexistent"));
+    }
+
+    #[test]
+    fn default_config_serializes_to_valid_toml() {
+        let config = whspr_config::Config::default();
+        let toml_str = toml::to_string_pretty(&config);
+        assert!(toml_str.is_ok(), "default config should serialize to TOML");
     }
 }
