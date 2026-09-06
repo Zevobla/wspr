@@ -60,7 +60,10 @@ pub fn field(scheme: &color::Scheme, status: Status) -> Style {
                 color: color::wash(scheme.on_surface, color::DISABLED_CONTAINER_OPACITY),
                 ..base.border
             },
-            text_color: Some(color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY)),
+            text_color: Some(color::wash(
+                scheme.on_surface,
+                color::DISABLED_CONTENT_OPACITY,
+            )),
         },
     }
 }
