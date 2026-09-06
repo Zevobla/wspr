@@ -4,7 +4,7 @@
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use tokio::sync::mpsc;
 
@@ -88,37 +88,88 @@ impl HotkeyListener for GlobalHotkeyListener {
     }
 }
 
-/// Delivers text to the focused application via synthetic keystrokes
-/// (falling back to clipboard paste for long text).
+/// Delivers text to the focused application by pasting via the clipboard —
+/// the reliable default, since it lands text in editors, terminals, and vim
+/// where raw synthetic keystrokes misbehave — falling back to typing only
+/// when the clipboard is unavailable.
 pub struct EnigoTextSink;
 
 impl EnigoTextSink {
-    /// The threshold (in characters) above which we switch from keystrokes to clipboard paste
-    const LONG_TEXT_THRESHOLD: usize = 200;
-
     /// How long to wait after sending the paste keystroke before restoring
     /// the user's clipboard. The synthesized Cmd+V/Ctrl+V is delivered
     /// asynchronously by the OS, so we give the target app a moment to read
     /// the clipboard before putting the original contents back.
     const PASTE_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
+}
 
-    /// Decides which injection strategy `insert` should use for `text`.
-    /// Split out as a pure function so the branching can be unit tested
-    /// without actually driving enigo or the clipboard.
-    fn use_clipboard_paste(text: &str) -> bool {
-        text.len() > Self::LONG_TEXT_THRESHOLD
+/// Whether a separating space should be inserted before `next`, given the
+/// trailing character of the previously inserted text.
+///
+/// True only when the previous text ended in a non-whitespace character and
+/// `next` begins with one — so consecutive dictations don't run together
+/// ("hello" + "world" -> "hello world") without doubling a space either side
+/// already provides. With no previous text, or an empty `next`, no space is
+/// added.
+fn needs_leading_space(prev_last: Option<char>, next: &str) -> bool {
+    match (prev_last, next.chars().next()) {
+        (Some(prev), Some(first)) => !prev.is_whitespace() && !first.is_whitespace(),
+        _ => false,
     }
+}
+
+/// Computes the text `insert` should actually emit for `next` (with a
+/// leading space prepended when [`needs_leading_space`] says so), along with
+/// the trailing character to remember for the next call. Pure, so the
+/// cross-utterance spacing can be exercised without driving enigo or the
+/// clipboard.
+fn spaced_payload(prev_last: Option<char>, next: &str) -> (String, Option<char>) {
+    let payload = if needs_leading_space(prev_last, next) {
+        format!(" {next}")
+    } else {
+        next.to_string()
+    };
+    // Carry the last char forward; keep the previous one if `next` was empty.
+    let new_last = payload.chars().next_back().or(prev_last);
+    (payload, new_last)
+}
+
+/// The trailing character of the text `EnigoTextSink::insert` last emitted,
+/// used to decide whether the next utterance needs a leading space (AM-03).
+///
+/// Process-global rather than a field on `EnigoTextSink` because the sink is
+/// a zero-sized unit struct constructed directly as `EnigoTextSink` by its
+/// callers (e.g. the app worker); a single sink drives the focused window in
+/// practice.
+fn last_emitted() -> &'static Mutex<Option<char>> {
+    static LAST: OnceLock<Mutex<Option<char>>> = OnceLock::new();
+    LAST.get_or_init(|| Mutex::new(None))
 }
 
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
-        if Self::use_clipboard_paste(text) {
-            // For long text, use clipboard paste
-            self.paste_from_clipboard(text)
-        } else {
-            // For short text, use direct keystrokes
-            self.type_text(text)
+        if text.is_empty() {
+            return Ok(());
         }
+
+        // Recover from a poisoned lock rather than propagating a panic — a
+        // stale last-char is harmless.
+        let mut last = last_emitted().lock().unwrap_or_else(|e| e.into_inner());
+
+        // Keep back-to-back utterances from running together (AM-03).
+        let (payload, new_last) = spaced_payload(*last, text);
+
+        // Clipboard paste is the default path: it lands text reliably in
+        // editors, terminals, and vim, where raw synthetic keystrokes
+        // misbehave. `paste_from_clipboard` falls back to typing on its own
+        // when the clipboard is unavailable. (AM-08)
+        let result = self.paste_from_clipboard(&payload);
+
+        // Remember what we actually emitted so the next utterance can decide
+        // whether it needs a leading space. Only record on success.
+        if result.is_ok() {
+            *last = new_last;
+        }
+        result
     }
 }
 
@@ -250,34 +301,66 @@ mod tests {
     }
 
     #[test]
-    fn use_clipboard_paste_switches_at_the_length_threshold() {
-        let at_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD);
-        let over_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
-
-        assert!(!EnigoTextSink::use_clipboard_paste(""));
-        assert!(!EnigoTextSink::use_clipboard_paste(&at_threshold));
-        assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
+    fn needs_leading_space_only_between_two_non_whitespace_boundaries() {
+        // No previous text: never add a leading space.
+        assert!(!needs_leading_space(None, "world"));
+        // Two word characters back to back: insert a separating space.
+        assert!(needs_leading_space(Some('o'), "world"));
+        // Previous text already ended in whitespace: don't double it.
+        assert!(!needs_leading_space(Some(' '), "world"));
+        assert!(!needs_leading_space(Some('\n'), "world"));
+        // Next text already starts with whitespace: don't double it.
+        assert!(!needs_leading_space(Some('o'), " world"));
+        // Empty next: nothing to separate.
+        assert!(!needs_leading_space(Some('o'), ""));
+        // Punctuation is non-whitespace, so a following sentence is spaced.
+        assert!(needs_leading_space(Some('.'), "Next"));
     }
 
-    /// `EnigoTextSink::insert` for short text synthesizes real keystrokes
-    /// via enigo into whatever window currently has OS focus. That needs an
-    /// active display session and (on macOS) Accessibility permission
-    /// granted to the test process, and it types into whatever happens to
-    /// be focused when the test runs — not something to fire unattended in
-    /// CI. Kept here, `#[ignore]`d, so a developer with a real desktop
-    /// session and a scratch text field focused can run it deliberately via
+    #[test]
+    fn spaced_payload_separates_consecutive_utterances() {
+        // First utterance: no previous text, emitted verbatim.
+        let (first, last_after_first) = spaced_payload(None, "hello");
+        assert_eq!(first, "hello");
+        assert_eq!(last_after_first, Some('o'));
+
+        // Second utterance would otherwise concatenate ("helloworld") — it
+        // gets a leading space so the target reads "hello world".
+        let (second, last_after_second) = spaced_payload(last_after_first, "world");
+        assert_eq!(second, " world");
+        assert_eq!(last_after_second, Some('d'));
+
+        // A follow-up that already starts with whitespace isn't doubled.
+        let (third, _) = spaced_payload(last_after_second, " again");
+        assert_eq!(third, " again");
+    }
+
+    #[test]
+    fn spaced_payload_carries_previous_char_for_empty_next() {
+        // Defensive: an empty follow-up keeps the remembered trailing char.
+        assert_eq!(spaced_payload(Some('o'), ""), (String::new(), Some('o')));
+    }
+
+    /// `EnigoTextSink::type_text` (the clipboard-unavailable fallback)
+    /// synthesizes real keystrokes via enigo into whatever window currently
+    /// has OS focus. That needs an active display session and (on macOS)
+    /// Accessibility permission granted to the test process, and it types
+    /// into whatever happens to be focused when the test runs — not
+    /// something to fire unattended in CI. Kept here, `#[ignore]`d, so a
+    /// developer with a real desktop session and a scratch text field
+    /// focused can run it deliberately via
     /// `cargo test -p whspr-inject -- --ignored`.
     #[test]
     #[ignore = "types real keystrokes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
     fn type_text_sends_real_keystrokes() {
         let sink = EnigoTextSink;
-        sink.insert("whspr-inject manual keystroke test")
-            .expect("insert should succeed with a display and Accessibility permission granted");
+        sink.type_text("whspr-inject manual keystroke test")
+            .expect("type_text should succeed with a display and Accessibility permission granted");
     }
 
-    /// `EnigoTextSink::insert` for long text saves the current clipboard,
-    /// stages the text, simulates a real paste keystroke (Cmd+V / Ctrl+V)
-    /// into whatever window has OS focus, then restores the original
+    /// `EnigoTextSink::insert` (the default paste path) saves the current
+    /// clipboard, stages the text, simulates a real paste keystroke (Cmd+V /
+    /// Ctrl+V) into whatever window has OS focus, then restores the original
     /// clipboard. Same non-hermetic constraints as
     /// `type_text_sends_real_keystrokes` above; the save/restore logic
     /// itself is covered hermetically by the `stage_and_paste_*` tests.
@@ -285,8 +368,7 @@ mod tests {
     #[ignore = "pastes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
     fn paste_from_clipboard_sends_real_paste_keystroke() {
         let sink = EnigoTextSink;
-        let long_text = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
-        sink.insert(&long_text)
+        sink.insert("whspr-inject manual paste test")
             .expect("insert should succeed with a display and Accessibility permission granted");
     }
 
