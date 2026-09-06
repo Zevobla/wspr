@@ -105,6 +105,25 @@ mod tests {
     }
 
     #[test]
+    fn russian_ordinal_denominator_fractions() {
+        // The forms the user reported: -ых/-их genitive plural and -ая feminine.
+        assert_eq!(normalize_percents("три четвёртых"), "3/4");
+        assert_eq!(normalize_percents("одна вторая"), "1/2");
+        assert_eq!(normalize_percents("две третьих"), "2/3");
+        // ASCII "е" spelling of четвёртых is accepted too.
+        assert_eq!(normalize_percents("три четвертых"), "3/4");
+        assert_eq!(normalize_percents("семь десятых"), "7/10");
+    }
+
+    #[test]
+    fn english_seconds_are_not_a_fraction() {
+        // "second(s)" is a duration/ordinal, never a 1/2 denominator; this
+        // pass leaves the numerator word alone (the numbers pass digitizes it).
+        assert_eq!(normalize_percents("wait two seconds"), "wait two seconds");
+        assert_eq!(normalize_percents("2 seconds"), "2 seconds");
+    }
+
+    #[test]
     fn preserves_surrounding_text_and_punctuation() {
         assert_eq!(
             normalize_percents("battery at fifty percent now"),
