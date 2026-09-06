@@ -19,8 +19,11 @@ pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
 
 /// Listens for the configured global hotkey via the OS-level hotkey APIs.
 pub struct GlobalHotkeyListener {
-    // We store the manager to keep it alive for the lifetime of the listener
-    _manager: Arc<GlobalHotKeyManager>,
+    // Kept alive for the listener's lifetime, and used on drop to release
+    // the hotkey.
+    manager: Arc<GlobalHotKeyManager>,
+    // The registered combo, remembered so `Drop` can unregister exactly it.
+    hotkey: HotKey,
 }
 
 impl GlobalHotkeyListener {
@@ -38,7 +41,8 @@ impl GlobalHotkeyListener {
             .map_err(|e| WhsprError::Inject(format!("failed to register global hotkey: {}", e)))?;
 
         Ok(GlobalHotkeyListener {
-            _manager: Arc::new(manager),
+            manager: Arc::new(manager),
+            hotkey,
         })
     }
 }
@@ -46,6 +50,17 @@ impl GlobalHotkeyListener {
 impl Default for GlobalHotkeyListener {
     fn default() -> Self {
         Self::new().expect("failed to initialize GlobalHotkeyListener")
+    }
+}
+
+impl Drop for GlobalHotkeyListener {
+    /// Releases the OS-level hotkey when the listener is dropped (app exit or
+    /// teardown), so the combo isn't left registered with the system after
+    /// the process goes away (D-13). Best-effort: a failure here isn't
+    /// actionable during teardown and `Drop` must never panic, so the result
+    /// is ignored.
+    fn drop(&mut self) {
+        let _ = self.manager.unregister(self.hotkey);
     }
 }
 
@@ -387,5 +402,35 @@ mod tests {
         eprintln!("press Ctrl+Space now...");
         let event = rx.blocking_recv().expect("channel closed with no event");
         assert_eq!(event, HotkeyEvent::Pressed);
+    }
+
+    /// D-13: dropping a `GlobalHotkeyListener` must release the OS-level
+    /// hotkey, so the exact same combo can be registered again afterward. If
+    /// `Drop` didn't unregister, the second registration would fail because
+    /// the combo is still held by the OS.
+    ///
+    /// Registering a global hotkey needs a live OS hotkey manager (a display
+    /// session, and on some platforms specific permissions), so this can't
+    /// run hermetically — it's `#[ignore]`d for CI and run manually with
+    /// `cargo test -p whspr-inject -- --ignored`. It also skips cleanly if
+    /// the environment can't register a hotkey at all (an environment
+    /// limitation, not a D-13 failure).
+    #[test]
+    #[ignore = "needs a live OS hotkey manager (display/permissions); run manually"]
+    fn dropping_listener_frees_the_hotkey_for_reregistration() {
+        let first = match GlobalHotkeyListener::new() {
+            Ok(listener) => listener,
+            Err(e) => {
+                eprintln!("skipping: no hotkey manager available in this environment: {e}");
+                return;
+            }
+        };
+        // Dropping runs the `Drop` impl, which unregisters the combo.
+        drop(first);
+
+        // Registering the same combo again only succeeds if it was freed.
+        GlobalHotkeyListener::new().expect(
+            "re-registering the hotkey after drop should succeed once Drop has released it",
+        );
     }
 }
