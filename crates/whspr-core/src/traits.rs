@@ -61,3 +61,26 @@ pub trait Diarizer: Send + Sync {
     /// Stable identifier used for config/CLI backend selection.
     fn id(&self) -> &'static str;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotkey_event_pressed_and_released_are_distinct() {
+        assert_ne!(HotkeyEvent::Pressed, HotkeyEvent::Released);
+    }
+
+    #[test]
+    fn hotkey_event_pressed_equals_itself() {
+        assert_eq!(HotkeyEvent::Pressed, HotkeyEvent::Pressed);
+    }
+
+    #[test]
+    fn hotkey_event_copy_and_clone() {
+        let event = HotkeyEvent::Released;
+        let copied = event;
+        let cloned = event.clone();
+        assert_eq!(copied, cloned);
+    }
+}
