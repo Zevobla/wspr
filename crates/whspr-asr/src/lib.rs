@@ -36,13 +36,15 @@ impl WhisperLocal {
     /// Resolves the GGML model path to use: an explicit path (e.g. from a
     /// `--model` flag or `whspr-config`'s `[whisper].model_path`) takes
     /// priority. If none is given, falls back to the `WHISPER_MODEL_PATH`
-    /// environment variable, which the project's Nix devShell sets to a
-    /// pinned, reproducibly-fetched model (see `nix/models.nix`) so nobody
-    /// needs to download one by hand. That's a build/environment-provided
-    /// path, not a user-changeable app setting, so reading it here doesn't
-    /// run afoul of `whspr-config`'s "no env vars" rule — that rule is
-    /// specifically about app settings silently overriding the config file
-    /// (see that crate's module doc comment).
+    /// environment variable. whspr is bring-your-own-model — it doesn't
+    /// ship or fetch a checkpoint for you, so point this env var (or
+    /// `[whisper].model_path`) at a GGML file you've downloaded yourself
+    /// (e.g. from <https://huggingface.co/ggerganov/whisper.cpp>). That's a
+    /// deliberate, explicit escape hatch, not a user-changeable app
+    /// setting, so reading it here doesn't run afoul of `whspr-config`'s
+    /// "no env vars" rule — that rule is specifically about app settings
+    /// silently overriding the config file (see that crate's module doc
+    /// comment).
     ///
     /// Returns `None` if neither is available; callers should surface that
     /// as a clear "no model configured" error rather than constructing a
@@ -508,11 +510,10 @@ mod tests {
     /// speech fixture (`tests/fixtures/one-two-three.wav`, 16kHz mono,
     /// synthesized speech saying "one two three").
     ///
-    /// Requires a real GGML model on disk. Inside `nix develop`, one is
-    /// already available for free via `WHISPER_MODEL_PATH` (see
-    /// `WhisperLocal::resolve_model_path`), so `cargo test -p whspr-asr --
-    /// --ignored` Just Works there with no setup. Outside the devShell,
-    /// fall back to a manual download:
+    /// Requires a real GGML model on disk -- whspr is bring-your-own-model,
+    /// so nothing provisions one for you. Point `WHISPER_MODEL_PATH` (see
+    /// `WhisperLocal::resolve_model_path`) at a model you already have, or
+    /// download one:
     ///
     /// ```sh
     /// mkdir -p ~/.cache/whspr
@@ -531,7 +532,7 @@ mod tests {
         let Some(model_path) = model_path else {
             eprintln!(
                 "skipping whisper_local_transcribes_real_speech_fixture: no model found via \
-                 WHISPER_MODEL_PATH (set automatically inside `nix develop`) or at {} \
+                 WHISPER_MODEL_PATH or at {} \
                  (see this test's doc comment for the manual download command)",
                 cache_fallback.display()
             );

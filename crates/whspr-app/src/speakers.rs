@@ -17,8 +17,8 @@ pub fn speaker_db_path() -> Option<PathBuf> {
 
 /// Decodes + resamples `file`, runs it through a `Diarizer` (a real
 /// `SherpaDiarizer` if a model directory is available -- from `model_dir`,
-/// or else the `SPEAKER_MODEL_DIR` env var the Nix devShell/package sets,
-/// see `SherpaDiarizer::resolve_model_dir` -- otherwise the deterministic
+/// or else the `SPEAKER_MODEL_DIR` env var, see
+/// `SherpaDiarizer::resolve_model_dir` -- otherwise the deterministic
 /// `MockDiarizer`, same "explicit opt-in, else a safe default" philosophy
 /// as `whspr-cli`'s backend builders), matches every resulting turn
 /// against `speaker_db`, persists the updated db to `db_path`, and returns
