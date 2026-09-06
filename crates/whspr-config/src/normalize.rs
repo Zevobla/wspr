@@ -96,4 +96,41 @@ mod tests {
         assert!(!cfg.normalize.dates);
         assert!(cfg.normalize.times); // not set in the file - stays default
     }
+
+    #[test]
+    fn macros_default_to_empty() {
+        assert!(NormalizeSettings::default().macros.is_empty());
+    }
+
+    #[test]
+    fn macros_round_trip_through_toml() {
+        let mut cfg = Config::default();
+        cfg.normalize
+            .macros
+            .insert("my email".to_string(), "me@example.com".to_string());
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(round_tripped.normalize, cfg.normalize);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_macros() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[normalize.macros]").expect("failed to write macros header");
+        writeln!(file, "\"my email\" = \"me@example.com\"").expect("failed to write macro entry");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert_eq!(
+            cfg.normalize.macros.get("my email"),
+            Some(&"me@example.com".to_string())
+        );
+    }
 }
