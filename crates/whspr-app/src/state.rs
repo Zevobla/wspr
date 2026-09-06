@@ -5,6 +5,19 @@ use whspr_config::Config;
 
 use crate::history::HistoryEntry;
 
+/// Which top-level screen the Hub's tab bar (`crate::hub`) is currently
+/// showing. `Dictate` is the default: whspr's core action (record/dictate)
+/// gets the screen a user lands on, rather than being buried among
+/// settings -- see `crate::hub`'s module doc for the redesign this drives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Screen {
+    #[default]
+    Dictate,
+    Speakers,
+    History,
+    Settings,
+}
+
 /// Top-level state for the whspr GUI daemon (Hub window + Flow Bar window).
 #[derive(Debug)]
 pub struct State {
@@ -39,6 +52,9 @@ pub struct State {
     /// The active iced theme, toggled between `Theme::Light`/`Theme::Dark`
     /// by the Hub's theme button (see `crate::app`'s `.theme` wiring).
     pub theme: iced::Theme,
+    /// Which screen the Hub's tab bar is currently showing. Switched by
+    /// `Message::TabSelected` (see `crate::hub`'s tab bar).
+    pub screen: Screen,
     /// The dictation pipeline's current state, driven by
     /// `crate::worker::pipeline_worker`'s `WorkerEvent::StateChanged` and
     /// shown by the Flow Bar overlay.
@@ -104,6 +120,7 @@ impl State {
             captured_hotkey: None,
             history: Vec::new(),
             theme: iced::Theme::Light,
+            screen: Screen::default(),
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
             speaker_db: whspr_config::SpeakerDb::default(),
@@ -136,11 +153,17 @@ mod tests {
         assert!(state.captured_hotkey.is_none());
         assert!(state.history.is_empty());
         assert_eq!(state.theme, iced::Theme::Light);
+        assert_eq!(state.screen, Screen::Dictate);
         assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
         assert!(state.last_error.is_none());
         assert!(state.speaker_rename_drafts.is_empty());
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
+    }
+
+    #[test]
+    fn screen_default_is_dictate() {
+        assert_eq!(Screen::default(), Screen::Dictate);
     }
 
     #[test]
@@ -189,6 +212,14 @@ pub enum Message {
     HotkeyCaptureKeyEvent(iced::keyboard::Event),
     /// The user toggled between light and dark theme in the Hub.
     ThemeToggled,
+    /// The user clicked a Hub tab bar entry: switches which screen renders
+    /// below the tab bar (see `Screen`).
+    TabSelected(Screen),
+    /// The user clicked "Copy" on the Dictate screen: copies the current
+    /// recognized transcript to the system clipboard. A no-op if there's no
+    /// transcript yet -- see `crate::hub::dictate`'s `copy_enabled`, which
+    /// also disables the button in that case.
+    CopyTranscript,
     /// An event from the background pipeline worker (see `crate::worker`):
     /// a pipeline state change, a completed dictation turn, or a failure.
     Worker(crate::worker::WorkerEvent),
