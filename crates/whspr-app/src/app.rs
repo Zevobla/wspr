@@ -82,6 +82,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::AsrSelected(label) => {
             state.config.asr = config_ui::asr_from_label(label);
+            persist_config(state);
             Task::none()
         }
         Message::RefineSelected(label) => {
