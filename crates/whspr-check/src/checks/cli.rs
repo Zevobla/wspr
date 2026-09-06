@@ -291,3 +291,35 @@ pub fn build_failure_results(reason: &str) -> Vec<CheckResult> {
         .map(|id| CheckResult::fail(id, format!("could not build whspr-cli: {reason}")))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_criteria_has_entries() {
+        assert!(!CLI_CRITERIA.is_empty());
+    }
+
+    #[test]
+    fn build_failure_results_creates_one_per_criterion() {
+        let results = build_failure_results("test error");
+        assert_eq!(results.len(), CLI_CRITERIA.len());
+    }
+
+    #[test]
+    fn build_failure_results_all_have_fail_verdict() {
+        let results = build_failure_results("test error");
+        for result in &results {
+            assert_eq!(result.verdict, crate::report::Verdict::Fail);
+        }
+    }
+
+    #[test]
+    fn build_failure_results_includes_reason() {
+        let results = build_failure_results("my test reason");
+        assert!(results
+            .iter()
+            .all(|r| r.evidence.contains("my test reason")));
+    }
+}

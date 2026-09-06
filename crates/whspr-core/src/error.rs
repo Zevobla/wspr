@@ -31,3 +31,32 @@ pub enum WhsprError {
 }
 
 pub type Result<T> = std::result::Result<T, WhsprError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whspr_error_asr_variant() {
+        let error = WhsprError::Asr("backend failed".to_string());
+        assert_eq!(error.to_string(), "asr backend error: backend failed");
+    }
+
+    #[test]
+    fn whspr_error_refine_variant() {
+        let error = WhsprError::Refine("cleanup failed".to_string());
+        assert_eq!(error.to_string(), "refine backend error: cleanup failed");
+    }
+
+    #[test]
+    fn whspr_error_audio_variant() {
+        let error = WhsprError::Audio("decode error".to_string());
+        assert_eq!(error.to_string(), "audio error: decode error");
+    }
+
+    #[test]
+    fn whspr_error_other_variant() {
+        let error = WhsprError::Other("something went wrong".to_string());
+        assert_eq!(error.to_string(), "something went wrong");
+    }
+}

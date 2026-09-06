@@ -234,3 +234,30 @@ pub fn check_readme_swap_docs(root: &Path) -> CheckResult {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overclaim_phrases_has_entries() {
+        assert!(!OVERCLAIM_PHRASES.is_empty());
+    }
+
+    #[test]
+    fn overclaim_phrases_contains_superlatives() {
+        assert!(OVERCLAIM_PHRASES.contains(&"production-ready"));
+        assert!(OVERCLAIM_PHRASES.contains(&"fully working"));
+    }
+
+    #[test]
+    fn overclaim_phrases_all_lowercase() {
+        for phrase in OVERCLAIM_PHRASES {
+            assert_eq!(
+                phrase,
+                &phrase.to_lowercase(),
+                "{phrase} should be all lowercase"
+            );
+        }
+    }
+}

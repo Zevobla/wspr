@@ -17,18 +17,24 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 mod autostart;
+mod capture;
 mod device;
 mod injection;
 mod language;
 mod normalize;
+mod privacy;
+mod reload;
 mod sound;
 mod speaker;
 
 pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
+pub use capture::CaptureSettings;
 pub use device::DeviceSettings;
 pub use injection::InjectionSettings;
 pub use language::LanguageSettings;
 pub use normalize::NormalizeSettings;
+pub use privacy::PrivacySettings;
+pub use reload::{api_key_for, config_reload};
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile};
 
@@ -208,6 +214,14 @@ pub struct Config {
     /// table.
     #[serde(default)]
     pub injection: InjectionSettings,
+    /// Privacy and security settings, read from the config file's
+    /// `[privacy]` table.
+    #[serde(default)]
+    pub privacy: PrivacySettings,
+    /// Capture and transcript handling settings, read from the config file's
+    /// `[capture]` table.
+    #[serde(default)]
+    pub capture: CaptureSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
@@ -282,27 +296,6 @@ pub fn load_from(config_dir: Option<&Path>) -> Config {
     config
 }
 
-/// Re-reads the config file from disk (B-05). Useful when the user has
-/// edited the config file and needs to pick up changes without a full
-/// restart. Falls back to defaults on any error, like `load_from`.
-pub fn config_reload(path: &Path) -> whspr_core::Result<Config> {
-    let config_path = path.join("config.toml");
-
-    if config_path.exists() {
-        let contents = std::fs::read_to_string(&config_path).map_err(|e| {
-            whspr_core::WhsprError::Config(format!("failed to read config file: {e}"))
-        })?;
-
-        toml::from_str::<Config>(&contents).map_err(|e| {
-            whspr_core::WhsprError::Config(format!("failed to parse config TOML: {e}"))
-        })
-    } else {
-        Err(whspr_core::WhsprError::Config(
-            "config file not found".to_string(),
-        ))
-    }
-}
-
 /// Writes `config` as TOML to `config_path`, creating `dir` (and any
 /// missing parent directories) first. Best-effort: a read-only or
 /// otherwise uncreatable config directory must never crash `load_from`,
@@ -315,14 +308,6 @@ fn write_defaults(dir: &Path, config_path: &Path, config: &Config) {
     if let Ok(toml_string) = toml::to_string_pretty(config) {
         let _ = std::fs::write(config_path, toml_string);
     }
-}
-
-/// Looks up an API key for a cloud backend by id (e.g. "openai") from the
-/// given config's `api_keys` table. Reads only `config`; never an
-/// environment variable. See `Config::api_keys` for the plaintext-for-now
-/// caveat.
-pub fn api_key_for(config: &Config, choice_id: &str) -> Option<String> {
-    config.api_keys.get(choice_id).cloned()
 }
 
 #[cfg(test)]

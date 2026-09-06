@@ -129,3 +129,32 @@ pub fn check_config_in_platform_dir(root: &Path) -> CheckResult {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn project_dirs_from_whspr_returns_valid_paths() {
+        let dirs = directories::ProjectDirs::from("", "", "whspr");
+        assert!(
+            dirs.is_some(),
+            "ProjectDirs::from should succeed for 'whspr'"
+        );
+        let dirs = dirs.unwrap();
+        assert!(
+            dirs.config_dir().is_absolute(),
+            "config_dir should be absolute"
+        );
+    }
+
+    #[test]
+    fn whspr_qualifier_appears_in_config_path() {
+        if let Some(dirs) = directories::ProjectDirs::from("", "", "whspr") {
+            let config_path = dirs.config_dir();
+            let path_str = config_path.to_string_lossy();
+            assert!(
+                path_str.to_lowercase().contains("whspr"),
+                "whspr should appear in config path"
+            );
+        }
+    }
+}
