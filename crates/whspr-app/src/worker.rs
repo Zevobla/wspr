@@ -123,7 +123,10 @@ fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn TextRefiner>, 
         RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
     };
 
-    Ok(Box::new(NormalizingRefiner::new(inner, config.normalize)))
+    Ok(Box::new(NormalizingRefiner::new(
+        inner,
+        config.normalize.clone(),
+    )))
 }
 
 fn capture_decision(action: DebounceAction, capture_active: bool) -> CaptureDecision {
