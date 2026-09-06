@@ -41,9 +41,13 @@ fn fraction_denominator(core: &str) -> Option<u64> {
         "half" | "halves" | "половина" | "половины" | "половину" => 2,
         // No English "second(s)" here: "two seconds" is a duration, not 2/2.
         "вторая" | "вторых" => 2,
-        "third" | "thirds" | "треть" | "трети" | "третей" | "третья" | "третьих" => 3,
+        "third" | "thirds" | "треть" | "трети" | "третей" | "третья" | "третьих" => {
+            3
+        }
         "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей"
-        | "четвёртая" | "четвёртых" | "четвертая" | "четвертых" => 4,
+        | "четвёртая" | "четвёртых" | "четвертая" | "четвертых" => {
+            4
+        }
         "fifth" | "fifths" | "пятая" | "пятых" => 5,
         "sixth" | "sixths" | "шестая" | "шестых" => 6,
         "seventh" | "sevenths" | "седьмая" | "седьмых" => 7,
@@ -144,7 +148,10 @@ mod tests {
     fn standalone_polovina_is_one_half() {
         assert_eq!(normalize_percents("половина"), "1/2");
         // Still works with surrounding words and punctuation.
-        assert_eq!(normalize_percents("осталась половина яблока"), "осталась 1/2 яблока");
+        assert_eq!(
+            normalize_percents("осталась половина яблока"),
+            "осталась 1/2 яблока"
+        );
         assert_eq!(normalize_percents("(половину)"), "(1/2)");
         // A leading cardinal still takes precedence: "одна половина" -> 1/2.
         assert_eq!(normalize_percents("одна половина"), "1/2");
