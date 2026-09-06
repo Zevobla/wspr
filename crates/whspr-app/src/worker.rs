@@ -26,7 +26,7 @@ use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
 use whspr_config::{api_key_for, AsrChoice, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, Pipeline, PipelineState, RefineContext, TextRefiner};
-use whspr_inject::{DebounceAction, DebouncedHotkeyListener, EnigoTextSink, GlobalHotkeyListener};
+use whspr_inject::{DebounceAction, DebouncedHotkeyListener, GlobalHotkeyListener};
 use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner};
 
 /// Events the worker reports back to the iced app.
@@ -73,7 +73,9 @@ enum CaptureDecision {
 /// Returns a plain `String` error (not `anyhow`, which whspr-app doesn't
 /// otherwise depend on) so the caller can forward it directly into
 /// `WorkerEvent::Failed`.
-fn build_asr_backend(config: &whspr_config::Config) -> Result<Box<dyn AsrBackend>, String> {
+pub(crate) fn build_asr_backend(
+    config: &whspr_config::Config,
+) -> Result<Box<dyn AsrBackend>, String> {
     match config.asr {
         AsrChoice::Mock => Ok(Box::new(MockAsr::default())),
         AsrChoice::WhisperLocal => {
@@ -105,7 +107,7 @@ fn build_asr_backend(config: &whspr_config::Config) -> Result<Box<dyn AsrBackend
 /// `NormalizingRefiner` so rule-based number/date/time normalization runs
 /// regardless of which backend produced the raw text. Mirrors whspr-cli's
 /// `build_refiner` (`crates/whspr-cli/src/main.rs`).
-fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn TextRefiner>, String> {
+pub(crate) fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn TextRefiner>, String> {
     let inner: Box<dyn TextRefiner> = match config.refine {
         RefineChoice::Noop => Box::new(NoopRefiner),
         RefineChoice::OpenAi => {
@@ -175,9 +177,13 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     // `output`, whose `send` is async and needs `&mut self`).
     let (state_tx, mut state_rx) = tokio::sync::mpsc::unbounded_channel::<PipelineState>();
 
-    let pipeline = Pipeline::new(asr_backend, refiner)
-        .with_sink(Box::new(EnigoTextSink))
-        .with_state_callback(Box::new(move |state| {
+    // No `TextSink`: dictation results are shown in the Hub's transcription
+    // field (via `WorkerEvent::Completed`) rather than injected into the
+    // focused app. Synthetic text injection needs macOS Accessibility
+    // permission the dev binary isn't granted, and calling it without that
+    // hard-traps the process, so the on-screen path is the reliable default.
+    let pipeline =
+        Pipeline::new(asr_backend, refiner).with_state_callback(Box::new(move |state| {
             let _ = state_tx.send(state);
         }));
 

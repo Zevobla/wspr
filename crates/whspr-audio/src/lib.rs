@@ -282,6 +282,19 @@ impl CaptureHandle {
         // Resample to 16kHz mono (the canonical shape)
         resample_to_16k_mono(&buffer)
     }
+
+    /// RMS input level (~0.0..1.0) over the most recent ~100ms, for a meter.
+    pub fn current_level(&self) -> f32 {
+        let window = (self.sample_rate / 10).max(1) as usize;
+        let Ok(samples) = self.buffer.lock() else {
+            return 0.0;
+        };
+        let slice = &samples[samples.len().saturating_sub(window)..];
+        if slice.is_empty() {
+            return 0.0;
+        }
+        (slice.iter().map(|s| s * s).sum::<f32>() / slice.len() as f32).sqrt()
+    }
 }
 
 /// Concrete, OS-specific next step for a `start_capture` failure that's

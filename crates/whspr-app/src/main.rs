@@ -11,6 +11,7 @@ mod speakers;
 mod state;
 mod stats;
 mod theme;
+mod transcribe_file;
 mod tray;
 mod worker;
 
