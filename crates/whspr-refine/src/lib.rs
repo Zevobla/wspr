@@ -9,18 +9,20 @@
 
 mod llama_local;
 mod normalize;
+mod tokens;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use llama_local::LlamaLocal;
 pub use normalize::NormalizingRefiner;
+use tokens::strip_special_tokens;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
 /// Builds the shared "clean up speech-to-text" instructions used as the
 /// prompt body for every refiner backend (cloud or local), so the same
 /// cleanup rules apply regardless of which LLM ends up executing them.
-fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
+pub(crate) fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
     let mut prompt = String::from(
         "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
         You must:\n\
@@ -158,7 +160,7 @@ impl TextRefiner for OpenAiRefiner {
             .choices
             .first()
             .and_then(|choice| {
-                let content = choice.message.content.trim().to_string();
+                let content = strip_special_tokens(&choice.message.content);
                 if content.is_empty() {
                     None
                 } else {
@@ -269,7 +271,7 @@ impl TextRefiner for AnthropicRefiner {
             .content
             .first()
             .and_then(|c| c.text.as_ref())
-            .map(|text| text.trim().to_string())
+            .map(|text| strip_special_tokens(text))
             .ok_or_else(|| WhsprError::Refine("Anthropic response had no text content".to_string()))
     }
 
