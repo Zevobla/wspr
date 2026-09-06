@@ -6,7 +6,7 @@
 //! with `field`.
 
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, text, text_input, Space,
+    button, checkbox, column, container, pick_list, row, scrollable, text, text_input, Space,
 };
 use iced::{Alignment, Element, Length};
 
@@ -384,6 +384,12 @@ fn settings_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
     .style(move |_theme, status| styles::pick_list::field(scheme, status))
     .menu_style(move |_theme| styles::pick_list::menu(scheme));
 
+    let autostart_toggle: Element<'_, Message> = checkbox(state.config.autostart.enabled)
+        .label("Launch at login")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::AutostartToggled)
+        .into();
+
     section(
         scheme,
         "Settings",
@@ -395,6 +401,7 @@ fn settings_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
                 "Language ('auto' = no override)",
                 language_picker.into()
             ),
+            autostart_toggle,
         ]
         .spacing(spacing::MD)
         .into(),

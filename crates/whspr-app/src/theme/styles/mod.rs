@@ -4,6 +4,7 @@
 //! so every surface renders from the same MD3 color/shape tokens.
 
 pub mod button;
+pub mod checkbox;
 pub mod container;
 pub mod pick_list;
 pub mod progress_bar;

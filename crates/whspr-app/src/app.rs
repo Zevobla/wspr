@@ -82,6 +82,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
             Task::none()
         }
+        Message::AutostartToggled(enabled) => {
+            state.config.autostart.enabled = enabled;
+            apply_autostart(state, enabled);
+            persist_config(state);
+            Task::none()
+        }
         Message::DeviceSelected(device) => {
             state.selected_device = Some(device);
             Task::none()
@@ -203,6 +209,26 @@ fn persist_config(state: &mut State) {
     };
     if let Err(e) = state.config.save(dirs.config_dir()) {
         state.last_error = Some(format!("failed to save config: {e}"));
+    }
+}
+
+/// Writes or removes the actual OS-level autostart entry to match
+/// `enabled`, surfacing a failure via `state.last_error` -- same reasoning
+/// as `persist_config`: a checkbox that silently didn't do anything to the
+/// OS shouldn't look like it worked. `install_autostart` needs the
+/// running app's own executable path, so this is GUI-only (`whspr-cli`
+/// has no persistent process for "launch at login" to point at).
+fn apply_autostart(state: &mut State, enabled: bool) {
+    let result = if enabled {
+        std::env::current_exe()
+            .map_err(|e| format!("could not determine whspr's own executable path: {e}"))
+            .and_then(|exe| whspr_config::install_autostart(&exe).map_err(|e| e.to_string()))
+    } else {
+        whspr_config::remove_autostart().map_err(|e| e.to_string())
+    };
+
+    if let Err(e) = result {
+        state.last_error = Some(format!("failed to update launch-at-login: {e}"));
     }
 }
 
