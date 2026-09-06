@@ -73,7 +73,8 @@ mod tests {
         writeln!(file, "[capture]").expect("failed to write capture header");
         writeln!(file, "refine-timeout-ms = 60000").expect("failed to write refine-timeout-ms");
         writeln!(file, "auto-send = true").expect("failed to write auto-send");
-        writeln!(file, "input-field-detection = false").expect("failed to write input-field-detection");
+        writeln!(file, "input-field-detection = false")
+            .expect("failed to write input-field-detection");
         drop(file);
 
         let cfg = load_from(Some(temp_dir.path()));
