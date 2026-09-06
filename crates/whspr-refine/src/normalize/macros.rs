@@ -7,10 +7,20 @@
 //! triggers (by word count) are tried before shorter ones at each
 //! position, so a trigger that is a prefix of another trigger's words
 //! (e.g. "call" vs "call mom") never shadows the longer, more specific one.
+//!
+//! An expansion value prefixed with `lua:` is scripted rather than
+//! literal: the text after the prefix runs as a sandboxed LuaJIT script
+//! (see the `lua` module) with the matched trigger text bound to `arg`,
+//! and its returned string becomes the expansion. A script that fails for
+//! any reason degrades gracefully -- the trigger is left unexpanded.
 
 use std::collections::BTreeMap;
 
-use super::split_punct;
+use super::{lua, split_punct};
+
+/// Prefix marking a macro's expansion value as Lua source rather than
+/// literal replacement text.
+const LUA_SENTINEL: &str = "lua:";
 
 /// Expands every occurrence of a macro trigger phrase in `text` into its
 /// configured expansion. `macros` is empty by default, in which case this
@@ -49,9 +59,23 @@ pub fn expand_macros(text: &str, macros: &BTreeMap<String, String>) -> String {
         });
 
         if let Some((end, expansion)) = hit {
-            let (_, prefix, _) = split_punct(words[i]);
-            let (_, _, suffix) = split_punct(words[end - 1]);
-            out.push(format!("{prefix}{expansion}{suffix}"));
+            if let Some(script) = expansion.strip_prefix(LUA_SENTINEL) {
+                let matched_text = words[i..end].join(" ");
+                match lua::run_script(script, &matched_text) {
+                    Some(result) => {
+                        let (_, prefix, _) = split_punct(words[i]);
+                        let (_, _, suffix) = split_punct(words[end - 1]);
+                        out.push(format!("{prefix}{result}{suffix}"));
+                    }
+                    // Degrade gracefully: leave the matched words exactly
+                    // as spoken rather than fail the whole refine pass.
+                    None => out.extend(words[i..end].iter().map(|w| w.to_string())),
+                }
+            } else {
+                let (_, prefix, _) = split_punct(words[i]);
+                let (_, _, suffix) = split_punct(words[end - 1]);
+                out.push(format!("{prefix}{expansion}{suffix}"));
+            }
             i = end;
         } else {
             out.push(words[i].to_string());
