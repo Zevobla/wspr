@@ -1,8 +1,9 @@
 //! F-10: number words (English and Russian cardinals) written as digits.
 //!
-//! Supports compounds up to the hundreds/thousands ("one hundred and
-//! twenty five", "двести тридцать" -> "230"). Scoped deliberately: no
-//! millions+, no ordinals ("twenty-fifth", "двадцать пятого"), no fractions.
+//! Supports compounds up to the millions ("one hundred and twenty five",
+//! "двести тридцать" -> "230", "восемь миллионов триста сорок тысяч" ->
+//! "8340000"). Scoped deliberately: no billions+, no ordinals
+//! ("twenty-fifth", "двадцать пятого"). Fractions live in the percents pass.
 
 use super::split_punct;
 
@@ -54,6 +55,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "ninety" => Unit(90),
         "hundred" => Scale(100),
         "thousand" => Scale(1000),
+        "million" => Scale(1_000_000),
         // Russian ones/teens/tens
         "ноль" => Unit(0),
         "один" | "одна" | "одно" => Unit(1),
@@ -94,6 +96,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "восемьсот" => Unit(800),
         "девятьсот" => Unit(900),
         "тысяча" | "тысячи" | "тысяч" => Scale(1000),
+        "миллион" | "миллиона" | "миллионов" => Scale(1_000_000),
         _ => return None,
     })
 }
@@ -294,6 +297,34 @@ mod tests {
         assert_eq!(normalize_numbers("двести тридцать"), "230");
         assert_eq!(normalize_numbers("two thousand twenty six"), "2026");
         assert_eq!(normalize_numbers("две тысячи двадцать шесть"), "2026");
+    }
+
+    #[test]
+    fn millions_and_scale_compounds() {
+        // The two cases the user reported coming out wrong.
+        assert_eq!(
+            normalize_numbers("восемь миллионов триста сорок тысяч"),
+            "8340000"
+        );
+        assert_eq!(normalize_numbers("два миллиона пятьсот тысяч"), "2500000");
+        // Plain place-value compounds keep working.
+        assert_eq!(normalize_numbers("сто двадцать три"), "123");
+        assert_eq!(normalize_numbers("тысяча девятьсот"), "1900");
+        // A scale word with no leading number multiplies by one.
+        assert_eq!(normalize_numbers("миллион"), "1000000");
+        // English millions accumulate the same way.
+        assert_eq!(
+            normalize_numbers("one million two hundred thousand"),
+            "1200000"
+        );
+    }
+
+    #[test]
+    fn regression_plain_and_non_number_text() {
+        // Simple single number still normalizes.
+        assert_eq!(normalize_numbers("пять"), "5");
+        // A sentence with no numbers is passed through unchanged.
+        assert_eq!(normalize_numbers("привет как дела"), "привет как дела");
     }
 
     #[test]

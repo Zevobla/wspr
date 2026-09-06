@@ -20,17 +20,40 @@ fn is_percent_word(core: &str) -> bool {
     )
 }
 
-/// Maps a fraction-denominator word to its denominator value.
+/// Russian words for "a half" that stand alone as the fraction 1/2 even
+/// without a leading cardinal ("половина" -> "1/2"). Only the половина family
+/// gets this default-1 treatment; a bare "четверть"/"треть" is left alone
+/// because it is usually a real word ("четверть часа"), not a fraction.
+fn is_standalone_half(core: &str) -> bool {
+    matches!(
+        core.to_lowercase().as_str(),
+        "половина" | "половины" | "половину"
+    )
+}
+
+/// Maps a fraction-denominator word to its denominator value. Covers the
+/// English ordinals plus the two Russian fraction-denominator forms that
+/// actually get spoken: the feminine `-ая`/`-ья` ("одна вторая" -> 1/2) and
+/// the genitive-plural `-ых`/`-их` ("две третьих" -> 2/3, "три четвёртых" ->
+/// 3/4), alongside the colloquial "четверть"/"треть" quarter/third words.
 fn fraction_denominator(core: &str) -> Option<u64> {
     Some(match core.to_lowercase().as_str() {
         "half" | "halves" | "половина" | "половины" | "половину" => 2,
-        "third" | "thirds" | "треть" | "трети" | "третей" => 3,
-        "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей" => {
+        // No English "second(s)" here: "two seconds" is a duration, not 2/2.
+        "вторая" | "вторых" => 2,
+        "third" | "thirds" | "треть" | "трети" | "третей" | "третья" | "третьих" => {
+            3
+        }
+        "quarter" | "quarters" | "fourth" | "fourths" | "четверть" | "четверти" | "четвертей"
+        | "четвёртая" | "четвёртых" | "четвертая" | "четвертых" => {
             4
         }
         "fifth" | "fifths" | "пятая" | "пятых" => 5,
         "sixth" | "sixths" | "шестая" | "шестых" => 6,
+        "seventh" | "sevenths" | "седьмая" | "седьмых" => 7,
         "eighth" | "eighths" | "восьмая" | "восьмых" => 8,
+        "ninth" | "ninths" | "девятая" | "девятых" => 9,
+        "tenth" | "tenths" | "десятая" | "десятых" => 10,
         _ => return None,
     })
 }
@@ -59,6 +82,12 @@ pub fn normalize_percents(text: &str) -> String {
                 i = unit + 1;
                 continue;
             }
+        } else if is_standalone_half(cores[i]) {
+            // "половина" with no leading cardinal is the fraction 1/2.
+            let (_, prefix, suffix) = split_punct(words[i]);
+            out.push(format!("{prefix}1/2{suffix}"));
+            i += 1;
+            continue;
         }
         out.push(words[i].to_string());
         i += 1;
@@ -94,6 +123,40 @@ mod tests {
         assert_eq!(normalize_percents("три четверти"), "3/4");
         assert_eq!(normalize_percents("одна половина"), "1/2");
         assert_eq!(normalize_percents("пять шестых"), "5/6");
+    }
+
+    #[test]
+    fn russian_ordinal_denominator_fractions() {
+        // The forms the user reported: -ых/-их genitive plural and -ая feminine.
+        assert_eq!(normalize_percents("три четвёртых"), "3/4");
+        assert_eq!(normalize_percents("одна вторая"), "1/2");
+        assert_eq!(normalize_percents("две третьих"), "2/3");
+        // ASCII "е" spelling of четвёртых is accepted too.
+        assert_eq!(normalize_percents("три четвертых"), "3/4");
+        assert_eq!(normalize_percents("семь десятых"), "7/10");
+    }
+
+    #[test]
+    fn english_seconds_are_not_a_fraction() {
+        // "second(s)" is a duration/ordinal, never a 1/2 denominator; this
+        // pass leaves the numerator word alone (the numbers pass digitizes it).
+        assert_eq!(normalize_percents("wait two seconds"), "wait two seconds");
+        assert_eq!(normalize_percents("2 seconds"), "2 seconds");
+    }
+
+    #[test]
+    fn standalone_polovina_is_one_half() {
+        assert_eq!(normalize_percents("половина"), "1/2");
+        // Still works with surrounding words and punctuation.
+        assert_eq!(
+            normalize_percents("осталась половина яблока"),
+            "осталась 1/2 яблока"
+        );
+        assert_eq!(normalize_percents("(половину)"), "(1/2)");
+        // A leading cardinal still takes precedence: "одна половина" -> 1/2.
+        assert_eq!(normalize_percents("одна половина"), "1/2");
+        // A bare "четверть" is left alone - it is a word, not a fraction.
+        assert_eq!(normalize_percents("четверть часа"), "четверть часа");
     }
 
     #[test]
