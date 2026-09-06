@@ -9,7 +9,7 @@ repository.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 serde.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 
 [features]
