@@ -13,3 +13,25 @@ pub const MD: f32 = 12.0;
 pub const LG: f32 = 16.0;
 /// Between sections, and the Hub/Flow Bar's outer padding.
 pub const XL: f32 = 24.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spacing_values_increase_monotonically() {
+        let steps = [XS, SM, MD, LG, XL];
+        for pair in steps.windows(2) {
+            assert!(pair[0] < pair[1]);
+        }
+    }
+
+    #[test]
+    fn spacing_values_follow_4dp_grid() {
+        assert_eq!(XS, 4.0);
+        assert_eq!(SM, 8.0);
+        assert_eq!(MD, 12.0);
+        assert_eq!(LG, 16.0);
+        assert_eq!(XL, 24.0);
+    }
+}

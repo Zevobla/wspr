@@ -70,3 +70,48 @@ pub fn flow_bar(fill: Color, scheme: &color::Scheme) -> Style {
         ..Style::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_has_surface_background() {
+        let scheme = &color::LIGHT;
+        let style = surface(scheme);
+        assert!(style.background.is_some());
+        assert_eq!(style.text_color, Some(scheme.on_surface));
+    }
+
+    #[test]
+    fn section_has_surface_container_background() {
+        let scheme = &color::LIGHT;
+        let style = section(scheme);
+        assert!(style.background.is_some());
+        assert_eq!(style.text_color, Some(scheme.on_surface));
+    }
+
+    #[test]
+    fn divider_has_outline_variant_background() {
+        let scheme = &color::LIGHT;
+        let style = divider(scheme);
+        assert!(style.background.is_some());
+    }
+
+    #[test]
+    fn error_banner_has_inverse_surface_background() {
+        let scheme = &color::LIGHT;
+        let style = error_banner(scheme);
+        assert!(style.background.is_some());
+        assert_eq!(style.text_color, Some(scheme.inverse_on_surface));
+    }
+
+    #[test]
+    fn flow_bar_has_shadow() {
+        let scheme = &color::LIGHT;
+        let fill = scheme.primary;
+        let style = flow_bar(fill, scheme);
+        assert!(style.background.is_some());
+        assert_eq!(style.shadow.blur_radius, 8.0);
+    }
+}

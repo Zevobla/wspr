@@ -13,3 +13,25 @@ pub const MD: f32 = 12.0;
 pub const LG: f32 = 16.0;
 /// Buttons and scrollbar thumbs: fully rounded regardless of height.
 pub const FULL: f32 = 9999.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shape_tokens_have_expected_values() {
+        assert_eq!(XS, 4.0);
+        assert_eq!(SM, 8.0);
+        assert_eq!(MD, 12.0);
+        assert_eq!(LG, 16.0);
+        assert_eq!(FULL, 9999.0);
+    }
+
+    #[test]
+    fn shape_tokens_scale_up_progressively() {
+        let steps = [XS, SM, MD, LG, FULL];
+        for pair in steps.windows(2) {
+            assert!(pair[0] < pair[1]);
+        }
+    }
+}

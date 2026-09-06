@@ -328,3 +328,13 @@ fn view(state: &State, window: window::Id) -> Element<'_, Message> {
         crate::hub::view(state)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hub_title_is_correct() {
+        assert_eq!(HUB_TITLE, "whspr");
+    }
+}

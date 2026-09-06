@@ -185,3 +185,33 @@ mod platform {
 }
 
 pub use platform::{Action, Handle};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn action_enum_has_expected_variants() {
+        let show_hub = Action::ShowHub;
+        let quit = Action::Quit;
+        assert_eq!(show_hub, Action::ShowHub);
+        assert_eq!(quit, Action::Quit);
+        assert_ne!(show_hub, quit);
+    }
+
+    #[test]
+    fn action_is_copy() {
+        let action = Action::ShowHub;
+        // `Action` is `Copy`, so this assignment copies rather than moves --
+        // `action` stays usable on the next line.
+        let copied = action;
+        assert_eq!(action, copied);
+    }
+
+    #[test]
+    fn action_implements_eq() {
+        assert!(Action::ShowHub == Action::ShowHub);
+        assert!(Action::Quit == Action::Quit);
+        assert!(Action::ShowHub != Action::Quit);
+    }
+}

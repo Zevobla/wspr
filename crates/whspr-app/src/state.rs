@@ -100,6 +100,40 @@ impl State {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_new_initializes_defaults() {
+        let config = whspr_config::Config::default();
+        let state = State::new(config);
+
+        assert!(state.hub_window.is_none());
+        assert!(state.flow_bar_window.is_none());
+        assert!(state.input_devices.is_empty());
+        assert!(state.selected_device.is_none());
+        assert!(!state.hotkey_capturing);
+        assert!(state.captured_hotkey.is_none());
+        assert!(state.history.is_empty());
+        assert_eq!(state.theme, iced::Theme::Light);
+        assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
+        assert!(state.last_error.is_none());
+        assert!(state.speaker_rename_drafts.is_empty());
+        assert!(state.diarize_status.is_none());
+        assert!(state.tray.is_none());
+    }
+
+    #[test]
+    fn state_preserves_initial_state() {
+        let config = whspr_config::Config::default();
+        let state = State::new(config);
+        // Verify that the state has correct default values after init
+        assert_eq!(state.theme, iced::Theme::Light);
+        assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
+    }
+}
+
 /// Messages produced by the GUI and its subscriptions.
 #[derive(Debug, Clone)]
 pub enum Message {

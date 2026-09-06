@@ -52,3 +52,42 @@ pub fn outlined(scheme: &color::Scheme, status: Status) -> Style {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_text_input_has_outline_border() {
+        let scheme = &color::LIGHT;
+        let style = outlined(scheme, Status::Active);
+        assert_eq!(style.border.color, scheme.outline);
+        assert_eq!(style.value, scheme.on_surface);
+    }
+
+    #[test]
+    fn hovered_text_input_changes_border_color() {
+        let scheme = &color::LIGHT;
+        let active_style = outlined(scheme, Status::Active);
+        let hovered_style = outlined(scheme, Status::Hovered);
+        assert_ne!(active_style.border.color, hovered_style.border.color);
+    }
+
+    #[test]
+    fn focused_text_input_uses_primary_and_wider_border() {
+        let scheme = &color::LIGHT;
+        let style = outlined(scheme, Status::Focused { is_hovered: false });
+        assert_eq!(style.border.color, scheme.primary);
+        assert_eq!(style.border.width, 2.0);
+    }
+
+    #[test]
+    fn disabled_text_input_uses_on_surface_color() {
+        let scheme = &color::LIGHT;
+        let style = outlined(scheme, Status::Disabled);
+        assert_eq!(
+            style.value,
+            color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY)
+        );
+    }
+}
