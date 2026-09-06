@@ -9,6 +9,7 @@
 //!                                  persisted speaker database
 //!   whspr stats [--csv] [--by-backend] [--clear]
 //!                                  Print (or clear) per-utterance stats from the history journal
+//!   whspr uninstall [--yes]        Remove the autostart entry and config/data directories
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
@@ -22,11 +23,13 @@
 //!   --csv                           `stats`: output CSV instead of a human-readable table
 //!   --by-backend                    `stats`: group output by (asr, refine) backend pair
 //!   --clear                         `stats`: wipe the stored history instead of printing it
+//!   --yes                           `uninstall`: actually perform the removal (a dry run otherwise)
 
 mod diarize_cmd;
 mod stats_cmd;
 mod subtitles;
 mod transcribe_cmd;
+mod uninstall_cmd;
 
 use std::path::{Path, PathBuf};
 
@@ -212,6 +215,22 @@ enum Command {
         #[arg(long, hide = true)]
         data_dir: Option<PathBuf>,
     },
+
+    /// Remove the autostart entry and whspr's config/data directories
+    /// (AH-08). A dry run by default - pass --yes to actually delete
+    /// anything.
+    Uninstall {
+        /// Actually perform the removal instead of just printing what
+        /// would be removed.
+        #[arg(long)]
+        yes: bool,
+
+        /// Override both the config and data directories. Hidden:
+        /// test-only, so the e2e suite can point removal at a tempdir
+        /// instead of the real platform config/data dirs.
+        #[arg(long, hide = true)]
+        data_dir: Option<PathBuf>,
+    },
 }
 
 /// Decodes an audio file from a path, or reads from stdin if path is "-".
@@ -330,6 +349,10 @@ async fn main() -> anyhow::Result<()> {
             data_dir,
         }) => {
             stats_cmd::run(data_dir, csv, clear, by_backend).await?;
+        }
+
+        Some(Command::Uninstall { yes, data_dir }) => {
+            uninstall_cmd::run(data_dir, yes).await?;
         }
 
         None => {
