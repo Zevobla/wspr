@@ -4,7 +4,7 @@
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use tokio::sync::mpsc;
 
@@ -102,13 +102,62 @@ impl EnigoTextSink {
     const PASTE_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
 }
 
+/// Whether a separating space should be inserted before `next`, given the
+/// trailing character of the previously inserted text.
+///
+/// True only when the previous text ended in a non-whitespace character and
+/// `next` begins with one — so consecutive dictations don't run together
+/// ("hello" + "world" -> "hello world") without doubling a space either side
+/// already provides. With no previous text, or an empty `next`, no space is
+/// added.
+fn needs_leading_space(prev_last: Option<char>, next: &str) -> bool {
+    match (prev_last, next.chars().next()) {
+        (Some(prev), Some(first)) => !prev.is_whitespace() && !first.is_whitespace(),
+        _ => false,
+    }
+}
+
+/// The trailing character of the text `EnigoTextSink::insert` last emitted,
+/// used to decide whether the next utterance needs a leading space (AM-03).
+///
+/// Process-global rather than a field on `EnigoTextSink` because the sink is
+/// a zero-sized unit struct constructed directly as `EnigoTextSink` by its
+/// callers (e.g. the app worker); a single sink drives the focused window in
+/// practice.
+fn last_emitted() -> &'static Mutex<Option<char>> {
+    static LAST: OnceLock<Mutex<Option<char>>> = OnceLock::new();
+    LAST.get_or_init(|| Mutex::new(None))
+}
+
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        // Recover from a poisoned lock rather than propagating a panic — a
+        // stale last-char is harmless.
+        let mut last = last_emitted().lock().unwrap_or_else(|e| e.into_inner());
+
+        // Keep back-to-back utterances from running together (AM-03).
+        let payload = if needs_leading_space(*last, text) {
+            format!(" {text}")
+        } else {
+            text.to_string()
+        };
+
         // Clipboard paste is the default path: it lands text reliably in
         // editors, terminals, and vim, where raw synthetic keystrokes
         // misbehave. `paste_from_clipboard` falls back to typing on its own
         // when the clipboard is unavailable. (AM-08)
-        self.paste_from_clipboard(text)
+        let result = self.paste_from_clipboard(&payload);
+
+        // Remember what we actually emitted so the next utterance can decide
+        // whether it needs a leading space. Only record on success.
+        if result.is_ok() {
+            *last = payload.chars().next_back();
+        }
+        result
     }
 }
 
