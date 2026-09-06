@@ -9,11 +9,11 @@ use iced::widget::{button, column, container, progress_bar, row, scrollable, tex
 use iced::{Alignment, Element, Length};
 
 mod common;
+mod history;
 mod settings;
 mod speakers;
 
 use crate::state::{Message, State};
-use crate::stats;
 use crate::theme::{self, color, spacing, styles, type_scale};
 use common::section;
 
@@ -26,8 +26,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             settings::view(state, scheme),
             transcribe_section(state, scheme),
             speakers::view(state, scheme),
-            history_section(state, scheme),
-            stats_section(state, scheme),
+            history::view(state, scheme),
         ]
         .spacing(spacing::XL),
     )
@@ -101,62 +100,6 @@ fn error_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element
         .into(),
         None => column![].into(),
     }
-}
-
-fn history_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let content: Element<'_, Message> = if state.history.is_empty() {
-        text("No transcriptions yet -- dictate something to see it here.")
-            .size(type_scale::BODY_MEDIUM.size)
-            .font(type_scale::BODY_MEDIUM.font())
-            .color(scheme.on_surface_variant)
-            .into()
-    } else {
-        // Most recent first.
-        let entries: Vec<Element<'_, Message>> = state
-            .history
-            .iter()
-            .rev()
-            .map(|entry| {
-                text(entry.text.clone())
-                    .size(type_scale::BODY_MEDIUM.size)
-                    .font(type_scale::BODY_MEDIUM.font())
-                    .color(scheme.on_surface)
-                    .into()
-            })
-            .collect();
-
-        scrollable(column(entries).spacing(spacing::SM))
-            .height(Length::Fixed(160.0))
-            .style(move |_theme, status| styles::scrollable::rail(scheme, status))
-            .into()
-    };
-
-    section(scheme, "History", content)
-}
-
-fn stats_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let line = |content: String| {
-        text(content)
-            .size(type_scale::BODY_MEDIUM.size)
-            .font(type_scale::BODY_MEDIUM.font())
-            .color(scheme.on_surface)
-    };
-
-    let count_line = line(format!(
-        "Transcriptions this session: {}",
-        state.history.len()
-    ));
-
-    let wpm_line = match stats::average_wpm(&state.history) {
-        Some(wpm) => line(format!("Average speed: {wpm:.0} wpm")),
-        None => line("Average speed: not enough data yet".to_string()),
-    };
-
-    section(
-        scheme,
-        "Stats",
-        column![count_line, wpm_line].spacing(spacing::XS).into(),
-    )
 }
 
 fn transcribe_section<'a>(
