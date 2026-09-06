@@ -167,6 +167,102 @@ mod tests {
         assert_eq!(refined, MockAsr::default().canned.text);
     }
 
+    /// An `AsrBackend` that records the `AsrOptions` it was called with
+    /// (behind a shared `Mutex` the test can inspect afterwards) instead of
+    /// doing any real transcription - proves `Pipeline` actually forwards
+    /// its configured options/language to the backend rather than always
+    /// passing `AsrOptions::default()` (I-03).
+    struct SpyAsr {
+        seen_options: std::sync::Arc<std::sync::Mutex<Option<AsrOptions>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl AsrBackend for SpyAsr {
+        async fn transcribe(&self, _audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript> {
+            *self.seen_options.lock().unwrap() = Some(opts.clone());
+            Ok(Transcript::default())
+        }
+
+        fn id(&self) -> &'static str {
+            "spy-test-asr"
+        }
+    }
+
+    #[tokio::test]
+    async fn with_language_reaches_the_asr_backend() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        let pipeline = Pipeline::new(Box::new(spy), Box::new(NoopRefiner))
+            .with_language(Some("es".to_string()));
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            seen_options.lock().unwrap().as_ref().unwrap().language,
+            Some("es".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn with_asr_options_reaches_the_asr_backend() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        let pipeline =
+            Pipeline::new(Box::new(spy), Box::new(NoopRefiner)).with_asr_options(AsrOptions {
+                language: Some("fr".to_string()),
+            });
+
+        pipeline
+            .run_with_transcript(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            seen_options.lock().unwrap().as_ref().unwrap().language,
+            Some("fr".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn default_pipeline_passes_no_language_hint() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        // No .with_language()/.with_asr_options() call - the default,
+        // pre-I-03 behavior must be unchanged.
+        let pipeline = Pipeline::new(Box::new(spy), Box::new(NoopRefiner));
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            seen_options.lock().unwrap().as_ref().unwrap().language,
+            None
+        );
+    }
+
     /// A `TextRefiner` that sleeps for a fixed delay before returning canned
     /// text - used to exercise `with_refine_timeout`'s fallback path
     /// deterministically, without a real (slow, non-deterministic) backend.
