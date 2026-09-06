@@ -17,10 +17,12 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 mod autostart;
+mod injection;
 mod sound;
 mod speaker;
 
 pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
+pub use injection::InjectionSettings;
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile};
 
