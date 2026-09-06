@@ -23,6 +23,15 @@ use crate::state::{Message, State};
 
 const HUB_TITLE: &str = "whspr";
 
+thread_local! {
+    /// The live mic capture backing the in-app Record button. cpal's stream
+    /// is `!Send`/`!Debug`, so it can't live in `State`; it's only ever
+    /// created, polled, and dropped from `update()` on the main thread, so a
+    /// `thread_local` is sound and keeps the `!Send` type off the State.
+    static RECORDER: std::cell::RefCell<Option<whspr_audio::CaptureHandle>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
@@ -138,11 +147,26 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     text,
                     duration_secs,
                 } => {
+                    // Inject the dictated text into whatever app has focus.
+                    // This runs here in `update()` -- iced's MAIN thread, where
+                    // the winit/AppKit event loop lives -- rather than in the
+                    // background pipeline worker, because on macOS enigo's
+                    // synthetic input hard-traps when called off the main
+                    // thread while an NSApplication is running. A failure
+                    // degrades to an error line instead of crashing.
+                    match whspr_inject::EnigoTextSink.type_text(&text) {
+                        Ok(()) => state.last_error = None,
+                        Err(error) => {
+                            state.last_error = Some(format!("Text injection failed: {error}"));
+                        }
+                    }
+                    // Also surface it on-screen in the Hub's transcription field.
+                    state.transcribed_text = Some(text.clone());
+                    state.transcribe_status = Some("Dictated".to_string());
                     state.history.push(crate::history::HistoryEntry {
                         text,
                         duration_secs: Some(duration_secs),
                     });
-                    state.last_error = None;
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
@@ -190,6 +214,87 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::DiarizeFinished(Err(error)) => {
             state.diarize_status = Some(format!("Diarization failed: {error}"));
+            Task::none()
+        }
+        Message::PickFileToTranscribe => Task::perform(
+            async {
+                rfd::AsyncFileDialog::new()
+                    .add_filter("WAV audio", &["wav"])
+                    .pick_file()
+                    .await
+                    .map(|handle| handle.path().to_path_buf())
+            },
+            Message::FileToTranscribePicked,
+        ),
+        Message::FileToTranscribePicked(None) => Task::none(),
+        Message::FileToTranscribePicked(Some(path)) => {
+            state.transcribe_status = Some(format!("Transcribing {}...", path.display()));
+            state.transcribed_text = None;
+            Task::perform(
+                crate::transcribe_file::run_transcribe(path, state.config.clone()),
+                Message::FileTranscribed,
+            )
+        }
+        Message::FileTranscribed(Ok(text)) => {
+            state.transcribe_status = Some("Transcription complete".to_string());
+            state.transcribed_text = Some(text);
+            Task::none()
+        }
+        Message::FileTranscribed(Err(error)) => {
+            state.transcribe_status = Some(format!("Transcription failed: {error}"));
+            Task::none()
+        }
+        Message::ToggleRecording => {
+            if state.is_recording {
+                // Stop: take the handle, finalize to a 16k buffer, transcribe.
+                state.is_recording = false;
+                state.mic_level = 0.0;
+                let handle = RECORDER.with(|r| r.borrow_mut().take());
+                match handle.map(|h| h.stop()) {
+                    Some(Ok(audio)) => {
+                        state.transcribe_status = Some("Transcribing recording...".to_string());
+                        state.transcribed_text = None;
+                        Task::perform(
+                            crate::transcribe_file::run_transcribe_audio(
+                                audio,
+                                state.config.clone(),
+                            ),
+                            Message::FileTranscribed,
+                        )
+                    }
+                    Some(Err(error)) => {
+                        state.transcribe_status = Some(format!("Recording failed: {error}"));
+                        Task::none()
+                    }
+                    None => Task::none(),
+                }
+            } else {
+                // Start capturing from the selected input device.
+                match whspr_audio::start_capture_on_device(state.selected_device.as_deref()) {
+                    Ok(handle) => {
+                        RECORDER.with(|r| *r.borrow_mut() = Some(handle));
+                        state.is_recording = true;
+                        state.mic_level = 0.0;
+                        state.transcribe_status =
+                            Some("Recording... click Stop to transcribe".to_string());
+                    }
+                    Err(error) => {
+                        state.transcribe_status =
+                            Some(format!("Could not start recording: {error}"));
+                    }
+                }
+                Task::none()
+            }
+        }
+        Message::MicLevelTick => {
+            if state.is_recording {
+                state.mic_level = RECORDER.with(|r| {
+                    r.borrow()
+                        .as_ref()
+                        .map(|h| h.current_level())
+                        .unwrap_or(0.0)
+                });
+            }
             Task::none()
         }
         Message::SpeakerRenameInputChanged(id, draft) => {
@@ -318,7 +423,18 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
         worker_subscription(state),
         flow_bar_animation_subscription(state),
         tray_poll_subscription(state),
+        mic_level_subscription(state),
     ])
+}
+
+/// While the in-app Record button is capturing, ticks ~12x/sec so the view
+/// refreshes `mic_level` for the live meter; idle otherwise.
+fn mic_level_subscription(state: &State) -> iced::Subscription<Message> {
+    if state.is_recording {
+        iced::time::every(std::time::Duration::from_millis(80)).map(|_| Message::MicLevelTick)
+    } else {
+        iced::Subscription::none()
+    }
 }
 
 fn view(state: &State, window: window::Id) -> Element<'_, Message> {

@@ -59,6 +59,21 @@ pub struct State {
     /// scan (e.g. "Diarizing recording.wav..." or an error), shown in the
     /// Speakers section. `None` when nothing is happening.
     pub diarize_status: Option<String>,
+    /// Status/progress text for an in-flight or just-finished file
+    /// transcription (e.g. "Transcribing note.wav..." or an error), shown in
+    /// the Transcribe section. `None` when nothing is happening.
+    pub transcribe_status: Option<String>,
+    /// The text from the most recent "Transcribe a file" run, shown on-screen
+    /// in the Hub. `None` until the user transcribes a file this session.
+    pub transcribed_text: Option<String>,
+    /// Whether the in-app record button is currently capturing. The live
+    /// `CaptureHandle` itself lives in a main-thread `thread_local` in
+    /// `crate::app` (cpal's stream is `!Send`/`!Debug`, so it can't sit in
+    /// this struct); this flag mirrors it for the view + level subscription.
+    pub is_recording: bool,
+    /// Live microphone input level (RMS, ~0.0..1.0) while `is_recording`,
+    /// polled by the `MicLevelTick` subscription and shown as a meter.
+    pub mic_level: f32,
     /// When `pipeline_state` most recently changed. The Flow Bar times its
     /// per-state animation (pulse/sweep phase, fade-in progress -- see
     /// `crate::flow_bar::animate`) from this instant rather than from app
@@ -94,6 +109,10 @@ impl State {
             speaker_db: whspr_config::SpeakerDb::default(),
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,
+            transcribe_status: None,
+            transcribed_text: None,
+            is_recording: false,
+            mic_level: 0.0,
             pipeline_state_since: std::time::Instant::now(),
             tray: None,
         }
@@ -180,6 +199,19 @@ pub enum Message {
     /// A background diarization run finished: the updated speaker db and
     /// how many turns were found, or an error message.
     DiarizeFinished(Result<(whspr_config::SpeakerDb, usize), String>),
+    /// The user clicked "Transcribe a file" -- opens a native file picker.
+    PickFileToTranscribe,
+    /// The transcribe file picker resolved (`None` if the user cancelled).
+    FileToTranscribePicked(Option<std::path::PathBuf>),
+    /// A background file-transcription run finished: the recognized text, or
+    /// an error message. Shown in the Hub's Transcribe section (no injection).
+    FileTranscribed(Result<String, String>),
+    /// The user clicked the in-app Record button: starts capture if idle,
+    /// stops + transcribes if already recording.
+    ToggleRecording,
+    /// A tick of the mic-level clock while recording: refreshes `mic_level`
+    /// from the live capture handle for the meter.
+    MicLevelTick,
     /// The user edited a speaker's rename `text_input`: (speaker id, new
     /// draft text).
     SpeakerRenameInputChanged(String, String),
