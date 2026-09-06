@@ -216,6 +216,10 @@ pub struct Config {
     /// `[sound]` table.
     #[serde(default)]
     pub sound: SoundSettings,
+    /// Text-injection tuning, read from the config file's `[injection]`
+    /// table.
+    #[serde(default)]
+    pub injection: InjectionSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
