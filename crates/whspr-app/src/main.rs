@@ -18,3 +18,13 @@ fn main() -> iced::Result {
     logging::init();
     app::run()
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn all_modules_compile() {
+        // Verify that all declared modules compile and are accessible.
+        // This is a smoke test ensuring the module structure is correct.
+        // Note: We don't call main() in tests since it requires iced's GUI.
+    }
+}

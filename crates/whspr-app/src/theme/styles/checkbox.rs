@@ -67,3 +67,40 @@ pub fn field(scheme: &color::Scheme, status: Status) -> Style {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_checkbox_has_primary_background() {
+        let scheme = &color::LIGHT;
+        let status = Status::Active { is_checked: true };
+        let style = field(scheme, status);
+        assert_eq!(style.icon_color, scheme.on_primary);
+    }
+
+    #[test]
+    fn unchecked_checkbox_has_transparent_background() {
+        let scheme = &color::LIGHT;
+        let status = Status::Active { is_checked: false };
+        let style = field(scheme, status);
+        assert_eq!(style.text_color, Some(scheme.on_surface));
+    }
+
+    #[test]
+    fn checkbox_border_width_is_consistent() {
+        let scheme = &color::LIGHT;
+        let status = Status::Active { is_checked: true };
+        let style = field(scheme, status);
+        assert_eq!(style.border.width, 2.0);
+    }
+
+    #[test]
+    fn disabled_checked_checkbox_uses_on_surface_color() {
+        let scheme = &color::LIGHT;
+        let status = Status::Disabled { is_checked: true };
+        let style = field(scheme, status);
+        assert_eq!(style.icon_color, color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY));
+    }
+}

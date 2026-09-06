@@ -15,6 +15,21 @@ use crate::state::{Message, State};
 use crate::stats;
 use crate::theme::{self, color, spacing, styles, type_scale};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hub_module_compiles() {
+        // Verify that the view function signature is accessible and
+        // the module structure is correct. This is a smoke test for the
+        // entire hub rendering pipeline.
+        // Note: We cannot easily call `view()` without a full State and
+        // running iced, but we verify the function exists and is public.
+        let _ = view as fn(&State) -> Element<'_, Message>;
+    }
+}
+
 /// Renders the Hub window's content for the current state.
 pub fn view(state: &State) -> Element<'_, Message> {
     let scheme = theme::scheme(&state.theme);

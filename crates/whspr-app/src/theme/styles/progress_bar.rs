@@ -12,3 +12,23 @@ pub fn thinking(scheme: &color::Scheme) -> Style {
         border: Border::default(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thinking_progress_bar_uses_tertiary_colors() {
+        let scheme = &color::LIGHT;
+        let style = thinking(scheme);
+        // Verify that the bar and background are from the tertiary palette
+        assert_eq!(style.bar, Background::Color(scheme.tertiary));
+    }
+
+    #[test]
+    fn thinking_progress_bar_has_container_background() {
+        let scheme = &color::LIGHT;
+        let style = thinking(scheme);
+        assert_eq!(style.background, Background::Color(scheme.tertiary_container));
+    }
+}

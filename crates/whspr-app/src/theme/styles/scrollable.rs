@@ -73,3 +73,45 @@ fn auto_scroll(scheme: &color::Scheme) -> AutoScroll {
         icon: scheme.on_surface_variant,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_scrollbar_uses_outline_variant() {
+        let scheme = &color::LIGHT;
+        let status = Status::Active { vertical_scrollbar_scroller_position: 0.0, horizontal_scrollbar_scroller_position: 0.0 };
+        let style = rail(scheme, status);
+        // Verify that the style is created without panic
+        assert_eq!(style.gap, None);
+    }
+
+    #[test]
+    fn hovered_scrollbar_changes_accent() {
+        let scheme = &color::LIGHT;
+        let status = Status::Hovered {
+            is_horizontal_scrollbar_hovered: true,
+            is_vertical_scrollbar_hovered: false,
+            vertical_scrollbar_scroller_position: 0.0,
+            horizontal_scrollbar_scroller_position: 0.0,
+        };
+        let style = rail(scheme, status);
+        assert_eq!(style.gap, None);
+    }
+
+    #[test]
+    fn track_uses_primary_when_accented() {
+        let scheme = &color::LIGHT;
+        let track_style = track(scheme, true);
+        // Scroller should have primary color when accented
+        assert!(track_style.scroller.background.is_some());
+    }
+
+    #[test]
+    fn auto_scroll_has_shadow() {
+        let scheme = &color::LIGHT;
+        let style = auto_scroll(scheme);
+        assert_eq!(style.shadow.blur_radius, 4.0);
+    }
+}

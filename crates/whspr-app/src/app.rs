@@ -21,6 +21,22 @@ use iced::{window, Element, Task};
 use crate::config_ui;
 use crate::state::{Message, State};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hub_title_is_correct() {
+        assert_eq!(HUB_TITLE, "whspr");
+    }
+
+    #[test]
+    fn message_enum_exists() {
+        // Verify that Message type is accessible from this module
+        let _ = std::any::type_name::<Message>();
+    }
+}
+
 const HUB_TITLE: &str = "whspr";
 
 pub fn run() -> iced::Result {

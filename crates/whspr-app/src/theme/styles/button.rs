@@ -147,3 +147,49 @@ fn disabled(scheme: &color::Scheme, base: Style) -> Style {
         ..base
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filled_button_has_primary_background() {
+        let scheme = &color::LIGHT;
+        let style = filled(scheme, Status::Active);
+        assert!(style.background.is_some());
+        assert_eq!(style.text_color, scheme.on_primary);
+    }
+
+    #[test]
+    fn tonal_button_has_secondary_container_background() {
+        let scheme = &color::LIGHT;
+        let style = tonal(scheme, Status::Active);
+        assert!(style.background.is_some());
+        assert_eq!(style.text_color, scheme.on_secondary_container);
+    }
+
+    #[test]
+    fn outlined_button_has_no_background() {
+        let scheme = &color::LIGHT;
+        let style = outlined(scheme, Status::Active);
+        assert!(style.background.is_none());
+        assert_eq!(style.text_color, scheme.primary);
+    }
+
+    #[test]
+    fn text_button_has_no_background() {
+        let scheme = &color::LIGHT;
+        let style = text(scheme, Status::Active);
+        assert!(style.background.is_none());
+        assert_eq!(style.text_color, scheme.primary);
+    }
+
+    #[test]
+    fn filled_button_disabled_has_on_surface_color() {
+        let scheme = &color::LIGHT;
+        let style = filled(scheme, Status::Disabled);
+        assert!(style.background.is_some());
+        // Disabled buttons use on_surface color, not their original color
+        assert_eq!(style.text_color, color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY));
+    }
+}

@@ -185,3 +185,32 @@ mod platform {
 }
 
 pub use platform::{Action, Handle};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn action_enum_has_expected_variants() {
+        let show_hub = Action::ShowHub;
+        let quit = Action::Quit;
+        assert_eq!(show_hub, Action::ShowHub);
+        assert_eq!(quit, Action::Quit);
+        assert_ne!(show_hub, quit);
+    }
+
+    #[test]
+    fn action_is_clone_and_copy() {
+        let action = Action::ShowHub;
+        let _copy = action;
+        let _clone = action.clone();
+        assert_eq!(action, Action::ShowHub);
+    }
+
+    #[test]
+    fn action_implements_eq() {
+        assert!(Action::ShowHub == Action::ShowHub);
+        assert!(Action::Quit == Action::Quit);
+        assert!(Action::ShowHub != Action::Quit);
+    }
+}

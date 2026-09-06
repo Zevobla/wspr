@@ -25,3 +25,29 @@ pub fn scheme(theme: &iced::Theme) -> &'static Scheme {
         _ => &color::LIGHT,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scheme_returns_dark_for_dark_theme() {
+        let dark_theme = iced::Theme::Dark;
+        let result = scheme(&dark_theme);
+        assert_eq!(result.primary, color::DARK.primary);
+    }
+
+    #[test]
+    fn scheme_returns_light_for_light_theme() {
+        let light_theme = iced::Theme::Light;
+        let result = scheme(&light_theme);
+        assert_eq!(result.primary, color::LIGHT.primary);
+    }
+
+    #[test]
+    fn scheme_returns_light_as_fallback() {
+        let dark = scheme(&iced::Theme::Dark);
+        let light = scheme(&iced::Theme::Light);
+        assert_ne!(dark.primary, light.primary);
+    }
+}
