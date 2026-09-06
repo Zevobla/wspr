@@ -281,6 +281,35 @@ impl CaptureHandle {
     }
 }
 
+/// Concrete, OS-specific next step for a `start_capture` failure that's
+/// consistent with "no microphone" or "access denied" - a missing/
+/// unplugged device and a denied OS permission prompt look identical from
+/// cpal's point of view, so this same guidance covers both (C-13: name a
+/// recovery step, not just "capture failed").
+const MIC_RECOVERY_STEPS: &str = "grant microphone access (macOS: System \
+    Settings → Privacy & Security → Microphone; Linux: check your audio \
+    server/device permissions) and reconnect an input device, then retry";
+
+/// Builds the error for `host.default_input_device()` returning `None` -
+/// no cpal error to wrap here, just an absent device.
+fn no_input_device_error() -> WhsprError {
+    WhsprError::Audio(format!(
+        "no microphone available or access denied: {MIC_RECOVERY_STEPS}"
+    ))
+}
+
+/// Builds the error for a cpal call that failed on an otherwise-present
+/// input device (`default_input_config`, `build_input_stream`, `play`).
+/// These failures are the ones a denied OS mic-permission prompt actually
+/// surfaces as (unlike e.g. an unsupported sample format, which is a real
+/// device with a genuine format mismatch, not a permission problem).
+fn mic_access_error(action: &str, cause: impl std::fmt::Display) -> WhsprError {
+    WhsprError::Audio(format!(
+        "failed to {action}: {cause} (no microphone available or access \
+         denied: {MIC_RECOVERY_STEPS})"
+    ))
+}
+
 /// Starts recording from the default input device.
 ///
 /// Returns a `CaptureHandle` that can be stopped to retrieve the recorded audio
@@ -290,12 +319,12 @@ pub fn start_capture() -> Result<CaptureHandle> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
-        .ok_or_else(|| WhsprError::Audio("no default input device found".to_string()))?;
+        .ok_or_else(no_input_device_error)?;
 
     // Get the default config
     let config = device
         .default_input_config()
-        .map_err(|e| WhsprError::Audio(format!("failed to get default input config: {}", e)))?;
+        .map_err(|e| mic_access_error("get default input config", e))?;
 
     let sample_rate = config.sample_rate();
     let stream_config: StreamConfig = config.into();
@@ -317,7 +346,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
                 |err| tracing::error!("cpal input stream error: {}", err),
                 None,
             )
-            .map_err(|e| WhsprError::Audio(format!("failed to build F32 stream: {}", e)))?,
+            .map_err(|e| mic_access_error("build F32 input stream", e))?,
         cpal::SampleFormat::I16 => {
             device
                 .build_input_stream(
@@ -333,7 +362,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
                     |err| tracing::error!("cpal input stream error: {}", err),
                     None,
                 )
-                .map_err(|e| WhsprError::Audio(format!("failed to build I16 stream: {}", e)))?
+                .map_err(|e| mic_access_error("build I16 input stream", e))?
         }
         cpal::SampleFormat::U16 => {
             device
@@ -351,7 +380,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
                     |err| tracing::error!("cpal input stream error: {}", err),
                     None,
                 )
-                .map_err(|e| WhsprError::Audio(format!("failed to build U16 stream: {}", e)))?
+                .map_err(|e| mic_access_error("build U16 input stream", e))?
         }
         _ => {
             return Err(WhsprError::Audio(format!(
@@ -364,7 +393,7 @@ pub fn start_capture() -> Result<CaptureHandle> {
     // Start recording
     stream
         .play()
-        .map_err(|e| WhsprError::Audio(format!("failed to start stream: {}", e)))?;
+        .map_err(|e| mic_access_error("start capture stream", e))?;
 
     Ok(CaptureHandle {
         stream,
