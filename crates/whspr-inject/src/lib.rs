@@ -288,6 +288,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn needs_leading_space_only_between_two_non_whitespace_boundaries() {
+        // No previous text: never add a leading space.
+        assert!(!needs_leading_space(None, "world"));
+        // Two word characters back to back: insert a separating space.
+        assert!(needs_leading_space(Some('o'), "world"));
+        // Previous text already ended in whitespace: don't double it.
+        assert!(!needs_leading_space(Some(' '), "world"));
+        assert!(!needs_leading_space(Some('\n'), "world"));
+        // Next text already starts with whitespace: don't double it.
+        assert!(!needs_leading_space(Some('o'), " world"));
+        // Empty next: nothing to separate.
+        assert!(!needs_leading_space(Some('o'), ""));
+        // Punctuation is non-whitespace, so a following sentence is spaced.
+        assert!(needs_leading_space(Some('.'), "Next"));
+    }
+
     /// `EnigoTextSink::type_text` (the clipboard-unavailable fallback)
     /// synthesizes real keystrokes via enigo into whatever window currently
     /// has OS focus. That needs an active display session and (on macOS)
