@@ -16,8 +16,10 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+mod autostart;
 mod speaker;
 
+pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
 pub use speaker::{SpeakerDb, SpeakerProfile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -202,6 +204,10 @@ pub struct Config {
     /// `[normalize]` table.
     #[serde(default)]
     pub normalize: NormalizeSettings,
+    /// Launch-at-login setting, read from the config file's `[autostart]`
+    /// table.
+    #[serde(default)]
+    pub autostart: AutostartSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
