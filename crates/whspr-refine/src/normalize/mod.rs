@@ -1,11 +1,26 @@
-//! Rule-based text normalization: numbers written as digits, dates unified
-//! to `YYYY-MM-DD`, times unified to 24-hour `HH:MM`. Pure, deterministic
-//! string transforms - no LLM, no network - each independently toggleable
-//! via `whspr_config::NormalizeSettings`.
+//! Rule-based text normalization. Pure, deterministic string transforms - no
+//! LLM, no network - toggleable via `whspr_config::NormalizeSettings`:
+//!   - `dates`  -> dates unified to `YYYY-MM-DD`
+//!   - `times`  -> times unified to 24-hour `HH:MM`
+//!   - `numbers` gates the number-word pass *and* the extended token passes
+//!     it feeds: currency (F-13), percents/fractions (F-14), phone numbers
+//!     (F-15), emails (F-16), URLs (F-17), acronym uppercasing (F-18), and
+//!     consecutive-duplicate-word collapse (F-19).
+//!
+//! The extended passes share the existing `numbers` toggle rather than
+//! introducing new config fields, so this module stays self-contained and
+//! `whspr-config` is untouched.
 
+mod abbreviations;
+mod currency;
 mod dates;
+mod dedup;
+mod emails;
 mod numbers;
+mod percents;
+mod phones;
 mod times;
+mod urls;
 
 use async_trait::async_trait;
 use whspr_config::NormalizeSettings;
@@ -50,6 +65,11 @@ impl TextRefiner for NormalizingRefiner {
 /// time. (Each pass also independently recognizes number words that are
 /// already digits, so this order isn't load-bearing for correctness - it
 /// just avoids doing the same work twice.)
+///
+/// The extended `numbers`-gated passes then run in dependency order: the
+/// number-word pass first (so "five dollars" is already "5 dollars" for the
+/// currency pass), emails before URLs (so an address is assembled before its
+/// bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     let mut text = text.to_string();
     if settings.dates {
@@ -60,6 +80,13 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     }
     if settings.numbers {
         text = numbers::normalize_numbers(&text);
+        text = currency::normalize_currency(&text);
+        text = percents::normalize_percents(&text);
+        text = phones::normalize_phones(&text);
+        text = emails::normalize_emails(&text);
+        text = urls::normalize_urls(&text);
+        text = abbreviations::normalize_abbreviations(&text);
+        text = dedup::collapse_duplicate_words(&text);
     }
     text
 }
@@ -85,6 +112,20 @@ pub(super) fn split_punct(word: &str) -> (&str, &str, &str) {
         .unwrap_or(0);
     let (core, suffix) = rest.split_at(core_end);
     (core, prefix, suffix)
+}
+
+/// Whether `core` (any case) is a recognized top-level domain. Used by the
+/// email and URL passes to decide that a dotted word run really is a domain.
+/// A curated list is used rather than a "2..=6 letters" shape test, so an
+/// ordinary phrase like "john dot doe" isn't mistaken for a `john.doe` domain.
+pub(super) fn is_tld(core: &str) -> bool {
+    const TLDS: &[&str] = &[
+        "com", "org", "net", "edu", "gov", "mil", "int", "io", "co", "ai", "dev", "app", "me",
+        "info", "biz", "name", "pro", "xyz", "site", "tech", "store", "blog", "ru", "us", "uk",
+        "ca", "de", "fr", "es", "it", "nl", "jp", "cn", "in", "br", "au", "eu", "tv", "cc", "ly",
+        "рф",
+    ];
+    TLDS.contains(&core.to_lowercase().as_str())
 }
 
 #[cfg(test)]
@@ -139,6 +180,44 @@ mod tests {
             .expect("refine should succeed");
 
         assert_eq!(result, "meet at 14:30 on 2026-09-05, bring 25 copies");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_extended_numeric_passes() {
+        // Proves the currency (F-13) and phone (F-15) passes run through the
+        // real refiner path, and that dedup (F-19) collapses "the the".
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine(
+                "the the meeting costs five dollars call 555 123 4567",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "the meeting costs $5 call 5551234567");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_extended_token_passes() {
+        // Proves email (F-16), URL (F-17), percent (F-14) and acronym (F-18)
+        // passes all run, in the right order, through the real refiner path.
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine(
+                "email me at john dot doe at example dot com visit example dot com \
+                 slash help fifty percent nasa",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(
+            result,
+            "email me at john.doe@example.com visit example.com/help 50 % NASA"
+        );
     }
 
     #[tokio::test]
