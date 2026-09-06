@@ -56,10 +56,10 @@
 //!   only one segmentation model, so this filename is fixed.
 //! - a speaker-embedding model, whichever file `embedding_choice.filename()`
 //!   names (see `whspr_config::SpeakerEmbeddingChoice`) -- **not** a single
-//!   hardcoded filename, so the CLI/GUI can offer a real menu once wave3-nix
-//!   provisions more than one embedding model. The default choice,
-//!   `embedding-campplus.onnx`, is a WeSpeaker CAM++ model trained on
-//!   VoxCeleb (English); source: rename
+//!   hardcoded filename, so the CLI/GUI can offer a real menu across
+//!   whichever embedding checkpoint(s) you've placed in `model_dir`. The
+//!   default choice, `embedding-campplus.onnx`, is a WeSpeaker CAM++ model
+//!   trained on VoxCeleb (English); source: rename
 //!   `wespeaker_en_voxceleb_CAM++.onnx` downloaded from
 //!   <https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx>
 //!   (sherpa-onnx model zoo, `speaker-recongition-models` release — note the
@@ -96,12 +96,13 @@ impl SherpaDiarizer {
     /// Resolves the model directory to use: an explicit path (e.g. from a
     /// `--model-dir` flag or `whspr-config`'s `[speaker].model_dir`) takes
     /// priority. If none is given, falls back to the `SPEAKER_MODEL_DIR`
-    /// environment variable, which the project's Nix devShell sets to a
-    /// directory of pinned, reproducibly-fetched checkpoints (see
-    /// `nix/models.nix`) so nobody needs to download models by hand.
-    /// Mirrors `whspr_asr::WhisperLocal::resolve_model_path`'s identical
-    /// reasoning: this is a build/environment-provided path, not a
-    /// user-changeable app setting, so reading it here doesn't run afoul of
+    /// environment variable. whspr is bring-your-own-model — it doesn't
+    /// ship or fetch these checkpoints for you, so point this env var (or
+    /// `[speaker].model_dir`) at a directory containing the files this
+    /// module's doc comment lists. Mirrors
+    /// `whspr_asr::WhisperLocal::resolve_model_path`'s identical reasoning:
+    /// this is a deliberate, explicit escape hatch, not a user-changeable
+    /// app setting, so reading it here doesn't run afoul of
     /// `whspr-config`'s "no env vars" rule.
     ///
     /// Returns `None` if neither is available; callers should treat that as

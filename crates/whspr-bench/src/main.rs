@@ -31,8 +31,9 @@ async fn main() -> Result<()> {
             let model_path =
                 WhisperLocal::resolve_model_path(args.model.clone()).ok_or_else(|| {
                     anyhow::anyhow!(
-                        "--asr whisper-local requires a model: pass --model <path>, or run inside \
-                     `nix develop` where WHISPER_MODEL_PATH is set automatically"
+                        "--asr whisper-local requires a model: pass --model <path>, or set the \
+                         WHISPER_MODEL_PATH environment variable to a GGML model you've \
+                         downloaded (whspr doesn't ship or fetch one for you)"
                     )
                 })?;
             Box::new(WhisperLocal::new(model_path))

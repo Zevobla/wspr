@@ -15,12 +15,12 @@ use whspr_diarize::SherpaDiarizer;
 /// Builds a diarization backend from config and command-line flags, falling
 /// back to `MockDiarizer` when no model directory is available from
 /// `--model-dir`, the config file's `[speaker].model_dir`, or the
-/// `SPEAKER_MODEL_DIR` environment variable the project's Nix devShell/
-/// package sets (see `SherpaDiarizer::resolve_model_dir`) -- mirrors
-/// `main::build_asr_backend`'s "explicit opt-in, else a deterministic
-/// default" reasoning: a real `SherpaDiarizer` needs model files that
-/// aren't guaranteed present, so it's never constructed unless a model
-/// directory is available from *some* source.
+/// `SPEAKER_MODEL_DIR` environment variable (see
+/// `SherpaDiarizer::resolve_model_dir`) -- mirrors `main::build_asr_backend`'s
+/// "explicit opt-in, else a deterministic default" reasoning: a real
+/// `SherpaDiarizer` needs model files that aren't guaranteed present (whspr
+/// is bring-your-own-model, so nothing provisions them), so it's never
+/// constructed unless a model directory is available from *some* source.
 ///
 /// The embedding model itself is never hardcoded either: `--embedding`
 /// (falling back to `config.speaker.embedding_model`) picks a

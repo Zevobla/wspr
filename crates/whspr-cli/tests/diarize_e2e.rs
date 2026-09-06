@@ -18,10 +18,11 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
 
     let output = Command::cargo_bin("whspr")
         .unwrap()
-        // The dev shell sets SPEAKER_MODEL_DIR to a real, pinned model
-        // directory (see SherpaDiarizer::resolve_model_dir) -- clear it so
-        // this test exercises the MockDiarizer fallback it's named for,
-        // regardless of what environment `cargo test` happens to run in.
+        // SPEAKER_MODEL_DIR (see SherpaDiarizer::resolve_model_dir) is a
+        // bring-your-own-model env var a developer's own shell might have
+        // set; clear it so this test exercises the MockDiarizer fallback
+        // it's named for, regardless of what environment `cargo test`
+        // happens to run in.
         .env_remove("SPEAKER_MODEL_DIR")
         .args([
             "diarize",
