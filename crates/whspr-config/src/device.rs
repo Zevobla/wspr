@@ -16,6 +16,17 @@ pub struct DeviceSettings {
     /// Whether to record the focused window's app name for per-app stats and
     /// styling. Default true — enables app-specific context for dictations.
     pub active_window: bool,
+    /// Whether to allow Bluetooth audio sources (e.g. wireless microphones,
+    /// headsets). Default true — enables broad device compatibility.
+    pub bluetooth_source: bool,
+    /// Whether to allow virtual audio sources (e.g. software loopback,
+    /// virtual mics). Default true — enables use with screenshare and
+    /// streaming tools.
+    pub virtual_source: bool,
+    /// Whether the tray icon remains static and doesn't flicker on recording
+    /// state changes. Default true — reduces visual noise for always-visible
+    /// tray icons.
+    pub tray_static: bool,
 }
 
 impl Default for DeviceSettings {
@@ -23,6 +34,9 @@ impl Default for DeviceSettings {
         Self {
             device_hotplug: true,
             active_window: true,
+            bluetooth_source: true,
+            virtual_source: true,
+            tray_static: true,
         }
     }
 }
@@ -34,12 +48,15 @@ mod tests {
     use crate::{load_from, Config};
 
     #[test]
-    fn device_settings_defaults_both_true() {
+    fn device_settings_defaults_all_true() {
         assert_eq!(
             DeviceSettings::default(),
             DeviceSettings {
                 device_hotplug: true,
                 active_window: true,
+                bluetooth_source: true,
+                virtual_source: true,
+                tray_static: true,
             }
         );
     }
@@ -67,11 +84,17 @@ mod tests {
         writeln!(file, "[device]").expect("failed to write device header");
         writeln!(file, "device-hotplug = false").expect("failed to write device-hotplug");
         writeln!(file, "active-window = false").expect("failed to write active-window");
+        writeln!(file, "bluetooth-source = false").expect("failed to write bluetooth-source");
+        writeln!(file, "virtual-source = false").expect("failed to write virtual-source");
+        writeln!(file, "tray-static = false").expect("failed to write tray-static");
         drop(file);
 
         let cfg = load_from(Some(temp_dir.path()));
         assert!(!cfg.device.device_hotplug);
         assert!(!cfg.device.active_window);
+        assert!(!cfg.device.bluetooth_source);
+        assert!(!cfg.device.virtual_source);
+        assert!(!cfg.device.tray_static);
     }
 
     #[test]
