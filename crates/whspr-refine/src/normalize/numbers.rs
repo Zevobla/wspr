@@ -1,8 +1,9 @@
 //! F-10: number words (English and Russian cardinals) written as digits.
 //!
-//! Supports compounds up to the hundreds/thousands ("one hundred and
-//! twenty five", "двести тридцать" -> "230"). Scoped deliberately: no
-//! millions+, no ordinals ("twenty-fifth", "двадцать пятого"), no fractions.
+//! Supports compounds up to the millions ("one hundred and twenty five",
+//! "двести тридцать" -> "230", "восемь миллионов триста сорок тысяч" ->
+//! "8340000"). Scoped deliberately: no billions+, no ordinals
+//! ("twenty-fifth", "двадцать пятого"). Fractions live in the percents pass.
 
 use super::split_punct;
 
@@ -54,6 +55,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "ninety" => Unit(90),
         "hundred" => Scale(100),
         "thousand" => Scale(1000),
+        "million" => Scale(1_000_000),
         // Russian ones/teens/tens
         "ноль" => Unit(0),
         "один" | "одна" | "одно" => Unit(1),
@@ -94,6 +96,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "восемьсот" => Unit(800),
         "девятьсот" => Unit(900),
         "тысяча" | "тысячи" | "тысяч" => Scale(1000),
+        "миллион" | "миллиона" | "миллионов" => Scale(1_000_000),
         _ => return None,
     })
 }
