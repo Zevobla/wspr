@@ -403,4 +403,34 @@ mod tests {
         let event = rx.blocking_recv().expect("channel closed with no event");
         assert_eq!(event, HotkeyEvent::Pressed);
     }
+
+    /// D-13: dropping a `GlobalHotkeyListener` must release the OS-level
+    /// hotkey, so the exact same combo can be registered again afterward. If
+    /// `Drop` didn't unregister, the second registration would fail because
+    /// the combo is still held by the OS.
+    ///
+    /// Registering a global hotkey needs a live OS hotkey manager (a display
+    /// session, and on some platforms specific permissions), so this can't
+    /// run hermetically — it's `#[ignore]`d for CI and run manually with
+    /// `cargo test -p whspr-inject -- --ignored`. It also skips cleanly if
+    /// the environment can't register a hotkey at all (an environment
+    /// limitation, not a D-13 failure).
+    #[test]
+    #[ignore = "needs a live OS hotkey manager (display/permissions); run manually"]
+    fn dropping_listener_frees_the_hotkey_for_reregistration() {
+        let first = match GlobalHotkeyListener::new() {
+            Ok(listener) => listener,
+            Err(e) => {
+                eprintln!("skipping: no hotkey manager available in this environment: {e}");
+                return;
+            }
+        };
+        // Dropping runs the `Drop` impl, which unregisters the combo.
+        drop(first);
+
+        // Registering the same combo again only succeeds if it was freed.
+        GlobalHotkeyListener::new().expect(
+            "re-registering the hotkey after drop should succeed once Drop has released it",
+        );
+    }
 }
