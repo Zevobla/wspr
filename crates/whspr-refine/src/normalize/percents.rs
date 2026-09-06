@@ -20,6 +20,17 @@ fn is_percent_word(core: &str) -> bool {
     )
 }
 
+/// Russian words for "a half" that stand alone as the fraction 1/2 even
+/// without a leading cardinal ("половина" -> "1/2"). Only the половина family
+/// gets this default-1 treatment; a bare "четверть"/"треть" is left alone
+/// because it is usually a real word ("четверть часа"), not a fraction.
+fn is_standalone_half(core: &str) -> bool {
+    matches!(
+        core.to_lowercase().as_str(),
+        "половина" | "половины" | "половину"
+    )
+}
+
 /// Maps a fraction-denominator word to its denominator value. Covers the
 /// English ordinals plus the two Russian fraction-denominator forms that
 /// actually get spoken: the feminine `-ая`/`-ья` ("одна вторая" -> 1/2) and
@@ -67,6 +78,12 @@ pub fn normalize_percents(text: &str) -> String {
                 i = unit + 1;
                 continue;
             }
+        } else if is_standalone_half(cores[i]) {
+            // "половина" with no leading cardinal is the fraction 1/2.
+            let (_, prefix, suffix) = split_punct(words[i]);
+            out.push(format!("{prefix}1/2{suffix}"));
+            i += 1;
+            continue;
         }
         out.push(words[i].to_string());
         i += 1;
