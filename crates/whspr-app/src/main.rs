@@ -8,6 +8,7 @@ mod hub;
 mod speakers;
 mod state;
 mod stats;
+mod theme;
 mod worker;
 
 fn main() -> iced::Result {
