@@ -11,6 +11,7 @@ mod speakers;
 mod state;
 mod stats;
 mod theme;
+mod tray;
 mod worker;
 
 fn main() -> iced::Result {
