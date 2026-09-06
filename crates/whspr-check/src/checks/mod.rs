@@ -7,6 +7,7 @@ pub mod architecture;
 pub mod build;
 pub mod cli;
 pub mod config;
+pub mod copyleft;
 pub mod docs;
 pub mod git_growth;
 pub mod license;
@@ -42,12 +43,14 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     ));
 
     results.push(license::check_license_file_present(root));
+    results.push(license::check_copyright_in_license(root));
     results.extend(license::check_declared_license(root));
     results.push(license::check_readme_names_license(root));
     results.push(license::check_model_weights_ignored_and_absent(root));
     results.push(license::check_no_secrets_in_history(root));
     results.push(license::check_dependency_license_inventory(root));
     results.push(license::check_no_copyleft_dependencies(root));
+    results.push(copyleft::check_no_copyleft_crates(root));
 
     results.push(docs::check_readme_architecture(root));
     results.push(docs::check_readme_settings_table(root));
@@ -55,6 +58,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(docs::check_readme_dependencies_documented(root));
     results.push(docs::check_readme_build_steps_documented(root));
     results.push(docs::check_readme_honesty(root));
+    results.push(docs::check_uniqueness_md_present(root));
 
     results.push(git_growth::check_commit_count(root));
     results.extend(git_growth::check_commit_timing(root));
@@ -79,9 +83,11 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
 
     results.push(config::check_config_created_on_first_run());
     results.push(config::check_config_format_is_toml());
+    results.push(config::check_config_sections(root));
     results.push(config::check_config_in_platform_dir(root));
 
     results.push(slop::check_stub_function_count(root));
+    results.push(slop::check_no_dead_code_allows(root));
     results.push(slop::check_unused_deps(root));
 
     results.push(architecture::check_file_size_sanity(root));
