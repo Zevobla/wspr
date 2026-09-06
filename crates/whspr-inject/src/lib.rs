@@ -19,8 +19,11 @@ pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
 
 /// Listens for the configured global hotkey via the OS-level hotkey APIs.
 pub struct GlobalHotkeyListener {
-    // We store the manager to keep it alive for the lifetime of the listener
-    _manager: Arc<GlobalHotKeyManager>,
+    // Kept alive for the listener's lifetime, and used on drop to release
+    // the hotkey.
+    manager: Arc<GlobalHotKeyManager>,
+    // The registered combo, remembered so `Drop` can unregister exactly it.
+    hotkey: HotKey,
 }
 
 impl GlobalHotkeyListener {
@@ -38,7 +41,8 @@ impl GlobalHotkeyListener {
             .map_err(|e| WhsprError::Inject(format!("failed to register global hotkey: {}", e)))?;
 
         Ok(GlobalHotkeyListener {
-            _manager: Arc::new(manager),
+            manager: Arc::new(manager),
+            hotkey,
         })
     }
 }
@@ -46,6 +50,17 @@ impl GlobalHotkeyListener {
 impl Default for GlobalHotkeyListener {
     fn default() -> Self {
         Self::new().expect("failed to initialize GlobalHotkeyListener")
+    }
+}
+
+impl Drop for GlobalHotkeyListener {
+    /// Releases the OS-level hotkey when the listener is dropped (app exit or
+    /// teardown), so the combo isn't left registered with the system after
+    /// the process goes away (D-13). Best-effort: a failure here isn't
+    /// actionable during teardown and `Drop` must never panic, so the result
+    /// is ignored.
+    fn drop(&mut self) {
+        let _ = self.manager.unregister(self.hotkey);
     }
 }
 
