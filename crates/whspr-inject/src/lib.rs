@@ -88,37 +88,27 @@ impl HotkeyListener for GlobalHotkeyListener {
     }
 }
 
-/// Delivers text to the focused application via synthetic keystrokes
-/// (falling back to clipboard paste for long text).
+/// Delivers text to the focused application by pasting via the clipboard —
+/// the reliable default, since it lands text in editors, terminals, and vim
+/// where raw synthetic keystrokes misbehave — falling back to typing only
+/// when the clipboard is unavailable.
 pub struct EnigoTextSink;
 
 impl EnigoTextSink {
-    /// The threshold (in characters) above which we switch from keystrokes to clipboard paste
-    const LONG_TEXT_THRESHOLD: usize = 200;
-
     /// How long to wait after sending the paste keystroke before restoring
     /// the user's clipboard. The synthesized Cmd+V/Ctrl+V is delivered
     /// asynchronously by the OS, so we give the target app a moment to read
     /// the clipboard before putting the original contents back.
     const PASTE_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
-
-    /// Decides which injection strategy `insert` should use for `text`.
-    /// Split out as a pure function so the branching can be unit tested
-    /// without actually driving enigo or the clipboard.
-    fn use_clipboard_paste(text: &str) -> bool {
-        text.len() > Self::LONG_TEXT_THRESHOLD
-    }
 }
 
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
-        if Self::use_clipboard_paste(text) {
-            // For long text, use clipboard paste
-            self.paste_from_clipboard(text)
-        } else {
-            // For short text, use direct keystrokes
-            self.type_text(text)
-        }
+        // Clipboard paste is the default path: it lands text reliably in
+        // editors, terminals, and vim, where raw synthetic keystrokes
+        // misbehave. `paste_from_clipboard` falls back to typing on its own
+        // when the clipboard is unavailable. (AM-08)
+        self.paste_from_clipboard(text)
     }
 }
 
@@ -249,35 +239,26 @@ mod tests {
         );
     }
 
-    #[test]
-    fn use_clipboard_paste_switches_at_the_length_threshold() {
-        let at_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD);
-        let over_threshold = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
-
-        assert!(!EnigoTextSink::use_clipboard_paste(""));
-        assert!(!EnigoTextSink::use_clipboard_paste(&at_threshold));
-        assert!(EnigoTextSink::use_clipboard_paste(&over_threshold));
-    }
-
-    /// `EnigoTextSink::insert` for short text synthesizes real keystrokes
-    /// via enigo into whatever window currently has OS focus. That needs an
-    /// active display session and (on macOS) Accessibility permission
-    /// granted to the test process, and it types into whatever happens to
-    /// be focused when the test runs — not something to fire unattended in
-    /// CI. Kept here, `#[ignore]`d, so a developer with a real desktop
-    /// session and a scratch text field focused can run it deliberately via
+    /// `EnigoTextSink::type_text` (the clipboard-unavailable fallback)
+    /// synthesizes real keystrokes via enigo into whatever window currently
+    /// has OS focus. That needs an active display session and (on macOS)
+    /// Accessibility permission granted to the test process, and it types
+    /// into whatever happens to be focused when the test runs — not
+    /// something to fire unattended in CI. Kept here, `#[ignore]`d, so a
+    /// developer with a real desktop session and a scratch text field
+    /// focused can run it deliberately via
     /// `cargo test -p whspr-inject -- --ignored`.
     #[test]
     #[ignore = "types real keystrokes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
     fn type_text_sends_real_keystrokes() {
         let sink = EnigoTextSink;
-        sink.insert("whspr-inject manual keystroke test")
-            .expect("insert should succeed with a display and Accessibility permission granted");
+        sink.type_text("whspr-inject manual keystroke test")
+            .expect("type_text should succeed with a display and Accessibility permission granted");
     }
 
-    /// `EnigoTextSink::insert` for long text saves the current clipboard,
-    /// stages the text, simulates a real paste keystroke (Cmd+V / Ctrl+V)
-    /// into whatever window has OS focus, then restores the original
+    /// `EnigoTextSink::insert` (the default paste path) saves the current
+    /// clipboard, stages the text, simulates a real paste keystroke (Cmd+V /
+    /// Ctrl+V) into whatever window has OS focus, then restores the original
     /// clipboard. Same non-hermetic constraints as
     /// `type_text_sends_real_keystrokes` above; the save/restore logic
     /// itself is covered hermetically by the `stage_and_paste_*` tests.
@@ -285,8 +266,7 @@ mod tests {
     #[ignore = "pastes into whatever window has OS focus; needs a display + Accessibility permission, run manually"]
     fn paste_from_clipboard_sends_real_paste_keystroke() {
         let sink = EnigoTextSink;
-        let long_text = "x".repeat(EnigoTextSink::LONG_TEXT_THRESHOLD + 1);
-        sink.insert(&long_text)
+        sink.insert("whspr-inject manual paste test")
             .expect("insert should succeed with a display and Accessibility permission granted");
     }
 
