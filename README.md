@@ -257,17 +257,16 @@ backend the example above exercises. It proves the *database* logic
 never actually listens to the audio, it isn't demonstrating real
 acoustic voice recognition.
 
-For real acoustic diarization, point `SPEAKER_MODEL_DIR` (or
-`--model-dir`) at a directory containing `segmentation.onnx` plus the
-chosen embedding model file; `nix build .#speaker-models` builds exactly
-that directory from pinned, reproducibly-fetched sherpa-onnx checkpoints
-(see `nix/models.nix`) — no manual download needed. The project's
-`nix develop` shell already sets `SPEAKER_MODEL_DIR` to this, so
-`whspr diarize` uses the real sherpa backend by default inside the dev
-shell; feed it a real multi-speaker recording there (not a silent test
-fixture — the real segmentation model finds zero turns in silence, which
-is why the offline demo above deliberately uses the mock fallback) to see
-genuine speaker-turn segmentation and voice-based re-identification.
+For real acoustic diarization, whspr is bring-your-own-model: it doesn't
+fetch or ship these checkpoints for you. Download `segmentation.onnx`
+plus whichever embedding checkpoint(s) you want into one directory —
+`crates/whspr-diarize/src/lib.rs`'s crate-level doc comment has the exact
+upstream URLs and required filenames — then point `SPEAKER_MODEL_DIR` (or
+`--model-dir`) at it. Feed it a real multi-speaker recording (not a
+silent test fixture — the real segmentation model finds zero turns in
+silence, which is why the offline demo above deliberately uses the mock
+fallback) to see genuine speaker-turn segmentation and voice-based
+re-identification.
 
 ### Tests
 
