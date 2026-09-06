@@ -1,5 +1,11 @@
 //! Rule-based text normalization. Pure, deterministic string transforms - no
 //! LLM, no network - toggleable via `whspr_config::NormalizeSettings`:
+//!   - `macros` (AJ-01/AJ-02) expands user-defined trigger phrases into
+//!     their configured expansion text. Applied unconditionally (an empty
+//!     macro table is a no-op) and *before* every other pass, so a trigger
+//!     containing a number/date word (e.g. "call five") is matched against
+//!     the refiner's literal output, not text the passes below have
+//!     already rewritten.
 //!   - `dates`  -> dates unified to `YYYY-MM-DD`
 //!   - `times`  -> times unified to 24-hour `HH:MM`
 //!   - `numbers` gates the number-word pass *and* the extended token passes
@@ -16,6 +22,7 @@ mod currency;
 mod dates;
 mod dedup;
 mod emails;
+mod macros;
 mod numbers;
 mod percents;
 mod phones;
@@ -71,7 +78,7 @@ impl TextRefiner for NormalizingRefiner {
 /// currency pass), emails before URLs (so an address is assembled before its
 /// bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
-    let mut text = text.to_string();
+    let mut text = macros::expand_macros(text, &settings.macros);
     if settings.dates {
         text = dates::normalize_dates(&text);
     }
