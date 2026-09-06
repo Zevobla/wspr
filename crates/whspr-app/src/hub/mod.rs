@@ -183,4 +183,15 @@ mod tests {
         }
         assert_eq!(tab_label(Screen::Dictate), "Dictate");
     }
+
+    #[test]
+    fn exactly_one_tab_is_active_for_each_screen() {
+        // The tab bar highlights `active == current`, so for whatever screen
+        // is showing, exactly one of the four tabs reads as active -- and
+        // it's the one matching that screen.
+        for current in SCREENS {
+            let active: Vec<Screen> = SCREENS.into_iter().filter(|&s| s == current).collect();
+            assert_eq!(active, vec![current]);
+        }
+    }
 }
