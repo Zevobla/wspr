@@ -7,7 +7,7 @@ use predicates::prelude::*;
 use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
 mod common;
-use common::create_test_wav;
+use common::{create_test_wav, create_test_wav_with_tone};
 
 #[test]
 fn version_flag_exits_zero() {
@@ -165,6 +165,39 @@ fn transcribe_json_output_has_expected_fields() {
 }
 
 #[test]
+fn transcribe_wpm_reflects_audio_duration_not_processing_time() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    // Loud enough that trim_silence leaves all 9 seconds intact (AL-12: a
+    // plain silent fixture would get trimmed to an unpredictable length,
+    // making the expected wpm impossible to pin down here).
+    create_test_wav_with_tone(&fixture_path, 16000, 9.0).expect("failed to create test WAV");
+
+    let output = Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--json",
+            "--no-store",
+        ])
+        .output()
+        .expect("failed to run whspr");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not valid UTF-8");
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout was not valid JSON");
+
+    // MOCK_TRANSCRIPT is 9 words over 9 seconds of audio = 60 wpm exactly,
+    // no matter how fast this test machine happens to run the pipeline.
+    assert_eq!(parsed.get("wpm").and_then(|v| v.as_f64()), Some(60.0));
+}
+
+#[test]
 fn transcribe_batch_succeeds_with_one_result_per_file() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     create_test_wav(&temp_dir.path().join("a.wav"), 16000, 0.1).expect("failed to create a.wav");
@@ -245,6 +278,13 @@ fn transcribe_appends_history_entry_when_stored() {
     assert_eq!(entry.get("source").and_then(|v| v.as_str()), Some("cli"));
     assert!(entry.get("timestamp").and_then(|v| v.as_u64()).is_some());
     assert!(entry.get("wpm").is_some());
+    assert!(
+        entry
+            .get("duration_secs")
+            .and_then(|v| v.as_f64())
+            .is_some(),
+        "history entries must carry duration_secs (AL-12/AL-13 schema)"
+    );
     assert_eq!(
         entry.get("word_count").and_then(|v| v.as_u64()),
         Some(MOCK_TRANSCRIPT.split_whitespace().count() as u64)
