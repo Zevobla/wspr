@@ -250,8 +250,11 @@ impl TextSink for EnigoTextSink {
 }
 
 impl EnigoTextSink {
-    /// Types text directly using synthetic keystrokes.
-    fn type_text(&self, text: &str) -> Result<()> {
+    /// Types text directly using synthetic keystrokes. Public so a caller on
+    /// the OS main thread (e.g. the GUI) can type without the clipboard/paste
+    /// chord, which on macOS can land as a selection rather than a paste in
+    /// some target apps.
+    pub fn type_text(&self, text: &str) -> Result<()> {
         let mut enigo = Enigo::new(&Settings::default())
             .map_err(|e| WhsprError::Inject(format!("failed to initialize enigo: {}", e)))?;
 
