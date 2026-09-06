@@ -65,6 +65,13 @@ pub struct State {
     /// boot, so e.g. the "Done" fade always restarts from the moment a
     /// dictation turn actually completes.
     pub pipeline_state_since: std::time::Instant,
+    /// The system tray icon (B-11), if this platform supports one -- see
+    /// `crate::tray`'s module doc comment for which do. `None` until
+    /// lazily created on the first `HubOpened` message (see
+    /// `crate::app::update`) -- never eagerly in `boot`/a `Task`, since
+    /// `tray::Handle::create` needs iced's winit event loop to already be
+    /// running on the calling thread.
+    pub tray: Option<crate::tray::Handle>,
 }
 
 impl State {
@@ -88,6 +95,7 @@ impl State {
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,
             pipeline_state_since: std::time::Instant::now(),
+            tray: None,
         }
     }
 }
@@ -115,6 +123,9 @@ pub enum Message {
     /// immediately and also writes/removes the OS-level autostart entry
     /// -- see `crate::app`'s `AutostartToggled` handler.
     AutostartToggled(bool),
+    /// The user toggled "Play a sound on start/stop" in the Hub. Persisted
+    /// immediately -- see `crate::app`'s `SoundFeedbackToggled` handler.
+    SoundFeedbackToggled(bool),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
     /// The user asked to preview a new hotkey by pressing it.
@@ -146,4 +157,9 @@ pub enum Message {
     /// animation is playing; the animation itself reads elapsed time from
     /// `State::pipeline_state_since` at render time.
     AnimationTick,
+    /// A tick of the tray icon's event-poll clock (see
+    /// `crate::app::tray_poll_subscription`): drains any pending tray
+    /// menu clicks (`crate::tray::Handle::poll_action`) and acts on the
+    /// last one. Only ever fires once `state.tray` exists.
+    TrayPoll,
 }
