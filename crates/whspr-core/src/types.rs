@@ -85,3 +85,35 @@ pub enum PipelineState {
     Injecting,
     Error,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_buffer_duration_secs_with_zero_sample_rate() {
+        let buffer = AudioBuffer::new(vec![1.0, 2.0, 3.0], 0);
+        assert_eq!(buffer.duration_secs(), 0.0);
+    }
+
+    #[test]
+    fn audio_buffer_duration_secs_calculation() {
+        let buffer = AudioBuffer::new(vec![0.0; 16000], 16000);
+        assert_eq!(buffer.duration_secs(), 1.0);
+    }
+
+    #[test]
+    fn audio_buffer_new_constructor() {
+        let samples = vec![0.5, -0.5, 0.25];
+        let buffer = AudioBuffer::new(samples.clone(), 44100);
+        assert_eq!(buffer.samples, samples);
+        assert_eq!(buffer.sample_rate, 44100);
+    }
+
+    #[test]
+    fn audio_buffer_default() {
+        let buffer = AudioBuffer::default();
+        assert_eq!(buffer.samples, Vec::<f32>::new());
+        assert_eq!(buffer.sample_rate, 0);
+    }
+}

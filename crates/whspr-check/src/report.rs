@@ -130,3 +130,43 @@ impl CheckResult {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_result_pass_creates_correct_verdict() {
+        let result = CheckResult::pass("A-01", "test evidence");
+        assert_eq!(result.id, "A-01");
+        assert_eq!(result.verdict, Verdict::Pass);
+        assert_eq!(result.evidence, "test evidence");
+    }
+
+    #[test]
+    fn check_result_fail_creates_correct_verdict() {
+        let result = CheckResult::fail("B-03", "failure reason");
+        assert_eq!(result.id, "B-03");
+        assert_eq!(result.verdict, Verdict::Fail);
+        assert_eq!(result.evidence, "failure reason");
+    }
+
+    #[test]
+    fn check_result_needs_bench_creates_correct_verdict() {
+        let result = CheckResult::needs_bench("C-01", "needs hardware");
+        assert_eq!(result.verdict, Verdict::NeedsBench);
+    }
+
+    #[test]
+    fn check_result_skipped_creates_correct_verdict() {
+        let result = CheckResult::skipped("AC-07", "tool not available");
+        assert_eq!(result.verdict, Verdict::Skipped);
+    }
+
+    #[test]
+    fn verdict_enum_has_expected_variants() {
+        let pass = Verdict::Pass;
+        let fail = Verdict::Fail;
+        assert_ne!(pass, fail);
+    }
+}

@@ -102,3 +102,37 @@ pub fn check_unused_deps(root: &Path) -> CheckResult {
         Err(e) => CheckResult::fail("AC-07", format!("could not run cargo udeps: {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grep_line_content_extracts_content_from_full_line() {
+        let line = "src/main.rs:42:    todo!(\"implement this\")";
+        assert_eq!(grep_line_content(line), "    todo!(\"implement this\")");
+    }
+
+    #[test]
+    fn grep_line_content_handles_line_without_full_format() {
+        let line = "some content";
+        assert_eq!(grep_line_content(line), "some content");
+    }
+
+    #[test]
+    fn is_comment_line_detects_double_slash() {
+        assert!(is_comment_line("// this is a comment"));
+        assert!(is_comment_line("  // indented comment"));
+    }
+
+    #[test]
+    fn is_comment_line_rejects_code() {
+        assert!(!is_comment_line("    todo!()"));
+        assert!(!is_comment_line("let x = 42;"));
+    }
+
+    #[test]
+    fn is_comment_line_with_only_whitespace_and_slash() {
+        assert!(is_comment_line("  //"));
+    }
+}

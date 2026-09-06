@@ -455,3 +455,32 @@ pub fn check_commit_distribution(root: &Path) -> CheckResult {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn median_of_sorted_odd_length() {
+        let sorted = vec![1, 2, 3, 4, 5];
+        assert_eq!(median_of_sorted(&sorted), 3.0);
+    }
+
+    #[test]
+    fn median_of_sorted_even_length() {
+        let sorted = vec![1, 2, 3, 4];
+        assert_eq!(median_of_sorted(&sorted), 2.5);
+    }
+
+    #[test]
+    fn median_of_sorted_single_element() {
+        let sorted = vec![42];
+        assert_eq!(median_of_sorted(&sorted), 42.0);
+    }
+
+    #[test]
+    fn median_of_sorted_two_elements() {
+        let sorted = vec![10, 20];
+        assert_eq!(median_of_sorted(&sorted), 15.0);
+    }
+}

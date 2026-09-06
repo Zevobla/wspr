@@ -143,3 +143,19 @@ pub fn check_fmt(root: &Path) -> CheckResult {
         Err(e) => CheckResult::fail("AA-14", format!("could not run cargo fmt: {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dead_code_markers_has_entries() {
+        assert!(!DEAD_CODE_MARKERS.is_empty());
+    }
+
+    #[test]
+    fn dead_code_markers_contains_expected_strings() {
+        assert!(DEAD_CODE_MARKERS.contains(&"dead_code"));
+        assert!(DEAD_CODE_MARKERS.contains(&"never used"));
+    }
+}
