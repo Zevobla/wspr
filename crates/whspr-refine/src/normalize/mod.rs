@@ -228,6 +228,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn normalizing_refiner_applies_macros() {
+        // Proves macro expansion (AJ-01/AJ-02) runs through the real
+        // refiner path, not just the pure `expand_macros` fn in isolation.
+        let mut settings = NormalizeSettings::default();
+        settings
+            .macros
+            .insert("my email".to_string(), "me@example.com".to_string());
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("send my email please", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "send me@example.com please");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_macros_run_before_number_normalization() {
+        // A trigger containing a number word ("five") only matches if
+        // macros see the refiner's literal output before the numbers pass
+        // rewrites "five" to "5" -- proves the documented pass ordering.
+        let mut settings = NormalizeSettings::default();
+        settings
+            .macros
+            .insert("call five".to_string(), "5551234".to_string());
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("please call five now", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "please 5551234 now");
+    }
+
+    #[tokio::test]
     async fn normalizing_refiner_respects_disabled_toggles() {
         let settings = NormalizeSettings {
             numbers: false,
