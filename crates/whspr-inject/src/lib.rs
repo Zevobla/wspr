@@ -389,6 +389,46 @@ mod tests {
     }
 
     #[test]
+    fn inject_with_fallback_uses_paste_and_skips_typing_on_success() {
+        let typed = std::cell::Cell::new(false);
+        let result = inject_with_fallback(
+            || Ok(()),
+            || {
+                typed.set(true);
+                Ok(())
+            },
+        );
+        assert!(result.is_ok());
+        assert!(
+            !typed.get(),
+            "typing must not run when the paste path succeeds"
+        );
+    }
+
+    #[test]
+    fn inject_with_fallback_types_when_paste_fails() {
+        let typed = std::cell::Cell::new(false);
+        let result = inject_with_fallback(
+            || Err(WhsprError::Inject("paste failed".into())),
+            || {
+                typed.set(true);
+                Ok(())
+            },
+        );
+        assert!(result.is_ok(), "should recover via the typing fallback");
+        assert!(typed.get(), "the typing fallback should have run");
+    }
+
+    #[test]
+    fn inject_with_fallback_surfaces_error_when_both_fail() {
+        let result = inject_with_fallback(
+            || Err(WhsprError::Inject("paste failed".into())),
+            || Err(WhsprError::Inject("typing failed".into())),
+        );
+        assert!(result.is_err(), "both paths failing must surface an error");
+    }
+
+    #[test]
     fn needs_leading_space_only_between_two_non_whitespace_boundaries() {
         // No previous text: never add a leading space.
         assert!(!needs_leading_space(None, "world"));
