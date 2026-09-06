@@ -602,6 +602,9 @@ mod tests {
         drop(file);
 
         let result = config_reload(temp_dir.path());
-        assert!(result.is_err(), "config_reload should return error on invalid TOML");
+        assert!(
+            result.is_err(),
+            "config_reload should return error on invalid TOML"
+        );
     }
 }

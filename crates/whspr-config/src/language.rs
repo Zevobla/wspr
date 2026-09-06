@@ -70,10 +70,7 @@ mod tests {
 
         let cfg = load_from(Some(temp_dir.path()));
         assert!(!cfg.language_settings.language_switch);
-        assert_eq!(
-            cfg.language_settings.fixed_language,
-            Some("es".to_string())
-        );
+        assert_eq!(cfg.language_settings.fixed_language, Some("es".to_string()));
     }
 
     #[test]
