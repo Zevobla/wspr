@@ -34,6 +34,10 @@
           wayland
           vulkan-loader
           libGL
+          # tray-icon's Linux backend (via ksni) draws its status icon
+          # through the GTK/appindicator stack, not raw wayland/x11.
+          gtk3
+          libayatana-appindicator
         ]);
 
         # whisper-rs (asr) and llama-cpp-2 (refine) compile native C/C++ via

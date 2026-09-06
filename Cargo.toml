@@ -26,6 +26,7 @@ anyhow = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+file-rotate = "0.8"
 
 # Serialization & config
 serde = { version = "1.0", features = ["derive"] }
@@ -44,6 +45,7 @@ reqwest = { version = "0.13", features = ["json", "rustls"] }
 hound = "3.5"
 rubato = "5.0"
 cpal = "0.18"
+rodio = "0.22"
 
 # ASR / LLM backends
 whisper-rs = "0.16"
@@ -56,6 +58,10 @@ arboard = "3.6"
 
 # GUI
 iced = "0.14"
+tray-icon = "0.24"
+
+# Active window detection (style-by-window)
+active-win-pos-rs = "0.11"
 
 # Dev dependencies
 assert_cmd = "2.2"
