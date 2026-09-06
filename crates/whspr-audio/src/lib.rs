@@ -22,6 +22,11 @@ use rubato::{
 };
 use whspr_core::{AudioBuffer, Result, WhsprError};
 
+/// Helper to convert a WAV sample read error into a WhsprError.
+fn wav_read_err(e: impl std::fmt::Display) -> WhsprError {
+    WhsprError::Audio(format!("failed to read WAV sample: {}", e))
+}
+
 /// Trims leading and trailing silence from `audio`.
 ///
 /// Classifies the audio in fixed ~20ms windows (the window length is
@@ -115,8 +120,7 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
         8 => {
             // 8-bit uses signed i8
             for frame in reader.samples::<i8>() {
-                let sample = frame
-                    .map_err(|e| WhsprError::Audio(format!("failed to read WAV sample: {}", e)))?;
+                let sample = frame.map_err(wav_read_err)?;
                 // i8: -128..127 -> -1.0..1.0
                 let normalized = sample as f32 / 128.0;
                 samples.push(normalized);
@@ -124,8 +128,7 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
         }
         16 => {
             for frame in reader.samples::<i16>() {
-                let sample = frame
-                    .map_err(|e| WhsprError::Audio(format!("failed to read WAV sample: {}", e)))?;
+                let sample = frame.map_err(wav_read_err)?;
                 // i16: -32768..32767 -> -1.0..1.0
                 let normalized = sample as f32 / 32768.0;
                 samples.push(normalized);
@@ -133,8 +136,7 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
         }
         24 => {
             for frame in reader.samples::<i32>() {
-                let sample = frame
-                    .map_err(|e| WhsprError::Audio(format!("failed to read WAV sample: {}", e)))?;
+                let sample = frame.map_err(wav_read_err)?;
                 // hound treats 24-bit as i32; shift right by 8 to get actual 24-bit value
                 let sample_24 = sample >> 8;
                 // i24: -8388608..8388607 -> -1.0..1.0
@@ -146,17 +148,13 @@ pub fn decode_wav(path: impl AsRef<Path>) -> Result<AudioBuffer> {
             // Check if float or int format
             if spec.sample_format == hound::SampleFormat::Float {
                 for frame in reader.samples::<f32>() {
-                    let sample = frame.map_err(|e| {
-                        WhsprError::Audio(format!("failed to read WAV sample: {}", e))
-                    })?;
+                    let sample = frame.map_err(wav_read_err)?;
                     samples.push(sample.clamp(-1.0, 1.0));
                 }
             } else {
                 // 32-bit int
                 for frame in reader.samples::<i32>() {
-                    let sample = frame.map_err(|e| {
-                        WhsprError::Audio(format!("failed to read WAV sample: {}", e))
-                    })?;
+                    let sample = frame.map_err(wav_read_err)?;
                     // i32: -2147483648..2147483647 -> -1.0..1.0
                     let normalized = sample as f32 / 2147483648.0;
                     samples.push(normalized.clamp(-1.0, 1.0));
@@ -267,10 +265,9 @@ impl CaptureHandle {
     ///
     /// The returned buffer is resampled to the canonical 16kHz shape.
     pub fn stop(self) -> Result<AudioBuffer> {
-        // Drop the stream to stop recording
         drop(self.stream);
 
-        // Drain the buffer
+        // Acquire the mutex and clone the captured samples
         let samples = self
             .buffer
             .lock()
@@ -340,7 +337,7 @@ pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
             .ok_or_else(no_input_device_error)?,
     };
 
-    // Get the default config
+    // Query device for its preferred configuration
     let config = device
         .default_input_config()
         .map_err(|e| mic_access_error("get default input config", e))?;
@@ -348,11 +345,11 @@ pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
     let sample_rate = config.sample_rate();
     let stream_config: StreamConfig = config.into();
 
-    // Create a shared buffer for captured samples
+    // Use Arc<Mutex> to share the sample buffer between the audio callback and main thread
     let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
     let buffer_clone = Arc::clone(&buffer);
 
-    // Build the input stream
+    // Create a stream callback to route audio from the device to our buffer
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => device
             .build_input_stream(
@@ -409,7 +406,7 @@ pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
         }
     };
 
-    // Start recording
+    // Begin audio capture by playing the input stream
     stream
         .play()
         .map_err(|e| mic_access_error("start capture stream", e))?;
