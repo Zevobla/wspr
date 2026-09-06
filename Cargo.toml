@@ -60,6 +60,11 @@ arboard = "3.6"
 iced = "0.14"
 tray-icon = "0.24"
 
+# Scripting (macros) - a crate opts in with features = ["luajit", "vendored"]
+# to embed a JIT-compiled Lua engine; the vendored LuaJIT builds from source
+# via the existing cmake/clang toolchain, so no new system library is needed.
+mlua = { version = "0.10", default-features = false }
+
 # Dev dependencies
 assert_cmd = "2.2"
 predicates = "3.1"
