@@ -141,6 +141,18 @@ mod tests {
     }
 
     #[test]
+    fn standalone_polovina_is_one_half() {
+        assert_eq!(normalize_percents("половина"), "1/2");
+        // Still works with surrounding words and punctuation.
+        assert_eq!(normalize_percents("осталась половина яблока"), "осталась 1/2 яблока");
+        assert_eq!(normalize_percents("(половину)"), "(1/2)");
+        // A leading cardinal still takes precedence: "одна половина" -> 1/2.
+        assert_eq!(normalize_percents("одна половина"), "1/2");
+        // A bare "четверть" is left alone - it is a word, not a fraction.
+        assert_eq!(normalize_percents("четверть часа"), "четверть часа");
+    }
+
+    #[test]
     fn preserves_surrounding_text_and_punctuation() {
         assert_eq!(
             normalize_percents("battery at fifty percent now"),
