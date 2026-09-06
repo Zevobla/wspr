@@ -318,6 +318,8 @@ mod tests {
     #[test]
     fn build_failure_results_includes_reason() {
         let results = build_failure_results("my test reason");
-        assert!(results.iter().all(|r| r.evidence.contains("my test reason")));
+        assert!(results
+            .iter()
+            .all(|r| r.evidence.contains("my test reason")));
     }
 }

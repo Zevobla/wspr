@@ -253,7 +253,11 @@ mod tests {
     #[test]
     fn overclaim_phrases_all_lowercase() {
         for phrase in OVERCLAIM_PHRASES {
-            assert_eq!(phrase, &phrase.to_lowercase(), "{phrase} should be all lowercase");
+            assert_eq!(
+                phrase,
+                &phrase.to_lowercase(),
+                "{phrase} should be all lowercase"
+            );
         }
     }
 }
