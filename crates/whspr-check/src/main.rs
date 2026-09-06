@@ -26,3 +26,18 @@ fn main() -> anyhow::Result<()> {
     report::print(&results);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_structure_is_complete() {
+        // Verify all modules are declared and compile
+        let _checks = checks;
+        let _criteria = criteria;
+        let _repo = repo;
+        let _report = report;
+        // If this compiles, the module structure is sound
+    }
+}
