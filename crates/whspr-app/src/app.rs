@@ -87,6 +87,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::RefineSelected(label) => {
             state.config.refine = config_ui::refine_from_label(label);
+            persist_config(state);
             Task::none()
         }
         Message::LanguageChanged(label) => {
