@@ -18,6 +18,8 @@ iced = { workspace = true, features = ["tokio"] }
 whspr-core = { workspace = true, features = ["testkit"] }
 whspr-inject.workspace = true
 whspr-audio.workspace = true
+whspr-asr.workspace = true
+whspr-refine.workspace = true
 whspr-config.workspace = true
 # Not in the root workspace's [workspace.dependencies] -- this is the only
 # crate that diarizes recordings, so it's declared directly here rather than

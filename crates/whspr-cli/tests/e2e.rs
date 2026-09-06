@@ -101,6 +101,32 @@ fn transcribe_with_asr_mock_prints_mock_transcript() {
 }
 
 #[test]
+fn transcribe_normalizes_numbers_on_the_real_path() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let fixture_path = temp_dir.path().join("test.wav");
+    create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+
+    // --asr-mock-text (hidden, test-only) drives a normalizable phrase
+    // through --asr mock, proving build_refiner's NormalizingRefiner
+    // wrapping (F-10/F-11/F-12) actually runs on the real `transcribe`
+    // path rather than sitting dead behind its own unit tests.
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args([
+            "transcribe",
+            fixture_path.to_str().unwrap(),
+            "--asr",
+            "mock",
+            "--asr-mock-text",
+            "bring twenty five copies",
+            "--no-store",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("25 copies"));
+}
+
+#[test]
 fn transcribe_json_output_has_expected_fields() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
