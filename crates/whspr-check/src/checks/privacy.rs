@@ -99,3 +99,29 @@ pub fn check_default_backends_are_local() -> CheckResult {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poison_env_has_entries() {
+        assert!(!POISON_ENV.is_empty());
+    }
+
+    #[test]
+    fn poison_env_includes_http_proxy() {
+        assert!(POISON_ENV.iter().any(|(k, _)| k == &"HTTP_PROXY"));
+    }
+
+    #[test]
+    fn poison_env_all_point_to_unreachable_address() {
+        for (_, addr) in POISON_ENV {
+            assert!(
+                addr.contains("127.0.0.1:9") || addr.contains("localhost"),
+                "proxy address {} should be unreachable",
+                addr
+            );
+        }
+    }
+}
