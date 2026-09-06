@@ -13,17 +13,17 @@ pub struct State {
     /// Window id of the Flow Bar overlay, once it has finished opening.
     pub flow_bar_window: Option<window::Id>,
     /// The effective config as of app start (defaults overlaid with the
-    /// user's config file, per `whspr_config::load`). Most edits made in the
-    /// Hub (ASR/refiner/device picks) only live in this in-memory copy for
-    /// now -- see the module doc on `crate::app` for why broader persistence
-    /// is still out of scope. The language and speaker-embedding-model
-    /// pick_lists are the exception: those two are saved back to the config
-    /// file immediately (see `crate::app::persist_config`).
+    /// user's config file, per `whspr_config::load`). Edits made in the Hub
+    /// are saved back to the config file immediately (see
+    /// `crate::app::persist_config`), so every setting -- ASR/refiner picks,
+    /// language, embedding model, toggles, and the input device -- survives
+    /// a restart.
     pub config: Config,
     /// Names of the audio input devices found at boot (see `crate::devices`).
     pub input_devices: Vec<String>,
-    /// The currently selected input device name, if any. Defaults to the
-    /// host's default input device.
+    /// The currently selected input device name, if any. At boot this is
+    /// restored from `config.device.input_device` when one was persisted,
+    /// otherwise it defaults to the host's default input device.
     pub selected_device: Option<String>,
     /// Whether the Hub is currently listening for the next keypress to
     /// preview as a hotkey (see `crate::hotkey_capture` for why this is a
