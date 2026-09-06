@@ -20,22 +20,18 @@ pub struct Case {
 
     /// Voice name (e.g., "Milena").
     #[serde(rename = "голос")]
-    #[allow(dead_code)]
     pub voice: String,
 
     /// Speech tempo in WPM or similar.
     #[serde(rename = "темп")]
-    #[allow(dead_code)]
     pub tempo: u32,
 
     /// Audio duration in seconds.
     #[serde(rename = "длительность")]
-    #[allow(dead_code)]
     pub duration: f32,
 
     /// Special feature description (e.g., "чистая запись").
     #[serde(rename = "особенность")]
-    #[allow(dead_code)]
     pub feature: String,
 }
 
@@ -44,12 +40,10 @@ pub struct Case {
 pub struct StandSet {
     /// Audio sample rate (e.g., 16000).
     #[serde(rename = "частота")]
-    #[allow(dead_code)]
     pub sample_rate: u32,
 
     /// Total number of test cases.
     #[serde(rename = "случаев")]
-    #[allow(dead_code)]
     pub count: usize,
 
     /// Array of test cases.
@@ -69,7 +63,6 @@ impl StandSet {
     }
 
     /// Extract the criterion prefix (everything before the first hyphen) for grouping.
-    #[allow(dead_code)]
     pub fn criterion_prefix(criterion: &str) -> String {
         criterion.split('-').next().unwrap_or(criterion).to_string()
     }
@@ -86,5 +79,33 @@ mod tests {
         assert_eq!(StandSet::criterion_prefix("AI-04"), "AI");
         assert_eq!(StandSet::criterion_prefix("single"), "single");
         assert_eq!(StandSet::criterion_prefix("E-06"), "E");
+    }
+
+    #[test]
+    fn deserializes_all_case_and_set_fields() {
+        let json = r#"{
+            "частота": 16000,
+            "случаев": 1,
+            "случаи": [{
+                "файл": "f-01.wav",
+                "критерий": "F-01",
+                "эталон": "hi",
+                "голос": "Milena",
+                "темп": 120,
+                "длительность": 3.5,
+                "особенность": "clean"
+            }]
+        }"#;
+        let set: StandSet = serde_json::from_str(json).expect("parse");
+        assert_eq!(set.sample_rate, 16000);
+        assert_eq!(set.count, 1);
+        let c = &set.cases[0];
+        assert_eq!(c.file, "f-01.wav");
+        assert_eq!(c.criterion, "F-01");
+        assert_eq!(c.reference, "hi");
+        assert_eq!(c.voice, "Milena");
+        assert_eq!(c.tempo, 120);
+        assert_eq!(c.duration, 3.5);
+        assert_eq!(c.feature, "clean");
     }
 }
