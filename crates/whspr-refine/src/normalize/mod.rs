@@ -24,6 +24,7 @@ mod currency;
 mod dates;
 mod dedup;
 mod emails;
+mod fillers;
 mod lua;
 mod macros;
 mod numbers;
@@ -82,6 +83,10 @@ impl TextRefiner for NormalizingRefiner {
 /// bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     let mut text = macros::expand_macros(text, &settings.macros);
+    // Strip verbal fillers/disfluencies ("эээ", "ну", "короче", "um", "uh",
+    // "как бы", ...) so they don't survive into the output even with the noop
+    // refiner (rule-based, unlike the LLM prompt's English-only filler pass).
+    text = fillers::strip_fillers(&text);
     if settings.dates {
         text = dates::normalize_dates(&text);
     }
