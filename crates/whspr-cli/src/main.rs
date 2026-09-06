@@ -7,7 +7,8 @@
 //!                                  Diarize a multi-speaker audio file: find
 //!                                  speaker turns and match them against the
 //!                                  persisted speaker database
-//!   whspr stats [--csv]            Print per-utterance stats from the history journal
+//!   whspr stats [--csv] [--by-backend] [--clear]
+//!                                  Print (or clear) per-utterance stats from the history journal
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
@@ -19,6 +20,8 @@
 //!   --json                          Output JSON object instead of plain text
 //!   --no-store                      Don't save result to history file
 //!   --csv                           `stats`: output CSV instead of a human-readable table
+//!   --by-backend                    `stats`: group output by (asr, refine) backend pair
+//!   --clear                         `stats`: wipe the stored history instead of printing it
 
 mod diarize_cmd;
 mod stats_cmd;
@@ -193,6 +196,16 @@ enum Command {
         #[arg(long)]
         csv: bool,
 
+        /// Wipe the stored history instead of printing it (T-09).
+        #[arg(long)]
+        clear: bool,
+
+        /// Group output by (asr, refine) backend pair - count, average
+        /// wpm, and total words per pair - instead of one row per
+        /// utterance (T-09).
+        #[arg(long)]
+        by_backend: bool,
+
         /// Override the history data directory. Hidden: test-only, so the
         /// e2e suite can point at a tempdir instead of the real platform
         /// data dir.
@@ -310,8 +323,13 @@ async fn main() -> anyhow::Result<()> {
             diarize_cmd::run(&config, file, model_dir, embedding, data_dir, output_json).await?;
         }
 
-        Some(Command::Stats { csv, data_dir }) => {
-            stats_cmd::run(data_dir, csv).await?;
+        Some(Command::Stats {
+            csv,
+            clear,
+            by_backend,
+            data_dir,
+        }) => {
+            stats_cmd::run(data_dir, csv, clear, by_backend).await?;
         }
 
         None => {

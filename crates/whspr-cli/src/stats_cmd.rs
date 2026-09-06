@@ -57,12 +57,99 @@ fn load_entries(history_path: &Path) -> anyhow::Result<Vec<HistoryEntry>> {
         .collect()
 }
 
+/// T-09: wipes the stored history file so `whspr stats` starts fresh.
+/// A file that doesn't exist yet isn't an error - there's nothing to
+/// clear either way, which is a normal outcome, not a failure.
+fn clear_history(history_path: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(history_path) {
+        Ok(()) => {
+            println!("Cleared {}", history_path.display());
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            println!(
+                "No history to clear ({} does not exist)",
+                history_path.display()
+            );
+            Ok(())
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Per-(asr, refine)-pair totals for `--by-backend` (T-09): how many
+/// utterances went through that pair, their average wpm, and total words.
+#[derive(Default)]
+struct BackendAggregate {
+    count: usize,
+    wpm_sum: f64,
+    word_count_sum: usize,
+}
+
+/// T-09: groups entries by (asr, refine) backend pair instead of printing
+/// one row per utterance. `BTreeMap` keeps the output in a stable,
+/// deterministic order (alphabetical by asr then refine) rather than
+/// history-file order.
+fn print_by_backend(entries: &[HistoryEntry], csv: bool) {
+    let mut groups: std::collections::BTreeMap<(String, String), BackendAggregate> =
+        std::collections::BTreeMap::new();
+    for e in entries {
+        let agg = groups.entry((e.asr.clone(), e.refine.clone())).or_default();
+        agg.count += 1;
+        agg.wpm_sum += e.wpm;
+        agg.word_count_sum += e.word_count;
+    }
+
+    if csv {
+        println!("asr,refine,count,avg_wpm,total_words");
+        for ((asr, refine), agg) in &groups {
+            println!(
+                "{},{},{},{:.1},{}",
+                csv_field(asr),
+                csv_field(refine),
+                agg.count,
+                agg.wpm_sum / agg.count as f64,
+                agg.word_count_sum
+            );
+        }
+    } else {
+        for ((asr, refine), agg) in &groups {
+            println!(
+                "asr={}  refine={}  count={}  avg_wpm={:.0}  total_words={}",
+                asr,
+                refine,
+                agg.count,
+                agg.wpm_sum / agg.count as f64,
+                agg.word_count_sum
+            );
+        }
+    }
+}
+
 /// Runs the `stats` subcommand: reads every entry from `history.jsonl`
-/// inside the resolved data dir and prints it either as CSV (`--csv`) or a
-/// human-readable table.
-pub async fn run(data_dir: Option<PathBuf>, csv: bool) -> anyhow::Result<()> {
+/// inside the resolved data dir and prints it either as CSV (`--csv`), a
+/// per-backend breakdown (`--by-backend`), or a human-readable table -
+/// or wipes the history entirely (`--clear`, which takes priority over
+/// the other two since there'd be nothing left to print anyway).
+pub async fn run(
+    data_dir: Option<PathBuf>,
+    csv: bool,
+    clear: bool,
+    by_backend: bool,
+) -> anyhow::Result<()> {
     let data_dir = crate::resolve_data_dir(data_dir.as_deref())?;
-    let entries = load_entries(&data_dir.join("history.jsonl"))?;
+    let history_path = data_dir.join("history.jsonl");
+
+    if clear {
+        return clear_history(&history_path);
+    }
+
+    let entries = load_entries(&history_path)?;
+
+    if by_backend {
+        print_by_backend(&entries, csv);
+        return Ok(());
+    }
 
     if csv {
         println!("timestamp,asr,refine,wpm,word_count,text");
