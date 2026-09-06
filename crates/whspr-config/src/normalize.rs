@@ -218,9 +218,10 @@ mod tests {
         cfg.normalize
             .dictionary
             .insert("tech-term".to_string(), "technical-replacement".to_string());
-        cfg.normalize
-            .dictionary
-            .insert("common-abbr".to_string(), "abbreviation-expanded".to_string());
+        cfg.normalize.dictionary.insert(
+            "common-abbr".to_string(),
+            "abbreviation-expanded".to_string(),
+        );
 
         let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
         let round_tripped: Config =
@@ -240,7 +241,8 @@ mod tests {
         writeln!(file, "paragraph-break = false").expect("failed to write paragraph-break");
         writeln!(file, "punctuation-toggle = false").expect("failed to write punctuation-toggle");
         writeln!(file, "[normalize.dictionary]").expect("failed to write dictionary header");
-        writeln!(file, "\"code-term\" = \"expanded-code\"").expect("failed to write dictionary entry");
+        writeln!(file, "\"code-term\" = \"expanded-code\"")
+            .expect("failed to write dictionary entry");
         drop(file);
 
         let cfg = load_from(Some(temp_dir.path()));
