@@ -1,18 +1,21 @@
 //! Toggles for whspr-refine's rule-based text normalization (numbers/dates/
 //! times written as digits in a unified format, as opposed to the LLM
-//! cleanup refiners do).
+//! cleanup refiners do), plus the AJ-01/AJ-02 macro-expansion table.
 //!
 //! Defined here rather than alongside `Config`'s other settings structs in
 //! `lib.rs` (like `SpeakerSettings`) so that crate's file stays under this
 //! project's 600-line-per-file guideline (AA-06) -- same reasoning
 //! `autostart.rs`/`speaker.rs` already follow.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
-/// Each rule is independently switchable so a user who wants LLM cleanup
-/// but not, say, forced digit-dates can turn just that one off. All on by
-/// default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Each rule toggle is independently switchable so a user who wants LLM
+/// cleanup but not, say, forced digit-dates can turn just that one off. All
+/// on by default. `macros` is not a toggle but a lookup table -- see its
+/// own doc comment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct NormalizeSettings {
     /// Spell out number words ("twenty five", "двадцать пять") as digits.
@@ -21,6 +24,14 @@ pub struct NormalizeSettings {
     pub dates: bool,
     /// Normalize recognized time expressions to 24-hour `HH:MM`.
     pub times: bool,
+    /// Emacs-abbrev-style macro table (AJ-01/AJ-02): trigger phrase ->
+    /// expansion text. A dictation containing a trigger phrase (matched
+    /// case-insensitively, whole-phrase -- never inside a larger word) has
+    /// it replaced with the expansion. Keyed exactly as spoken (e.g. "my
+    /// email"), read from the config file's `[normalize.macros]` table.
+    /// Empty by default, so a user who never defines any macros sees no
+    /// behavior change.
+    pub macros: BTreeMap<String, String>,
 }
 
 impl Default for NormalizeSettings {
@@ -29,6 +40,7 @@ impl Default for NormalizeSettings {
             numbers: true,
             dates: true,
             times: true,
+            macros: BTreeMap::new(),
         }
     }
 }
@@ -45,6 +57,7 @@ mod tests {
                 numbers: true,
                 dates: true,
                 times: true,
+                macros: BTreeMap::new(),
             }
         );
     }

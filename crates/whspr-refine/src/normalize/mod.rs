@@ -226,6 +226,7 @@ mod tests {
             numbers: false,
             dates: false,
             times: false,
+            ..Default::default()
         };
         let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
         let input = "meet at 14 30 on 5.9.2026, bring twenty five copies";

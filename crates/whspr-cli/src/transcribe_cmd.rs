@@ -127,7 +127,10 @@ fn build_refiner(
         RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
     };
 
-    Ok(Box::new(NormalizingRefiner::new(inner, config.normalize)))
+    Ok(Box::new(NormalizingRefiner::new(
+        inner,
+        config.normalize.clone(),
+    )))
 }
 
 /// Words-per-minute from a word count and the *speech* duration (the
