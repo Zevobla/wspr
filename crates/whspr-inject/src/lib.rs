@@ -181,6 +181,45 @@ fn last_emitted() -> &'static Mutex<Option<char>> {
     LAST.get_or_init(|| Mutex::new(None))
 }
 
+/// Injects text via `paste`, falling back to `type_text` if the paste path
+/// fails, so a failed clipboard paste never silently drops the user's
+/// dictation. Succeeds if either path succeeds; returns the fallback's error
+/// only when both fail. Logs which path delivered the text.
+///
+/// Split out with injectable closures so the fallback decision is
+/// unit-testable without a real display, clipboard, or keystroke synthesis.
+fn inject_with_fallback<P, T>(paste: P, type_text: T) -> Result<()>
+where
+    P: FnOnce() -> Result<()>,
+    T: FnOnce() -> Result<()>,
+{
+    match paste() {
+        Ok(()) => {
+            tracing::debug!("text injected via clipboard paste");
+            Ok(())
+        }
+        Err(paste_err) => {
+            tracing::warn!(
+                error = %paste_err,
+                "clipboard paste failed; falling back to keystroke typing"
+            );
+            match type_text() {
+                Ok(()) => {
+                    tracing::info!("text injected via keystroke fallback");
+                    Ok(())
+                }
+                Err(type_err) => {
+                    tracing::error!(
+                        error = %type_err,
+                        "keystroke fallback also failed; injection lost"
+                    );
+                    Err(type_err)
+                }
+            }
+        }
+    }
+}
+
 impl TextSink for EnigoTextSink {
     fn insert(&self, text: &str) -> Result<()> {
         if text.is_empty() {
@@ -196,9 +235,12 @@ impl TextSink for EnigoTextSink {
 
         // Clipboard paste is the default path: it lands text reliably in
         // editors, terminals, and vim, where raw synthetic keystrokes
-        // misbehave. `paste_from_clipboard` falls back to typing on its own
-        // when the clipboard is unavailable. (AM-08)
-        let result = self.paste_from_clipboard(&payload);
+        // misbehave (AM-08). If the paste path fails for any reason, degrade
+        // to typing the same text rather than dropping the dictation.
+        let result = inject_with_fallback(
+            || self.paste_from_clipboard(&payload),
+            || self.type_text(&payload),
+        );
 
         // Remember what we actually emitted so the next utterance can decide
         // whether it needs a leading space. Only record on success.
@@ -225,20 +267,18 @@ impl EnigoTextSink {
     /// Copies text to the clipboard and simulates a paste keystroke,
     /// restoring the user's previous clipboard contents afterward.
     ///
-    /// If the clipboard can't be used (no display, permission denied, a
-    /// non-text payload we can't stage over, etc.) this falls back to
-    /// typing the text directly rather than failing the injection outright.
+    /// Returns an error — rather than falling back to typing here — if the
+    /// clipboard is unavailable, staging fails, or the paste chord fails.
+    /// The caller ([`inject_with_fallback`]) owns the fallback to typing, so
+    /// the whole degrade-instead-of-drop policy lives in one place.
     fn paste_from_clipboard(&self, text: &str) -> Result<()> {
-        // If we can't even open the clipboard, type the text instead.
-        let mut clipboard = match ArboardClipboard::new() {
-            Ok(clipboard) => clipboard,
-            Err(_) => return self.type_text(text),
-        };
+        let mut clipboard = ArboardClipboard::new()?;
 
         match stage_and_paste(&mut clipboard, text, || self.send_paste_keystroke()) {
             PasteOutcome::Pasted(result) => result,
-            // Couldn't stage our text on the clipboard; type it instead.
-            PasteOutcome::Unstaged => self.type_text(text),
+            PasteOutcome::Unstaged => Err(WhsprError::Inject(
+                "could not stage text on the clipboard".to_string(),
+            )),
         }
     }
 
@@ -346,6 +386,46 @@ mod tests {
         // 0 ms means no pause.
         assert_eq!(pre_paste_delay(0), Duration::ZERO);
         assert_eq!(pre_paste_delay(150), Duration::from_millis(150));
+    }
+
+    #[test]
+    fn inject_with_fallback_uses_paste_and_skips_typing_on_success() {
+        let typed = std::cell::Cell::new(false);
+        let result = inject_with_fallback(
+            || Ok(()),
+            || {
+                typed.set(true);
+                Ok(())
+            },
+        );
+        assert!(result.is_ok());
+        assert!(
+            !typed.get(),
+            "typing must not run when the paste path succeeds"
+        );
+    }
+
+    #[test]
+    fn inject_with_fallback_types_when_paste_fails() {
+        let typed = std::cell::Cell::new(false);
+        let result = inject_with_fallback(
+            || Err(WhsprError::Inject("paste failed".into())),
+            || {
+                typed.set(true);
+                Ok(())
+            },
+        );
+        assert!(result.is_ok(), "should recover via the typing fallback");
+        assert!(typed.get(), "the typing fallback should have run");
+    }
+
+    #[test]
+    fn inject_with_fallback_surfaces_error_when_both_fail() {
+        let result = inject_with_fallback(
+            || Err(WhsprError::Inject("paste failed".into())),
+            || Err(WhsprError::Inject("typing failed".into())),
+        );
+        assert!(result.is_err(), "both paths failing must surface an error");
     }
 
     #[test]
