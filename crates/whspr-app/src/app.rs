@@ -112,7 +112,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::DeviceSelected(device) => {
+            state.config.device.input_device = Some(device.clone());
             state.selected_device = Some(device);
+            persist_config(state);
             Task::none()
         }
         Message::StartHotkeyCapture => {
