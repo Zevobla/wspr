@@ -45,6 +45,17 @@ pub struct NormalizeSettings {
     /// Empty by default, so a user who never defines any macros sees no
     /// behavior change.
     pub macros: BTreeMap<String, String>,
+    /// Whether to insert paragraph breaks on long pauses (G-09). Default true
+    /// — helps structure long-form dictation with clear paragraph boundaries.
+    pub paragraph_break: bool,
+    /// Whether to automatically apply punctuation normalization (G-16).
+    /// Default true — controls on/off toggle for auto-punctuation cleanup.
+    pub punctuation_toggle: bool,
+    /// Dictionary table for custom term replacements (H-01): trigger term ->
+    /// replacement. Similar to `macros` but for finer-grained term-level
+    /// substitution. Keyed exactly as recognized, read from the config file's
+    /// `[normalize.dictionary]` table. Empty by default.
+    pub dictionary: BTreeMap<String, String>,
 }
 
 impl Default for NormalizeSettings {
@@ -55,6 +66,9 @@ impl Default for NormalizeSettings {
             times: true,
             numbers_format: NumberFormat::Digits,
             macros: BTreeMap::new(),
+            paragraph_break: true,
+            punctuation_toggle: true,
+            dictionary: BTreeMap::new(),
         }
     }
 }
@@ -73,6 +87,9 @@ mod tests {
                 times: true,
                 numbers_format: NumberFormat::Digits,
                 macros: BTreeMap::new(),
+                paragraph_break: true,
+                punctuation_toggle: true,
+                dictionary: BTreeMap::new(),
             }
         );
     }
@@ -178,6 +195,62 @@ mod tests {
         assert_eq!(
             cfg.normalize.macros.get("my email"),
             Some(&"me@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_settings_paragraph_break_and_punctuation_toggle_round_trip() {
+        let mut cfg = Config::default();
+        cfg.normalize.paragraph_break = false;
+        cfg.normalize.punctuation_toggle = false;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert!(!round_tripped.normalize.paragraph_break);
+        assert!(!round_tripped.normalize.punctuation_toggle);
+    }
+
+    #[test]
+    fn normalize_settings_dictionary_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.normalize
+            .dictionary
+            .insert("tech-term".to_string(), "technical-replacement".to_string());
+        cfg.normalize.dictionary.insert(
+            "common-abbr".to_string(),
+            "abbreviation-expanded".to_string(),
+        );
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(round_tripped.normalize, cfg.normalize);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_normalize_new_fields() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[normalize]").expect("failed to write normalize header");
+        writeln!(file, "paragraph-break = false").expect("failed to write paragraph-break");
+        writeln!(file, "punctuation-toggle = false").expect("failed to write punctuation-toggle");
+        writeln!(file, "[normalize.dictionary]").expect("failed to write dictionary header");
+        writeln!(file, "\"code-term\" = \"expanded-code\"")
+            .expect("failed to write dictionary entry");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert!(!cfg.normalize.paragraph_break);
+        assert!(!cfg.normalize.punctuation_toggle);
+        assert_eq!(
+            cfg.normalize.dictionary.get("code-term"),
+            Some(&"expanded-code".to_string())
         );
     }
 }
