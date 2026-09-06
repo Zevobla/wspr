@@ -171,4 +171,16 @@ mod tests {
         assert_eq!(theme_toggle_label(&iced::Theme::Dark), "Switch to light");
         assert_eq!(theme_toggle_label(&iced::Theme::Light), "Switch to dark");
     }
+
+    #[test]
+    fn every_tab_has_a_distinct_label() {
+        let labels: Vec<&str> = SCREENS.iter().map(|&s| tab_label(s)).collect();
+        // No two tabs share a label, so the bar is unambiguous.
+        for (i, a) in labels.iter().enumerate() {
+            for b in &labels[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+        assert_eq!(tab_label(Screen::Dictate), "Dictate");
+    }
 }
