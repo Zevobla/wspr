@@ -300,6 +300,34 @@ mod tests {
     }
 
     #[test]
+    fn millions_and_scale_compounds() {
+        // The two cases the user reported coming out wrong.
+        assert_eq!(
+            normalize_numbers("восемь миллионов триста сорок тысяч"),
+            "8340000"
+        );
+        assert_eq!(normalize_numbers("два миллиона пятьсот тысяч"), "2500000");
+        // Plain place-value compounds keep working.
+        assert_eq!(normalize_numbers("сто двадцать три"), "123");
+        assert_eq!(normalize_numbers("тысяча девятьсот"), "1900");
+        // A scale word with no leading number multiplies by one.
+        assert_eq!(normalize_numbers("миллион"), "1000000");
+        // English millions accumulate the same way.
+        assert_eq!(
+            normalize_numbers("one million two hundred thousand"),
+            "1200000"
+        );
+    }
+
+    #[test]
+    fn regression_plain_and_non_number_text() {
+        // Simple single number still normalizes.
+        assert_eq!(normalize_numbers("пять"), "5");
+        // A sentence with no numbers is passed through unchanged.
+        assert_eq!(normalize_numbers("привет как дела"), "привет как дела");
+    }
+
+    #[test]
     fn preserves_surrounding_text_and_punctuation() {
         assert_eq!(
             normalize_numbers("I have twenty five apples."),
