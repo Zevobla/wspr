@@ -4,7 +4,7 @@
 
 /// Strips service tags and special tokens from LLM output.
 /// Removes:
-/// - Thinking tags: <think>...</think>, <reasoning>...</reasoning>, etc.
+/// - Thinking tags: <think>...</think>, <reasoning>...</reasoning>, etc., including their content
 /// - Service tokens: <|...|>, <...>
 /// - Dictionary echoes and other noise
 pub fn strip_special_tokens(text: &str) -> String {
@@ -33,13 +33,43 @@ pub fn strip_special_tokens(text: &str) -> String {
             if found_close {
                 let tag_inner = &tag[1..tag.len() - 1]; // Extract content between < and >
 
-                // Skip common service tags and tokens
-                let should_skip = tag_inner.is_empty()  // Empty <>
+                // Check for various types of tags to skip
+                let should_skip_and_content = is_opening_service_tag(tag_inner);
+                let should_skip_tag_only = tag_inner.is_empty() // Empty <>
                     || tag_inner.starts_with('|') // <|...|> tokens
                     || tag_inner.starts_with('/') // Closing tags like </think>
                     || is_service_tag(tag_inner);
 
-                if !should_skip {
+                if should_skip_and_content {
+                    // This is an opening service tag like <think>, <reasoning>, etc.
+                    // Skip everything until the corresponding closing tag
+                    let close_tag = format!("</{}>", tag_inner);
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match chars.next() {
+                            None => break,
+                            Some(c) => {
+                                if c == '<' {
+                                    let mut potential_tag = String::from("<");
+                                    while let Some(&next_ch) = chars.peek() {
+                                        potential_tag.push(chars.next().unwrap());
+                                        if next_ch == '>' {
+                                            break;
+                                        }
+                                        if potential_tag.len() > 100 {
+                                            break;
+                                        }
+                                    }
+                                    if potential_tag == close_tag {
+                                        depth -= 1;
+                                    } else if potential_tag == tag {
+                                        depth += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if !should_skip_tag_only {
                     // Not a service tag, keep it
                     result.push_str(&tag);
                 }
@@ -53,7 +83,23 @@ pub fn strip_special_tokens(text: &str) -> String {
         }
     }
 
-    result.trim().to_string()
+    // Normalize whitespace: collapse multiple spaces into single space
+    result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+
+}
+
+/// Checks if the tag content (without < and >) is an opening service tag that has content to skip.
+fn is_opening_service_tag(tag_inner: &str) -> bool {
+    let lower = tag_inner.to_lowercase();
+
+    // Opening tags whose content should be skipped entirely
+    matches!(
+        lower.as_str(),
+        "think" | "reasoning" | "analysis" | "reflection" | "summary" | "output"
+    )
 }
 
 /// Checks if the tag content (without < and >) is a known service tag.
@@ -91,6 +137,7 @@ mod tests {
     fn strips_multiple_service_tags() {
         let input = "<think>internal</think> text <reasoning>more</reasoning> output";
         let result = strip_special_tokens(input);
+        // Both think and reasoning tags and their content are removed
         assert_eq!(result, "text output");
     }
 
