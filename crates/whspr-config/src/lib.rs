@@ -17,10 +17,12 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 mod autostart;
+mod injection;
 mod sound;
 mod speaker;
 
 pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
+pub use injection::InjectionSettings;
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile};
 
@@ -214,6 +216,10 @@ pub struct Config {
     /// `[sound]` table.
     #[serde(default)]
     pub sound: SoundSettings,
+    /// Text-injection tuning, read from the config file's `[injection]`
+    /// table.
+    #[serde(default)]
+    pub injection: InjectionSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
