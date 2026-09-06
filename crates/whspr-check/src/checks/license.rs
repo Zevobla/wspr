@@ -452,3 +452,45 @@ pub fn check_no_copyleft_dependencies(root: &Path) -> CheckResult {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Proves the `concat!`-built patterns still match exactly what the
+    /// old plain-literal versions did - the point of splitting them was to
+    /// keep the *source text* free of a contiguous secret-shaped
+    /// substring, not to change what gets detected. Built via the same
+    /// `concat!` trick rather than a plain literal, so this test fixture
+    /// doesn't reintroduce the exact thing it's testing for.
+    #[test]
+    fn matched_secret_pattern_detects_a_planted_key_shaped_line() {
+        let planted_prefix = concat!("sk", "-proj-");
+        let line = format!("+openai_key = \"{planted_prefix}REALLYLOOKSLIKEAREALKEY123456\"");
+        assert_eq!(matched_secret_pattern(&line), Some(planted_prefix));
+    }
+
+    #[test]
+    fn matched_secret_pattern_skips_lines_with_a_benign_marker() {
+        let planted_prefix = concat!("sk", "-proj-");
+        let line = format!("+openai_key = \"{planted_prefix}test-fixture-not-a-real-key\"");
+        assert_eq!(matched_secret_pattern(&line), None);
+    }
+
+    #[test]
+    fn matched_secret_pattern_ignores_ordinary_lines() {
+        assert_eq!(matched_secret_pattern("+let count = 5;"), None);
+    }
+
+    #[test]
+    fn matched_secret_pattern_matches_every_declared_pattern() {
+        for pattern in SECRET_PATTERNS {
+            let line = format!("+credential = \"{pattern}REALLYLOOKSLIKEAREALSECRET\"");
+            assert_eq!(
+                matched_secret_pattern(&line),
+                Some(*pattern),
+                "pattern {pattern:?} should match its own planted line"
+            );
+        }
+    }
+}
