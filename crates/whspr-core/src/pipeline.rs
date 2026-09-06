@@ -23,6 +23,7 @@ pub struct Pipeline {
     sink: Option<Box<dyn TextSink>>,
     on_state: Option<StateCallback>,
     refine_timeout: Duration,
+    asr_options: AsrOptions,
 }
 
 impl Pipeline {
@@ -33,6 +34,7 @@ impl Pipeline {
             sink: None,
             on_state: None,
             refine_timeout: DEFAULT_REFINE_TIMEOUT,
+            asr_options: AsrOptions::default(),
         }
     }
 
@@ -53,6 +55,24 @@ impl Pipeline {
     /// never stall dictation forever.
     pub fn with_refine_timeout(mut self, timeout: Duration) -> Self {
         self.refine_timeout = timeout;
+        self
+    }
+
+    /// Sets the `AsrOptions` (e.g. a forced transcription language) passed
+    /// to the ASR backend on every `run`/`run_with_transcript` call.
+    /// Default: `AsrOptions::default()` (no language hint - the backend
+    /// picks/auto-detects), so this is opt-in and doesn't change behavior
+    /// for existing callers that never call it.
+    pub fn with_asr_options(mut self, opts: AsrOptions) -> Self {
+        self.asr_options = opts;
+        self
+    }
+
+    /// Convenience over `with_asr_options` for the common case of just
+    /// setting (or clearing) the language hint (I-03: BCP47 language code
+    /// per utterance, e.g. from `whspr-cli`'s `--language` flag).
+    pub fn with_language(mut self, language: Option<String>) -> Self {
+        self.asr_options.language = language;
         self
     }
 
@@ -85,7 +105,7 @@ impl Pipeline {
         ctx: &RefineContext,
     ) -> Result<(Transcript, String)> {
         self.report(PipelineState::Transcribing);
-        let transcript = self.asr.transcribe(&audio, &AsrOptions::default()).await?;
+        let transcript = self.asr.transcribe(&audio, &self.asr_options).await?;
 
         self.report(PipelineState::Refining);
         let refined = match tokio::time::timeout(
