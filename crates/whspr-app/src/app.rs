@@ -44,7 +44,14 @@ fn boot() -> (State, Task<Message>) {
     let config = whspr_config::load();
     let mut state = State::new(config);
     state.input_devices = crate::devices::list_input_device_names();
-    state.selected_device = crate::devices::default_input_device_name();
+    // Restore the previously chosen input device if one was persisted,
+    // otherwise fall back to the host's default input device.
+    state.selected_device = state
+        .config
+        .device
+        .input_device
+        .clone()
+        .or_else(crate::devices::default_input_device_name);
     state.history = crate::history::history_file_path()
         .map(|path| crate::history::read_history_file(&path))
         .unwrap_or_default();
