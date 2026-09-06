@@ -84,7 +84,11 @@ pub fn strip_special_tokens(text: &str) -> String {
     }
 
     // Normalize whitespace: collapse multiple spaces into single space
-    result.split_whitespace().collect::<Vec<_>>().join(" ")
+    result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+
 }
 
 /// Checks if the tag content (without < and >) is an opening service tag that has content to skip.
