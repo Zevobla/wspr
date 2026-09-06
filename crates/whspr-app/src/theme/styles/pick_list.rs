@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn opened_pick_list_increases_border_width() {
         let scheme = &color::LIGHT;
-        let style = field(scheme, Status::Opened { with_default: false });
+        let style = field(scheme, Status::Opened { is_hovered: false });
         assert_eq!(style.border.width, 2.0);
     }
 

@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn focused_text_input_uses_primary_and_wider_border() {
         let scheme = &color::LIGHT;
-        let style = outlined(scheme, Status::Focused { is_focused: true });
+        let style = outlined(scheme, Status::Focused { is_hovered: false });
         assert_eq!(style.border.color, scheme.primary);
         assert_eq!(style.border.width, 2.0);
     }
