@@ -152,12 +152,19 @@ mod tests {
         // Push 7 samples; only the last 5 should remain
         buf.push_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
 
-        assert_eq!(buf.len(), 5, "buffer should retain exactly capacity samples");
+        assert_eq!(
+            buf.len(),
+            5,
+            "buffer should retain exactly capacity samples"
+        );
 
         // Drain and verify we kept the last 5 (oldest first)
         let drained = buf.drain_preroll();
-        assert_eq!(drained, vec![3.0, 4.0, 5.0, 6.0, 7.0],
-                   "should keep the last 5 samples (3-7)");
+        assert_eq!(
+            drained,
+            vec![3.0, 4.0, 5.0, 6.0, 7.0],
+            "should keep the last 5 samples (3-7)"
+        );
     }
 
     #[test]
@@ -179,7 +186,11 @@ mod tests {
 
         // Drain from an empty buffer
         let drained = buf.drain_preroll();
-        assert_eq!(drained, Vec::<f32>::new(), "draining empty buffer should yield empty vec");
+        assert_eq!(
+            drained,
+            Vec::<f32>::new(),
+            "draining empty buffer should yield empty vec"
+        );
         assert!(buf.is_empty(), "buffer should still be empty");
     }
 
