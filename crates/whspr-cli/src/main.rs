@@ -13,7 +13,7 @@
 //! Flags:
 //!   --asr ID                        ASR backend (openai, deepgram, whisper-local, mock; default: whisper-local)
 //!   --refine ID                     Text refiner (noop, openai, anthropic, llama-local; default from config)
-//!   --language LANG                 BCP47 language code (e.g. en, es, fr; not yet wired to ASR)
+//!   --language LANG                 BCP47 language code for transcribe/transcribe-batch (e.g. en, es, fr; default: config.language)
 //!   --embedding CHOICE               Speaker embedding model for `diarize` (cam-plus-plus, eres2net; default from config)
 //!   --format FORMAT                 `transcribe`: timecoded export (srt, vtt); overrides --json
 //!   --json                          Output JSON object instead of plain text
@@ -53,7 +53,8 @@ enum Command {
         #[arg(long)]
         refine: Option<String>,
 
-        /// BCP47 language code (e.g. en, es, fr; not yet wired to ASR).
+        /// BCP47 language code passed to the ASR backend (e.g. en, es,
+        /// fr). Falls back to `config.language` if not given.
         #[arg(long)]
         language: Option<String>,
 
@@ -111,7 +112,8 @@ enum Command {
         #[arg(long)]
         refine: Option<String>,
 
-        /// BCP47 language code (not yet wired to ASR).
+        /// BCP47 language code passed to the ASR backend. Falls back to
+        /// `config.language` if not given.
         #[arg(long)]
         language: Option<String>,
 

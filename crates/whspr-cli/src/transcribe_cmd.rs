@@ -175,7 +175,7 @@ pub async fn run(
     file: PathBuf,
     asr: Option<String>,
     refine: Option<String>,
-    _language: Option<String>,
+    language: Option<String>,
     format: Option<String>,
     output_json: bool,
     no_store: bool,
@@ -207,7 +207,11 @@ pub async fn run(
     let asr_id = asr_backend.id();
     let refine_id = refiner.id();
 
-    let pipeline = Pipeline::new(asr_backend, refiner);
+    // --language wins when given; otherwise falls back to the config
+    // file's [language] (I-03) - `None` either way just means "no hint",
+    // the same as before this was wired up.
+    let pipeline = Pipeline::new(asr_backend, refiner)
+        .with_language(language.or_else(|| config.language.clone()));
     let ctx = RefineContext::default();
 
     eprintln!("Transcribing and refining...");
@@ -259,7 +263,7 @@ pub async fn run_batch(
     dir: PathBuf,
     asr: Option<String>,
     refine: Option<String>,
-    _language: Option<String>,
+    language: Option<String>,
     output_json: bool,
     no_store: bool,
     data_dir: Option<PathBuf>,
@@ -282,7 +286,8 @@ pub async fn run_batch(
     let asr_id = asr_backend.id();
     let refine_id = refiner.id();
 
-    let pipeline = Pipeline::new(asr_backend, refiner);
+    let pipeline = Pipeline::new(asr_backend, refiner)
+        .with_language(language.or_else(|| config.language.clone()));
 
     let mut results = Vec::new();
 
