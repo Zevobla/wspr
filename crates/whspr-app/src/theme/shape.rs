@@ -29,9 +29,9 @@ mod tests {
 
     #[test]
     fn shape_tokens_scale_up_progressively() {
-        assert!(XS < SM);
-        assert!(SM < MD);
-        assert!(MD < LG);
-        assert!(LG < FULL);
+        let steps = [XS, SM, MD, LG, FULL];
+        for pair in steps.windows(2) {
+            assert!(pair[0] < pair[1]);
+        }
     }
 }

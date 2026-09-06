@@ -20,10 +20,10 @@ mod tests {
 
     #[test]
     fn spacing_values_increase_monotonically() {
-        assert!(XS < SM);
-        assert!(SM < MD);
-        assert!(MD < LG);
-        assert!(LG < XL);
+        let steps = [XS, SM, MD, LG, XL];
+        for pair in steps.windows(2) {
+            assert!(pair[0] < pair[1]);
+        }
     }
 
     #[test]
