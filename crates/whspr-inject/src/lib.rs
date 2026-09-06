@@ -117,6 +117,22 @@ fn needs_leading_space(prev_last: Option<char>, next: &str) -> bool {
     }
 }
 
+/// Computes the text `insert` should actually emit for `next` (with a
+/// leading space prepended when [`needs_leading_space`] says so), along with
+/// the trailing character to remember for the next call. Pure, so the
+/// cross-utterance spacing can be exercised without driving enigo or the
+/// clipboard.
+fn spaced_payload(prev_last: Option<char>, next: &str) -> (String, Option<char>) {
+    let payload = if needs_leading_space(prev_last, next) {
+        format!(" {next}")
+    } else {
+        next.to_string()
+    };
+    // Carry the last char forward; keep the previous one if `next` was empty.
+    let new_last = payload.chars().next_back().or(prev_last);
+    (payload, new_last)
+}
+
 /// The trailing character of the text `EnigoTextSink::insert` last emitted,
 /// used to decide whether the next utterance needs a leading space (AM-03).
 ///
@@ -140,11 +156,7 @@ impl TextSink for EnigoTextSink {
         let mut last = last_emitted().lock().unwrap_or_else(|e| e.into_inner());
 
         // Keep back-to-back utterances from running together (AM-03).
-        let payload = if needs_leading_space(*last, text) {
-            format!(" {text}")
-        } else {
-            text.to_string()
-        };
+        let (payload, new_last) = spaced_payload(*last, text);
 
         // Clipboard paste is the default path: it lands text reliably in
         // editors, terminals, and vim, where raw synthetic keystrokes
@@ -155,7 +167,7 @@ impl TextSink for EnigoTextSink {
         // Remember what we actually emitted so the next utterance can decide
         // whether it needs a leading space. Only record on success.
         if result.is_ok() {
-            *last = payload.chars().next_back();
+            *last = new_last;
         }
         result
     }
