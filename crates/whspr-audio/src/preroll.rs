@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 
 /// Default preroll duration in milliseconds (~300ms).
 /// At 16kHz, this retains ~4800 samples before the trigger.
+#[allow(dead_code)]
 pub const DEFAULT_PREROLL_MS: usize = 300;
 
 /// A fixed-capacity ring buffer that retains the most recent audio samples.
