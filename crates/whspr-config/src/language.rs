@@ -63,7 +63,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let config_path = temp_dir.path().join("config.toml");
         let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
-        writeln!(file, "[language-settings]").expect("failed to write language-settings header");
+        writeln!(file, "[language_settings]").expect("failed to write language_settings header");
         writeln!(file, "language-switch = false").expect("failed to write language-switch");
         writeln!(file, "fixed-language = \"es\"").expect("failed to write fixed-language");
         drop(file);
@@ -83,7 +83,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let config_path = temp_dir.path().join("config.toml");
         let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
-        writeln!(file, "[language-settings]").expect("failed to write language-settings header");
+        writeln!(file, "[language_settings]").expect("failed to write language_settings header");
         writeln!(file, "language-switch = false").expect("failed to write language-switch");
         drop(file);
 
