@@ -12,6 +12,10 @@ use whspr_core::{
     AsrBackend, AsrOptions, AudioBuffer, Result, Transcript, TranscriptSegment, WhsprError,
 };
 
+mod tokens;
+
+use tokens::strip_special_tokens;
+
 /// Local transcription via whisper.cpp (whisper-rs).
 ///
 /// `transcribe` assumes the `AudioBuffer` it receives is already 16kHz mono
@@ -112,24 +116,27 @@ fn transcribe_blocking(
 
     let mut segments = Vec::new();
     for segment in state.as_iter() {
-        let text = segment
+        let raw = segment
             .to_str_lossy()
             .map_err(|e| WhsprError::Asr(format!("failed to decode whisper segment: {}", e)))?;
         segments.push(TranscriptSegment {
-            text: text.trim().to_string(),
+            // Strip any service tokens the model emitted before they can
+            // leak into the transcript (AM-19).
+            text: strip_special_tokens(&raw),
             start_secs: segment.start_timestamp() as f32 / 100.0,
             end_secs: segment.end_timestamp() as f32 / 100.0,
             speaker: None,
         });
     }
 
-    let text = segments
+    // Join the (already-cleaned) segments and strip once more, which also
+    // collapses the spacing around any segment that was nothing but tokens.
+    let joined = segments
         .iter()
         .map(|s| s.text.as_str())
         .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string();
+        .join(" ");
+    let text = strip_special_tokens(&joined);
 
     Ok(Transcript {
         text,
