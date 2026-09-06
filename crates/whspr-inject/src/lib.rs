@@ -4,6 +4,7 @@
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use tokio::sync::mpsc;
@@ -115,6 +116,26 @@ impl EnigoTextSink {
     /// asynchronously by the OS, so we give the target app a moment to read
     /// the clipboard before putting the original contents back.
     const PASTE_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
+
+    /// Sets the pre-paste pause, in milliseconds, applied before the paste
+    /// keystroke is sent (AM-20). This is the plumbing point for
+    /// whspr-config's `InjectionSettings::pre_paste_delay_ms`: a consumer
+    /// (e.g. the app) reads that setting and calls this once at startup.
+    /// Applies to every sink; `0` disables the pause.
+    pub fn set_pre_paste_delay_ms(ms: u64) {
+        PRE_PASTE_DELAY_MS.store(ms, Ordering::Relaxed);
+    }
+}
+
+/// The configured pre-paste pause, in milliseconds. Process-global for the
+/// same reason as [`last_emitted`]: `EnigoTextSink` is a zero-sized unit
+/// struct constructed directly by its callers. Defaults to `0` (no pause).
+static PRE_PASTE_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Maps a pre-paste pause in milliseconds to a `Duration` (`0` -> no delay).
+/// Pure, so the mapping can be unit-tested without actually sleeping.
+fn pre_paste_delay(ms: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(ms)
 }
 
 /// Whether a separating space should be inserted before `next`, given the
@@ -224,6 +245,11 @@ impl EnigoTextSink {
     /// Simulates the platform paste shortcut (Cmd+V on macOS, Ctrl+V
     /// elsewhere) into whatever window currently has focus.
     fn send_paste_keystroke(&self) -> Result<()> {
+        // Pre-paste pause (AM-20): give a slow-to-focus target app a moment
+        // before Cmd+V/Ctrl+V lands. Our text is already staged on the
+        // clipboard here. Distinct from the post-paste settle further down.
+        thread::sleep(pre_paste_delay(PRE_PASTE_DELAY_MS.load(Ordering::Relaxed)));
+
         let mut enigo = Enigo::new(&Settings::default())
             .map_err(|e| WhsprError::Inject(format!("failed to initialize enigo: {}", e)))?;
 
