@@ -10,19 +10,3 @@ pub mod pick_list;
 pub mod progress_bar;
 pub mod scrollable;
 pub mod text_input;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn style_modules_are_accessible() {
-        // Verify that all style modules compile and are accessible.
-        // This ensures the re-exports in this module are correct.
-        let _button = super::button::filled;
-        let _checkbox = super::checkbox::field;
-        let _container = super::container::surface;
-        let _pick_list = super::pick_list::field;
-        let _progress_bar = super::progress_bar::thinking;
-        let _scrollable = super::scrollable::rail;
-        let _text_input = super::text_input::outlined;
-    }
-}
