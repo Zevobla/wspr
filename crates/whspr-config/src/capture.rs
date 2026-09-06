@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Settings for transcription capture, refinement, and injection behavior.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct CaptureSettings {
     /// Maximum time in milliseconds to wait for the refine step (text cleanup)
@@ -20,6 +20,23 @@ pub struct CaptureSettings {
     /// sending text to read-only contexts. Default true — prevents accidental
     /// paste-mode failures in unsupported apps.
     pub input_field_detection: bool,
+    /// Whether to apply noise suppression preprocessing to audio (C-16).
+    /// Default false — can improve clarity in noisy environments but may alter
+    /// original audio quality.
+    pub noise_suppression: bool,
+    /// Input gain multiplier for audio capture (C-09). Default 1.0 (no change)
+    /// — increase for quiet sources, decrease for loud sources.
+    pub input_gain: f32,
+    /// Voice activity detection (VAD) threshold (E-04). Default 0.01 — lower
+    /// values are more sensitive to detecting voice, higher values require
+    /// louder audio to trigger recording.
+    pub vad_threshold: f32,
+    /// Whether to translate transcribed text to a different language (J-10).
+    /// Default false — requires a translation backend to be configured.
+    pub translate: bool,
+    /// Whether to shorten the transcript text (J-11). Default false — applies
+    /// text summarization or compression when enabled.
+    pub shorten: bool,
 }
 
 impl Default for CaptureSettings {
@@ -28,6 +45,11 @@ impl Default for CaptureSettings {
             refine_timeout_ms: 30000,
             auto_send: false,
             input_field_detection: true,
+            noise_suppression: false,
+            input_gain: 1.0,
+            vad_threshold: 0.01,
+            translate: false,
+            shorten: false,
         }
     }
 }
@@ -45,6 +67,11 @@ mod tests {
                 refine_timeout_ms: 30000,
                 auto_send: false,
                 input_field_detection: true,
+                noise_suppression: false,
+                input_gain: 1.0,
+                vad_threshold: 0.01,
+                translate: false,
+                shorten: false,
             }
         );
     }
@@ -55,6 +82,11 @@ mod tests {
         cfg.capture.refine_timeout_ms = 60000;
         cfg.capture.auto_send = true;
         cfg.capture.input_field_detection = false;
+        cfg.capture.noise_suppression = true;
+        cfg.capture.input_gain = 1.5;
+        cfg.capture.vad_threshold = 0.05;
+        cfg.capture.translate = true;
+        cfg.capture.shorten = true;
 
         let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
         let round_tripped: Config =
@@ -75,12 +107,22 @@ mod tests {
         writeln!(file, "auto-send = true").expect("failed to write auto-send");
         writeln!(file, "input-field-detection = false")
             .expect("failed to write input-field-detection");
+        writeln!(file, "noise-suppression = true").expect("failed to write noise-suppression");
+        writeln!(file, "input-gain = 1.5").expect("failed to write input-gain");
+        writeln!(file, "vad-threshold = 0.05").expect("failed to write vad-threshold");
+        writeln!(file, "translate = true").expect("failed to write translate");
+        writeln!(file, "shorten = true").expect("failed to write shorten");
         drop(file);
 
         let cfg = load_from(Some(temp_dir.path()));
         assert_eq!(cfg.capture.refine_timeout_ms, 60000);
         assert!(cfg.capture.auto_send);
         assert!(!cfg.capture.input_field_detection);
+        assert!(cfg.capture.noise_suppression);
+        assert_eq!(cfg.capture.input_gain, 1.5);
+        assert_eq!(cfg.capture.vad_threshold, 0.05);
+        assert!(cfg.capture.translate);
+        assert!(cfg.capture.shorten);
     }
 
     #[test]
@@ -98,5 +140,10 @@ mod tests {
         assert_eq!(cfg.capture.refine_timeout_ms, 30000); // not set - stays default
         assert!(cfg.capture.auto_send);
         assert!(cfg.capture.input_field_detection); // not set - stays default
+        assert!(!cfg.capture.noise_suppression); // not set - stays default
+        assert_eq!(cfg.capture.input_gain, 1.0); // not set - stays default
+        assert_eq!(cfg.capture.vad_threshold, 0.01); // not set - stays default
+        assert!(!cfg.capture.translate); // not set - stays default
+        assert!(!cfg.capture.shorten); // not set - stays default
     }
 }
