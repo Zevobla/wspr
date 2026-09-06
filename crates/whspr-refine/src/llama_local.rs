@@ -18,7 +18,7 @@ use llama_cpp_2::TokenToStringError;
 
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
-use crate::build_cleanup_prompt;
+use crate::{build_cleanup_prompt, tokens::strip_special_tokens};
 
 /// Context window handed to the model: large enough for a normal dictation
 /// utterance plus the fixed instruction text wrapped around it.
@@ -158,7 +158,7 @@ fn generate(model_path: &Path, prompt: &str) -> Result<String> {
             .map_err(|e| WhsprError::Refine(format!("llama decode failed: {e}")))?;
     }
 
-    Ok(output.trim().to_string())
+    Ok(strip_special_tokens(&output))
 }
 
 /// Decodes a single generated token to text. Sidesteps needing our own
