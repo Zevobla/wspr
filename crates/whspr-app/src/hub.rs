@@ -88,11 +88,18 @@ fn field<'a>(
     .into()
 }
 
-fn header<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let theme_label = match state.theme {
+/// The theme-toggle button's label names the theme you'd switch *to*, not
+/// the one you're currently in -- kept as a pure `&Theme -> &str` so the
+/// wording stays testable without standing up the whole `header` view.
+fn theme_toggle_label(theme: &iced::Theme) -> &'static str {
+    match theme {
         iced::Theme::Dark => "Switch to light",
         _ => "Switch to dark",
-    };
+    }
+}
+
+fn header<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let theme_label = theme_toggle_label(&state.theme);
 
     row![
         text("whspr")
@@ -420,12 +427,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hub_module_compiles() {
-        // Verify that the view function signature is accessible and
-        // the module structure is correct. This is a smoke test for the
-        // entire hub rendering pipeline.
-        // Note: We cannot easily call `view()` without a full State and
-        // running iced, but we verify the function exists and is public.
-        let _ = view as fn(&State) -> Element<'_, Message>;
+    fn theme_toggle_label_names_the_target_theme() {
+        // The label advertises the theme the click switches *to*.
+        assert_eq!(theme_toggle_label(&iced::Theme::Dark), "Switch to light");
+        assert_eq!(theme_toggle_label(&iced::Theme::Light), "Switch to dark");
     }
 }
