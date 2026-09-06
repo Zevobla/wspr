@@ -17,36 +17,16 @@ pub struct Case {
     /// Ground truth / reference transcription.
     #[serde(rename = "эталон")]
     pub reference: String,
-
-    /// Voice name (e.g., "Milena").
-    #[serde(rename = "голос")]
-    pub voice: String,
-
-    /// Speech tempo in WPM or similar.
-    #[serde(rename = "темп")]
-    pub tempo: u32,
-
-    /// Audio duration in seconds.
-    #[serde(rename = "длительность")]
-    pub duration: f32,
-
-    /// Special feature description (e.g., "чистая запись").
-    #[serde(rename = "особенность")]
-    pub feature: String,
+    // The stand-set JSON also carries per-case metadata (голос/темп/
+    // длительность/особенность); serde ignores those keys since the bench
+    // harness only consumes file/criterion/reference.
 }
 
 /// The entire stand set metadata.
 #[derive(Debug, Deserialize)]
 pub struct StandSet {
-    /// Audio sample rate (e.g., 16000).
-    #[serde(rename = "частота")]
-    pub sample_rate: u32,
-
-    /// Total number of test cases.
-    #[serde(rename = "случаев")]
-    pub count: usize,
-
-    /// Array of test cases.
+    /// Array of test cases. Set-level metadata keys (частота/случаев) in the
+    /// JSON are ignored — the harness derives what it needs from `cases`.
     #[serde(rename = "случаи")]
     pub cases: Vec<Case>,
 }
@@ -61,11 +41,6 @@ impl StandSet {
         serde_json::from_str(&data)
             .map_err(|e| WhsprError::Other(format!("failed to deserialize stand set: {}", e)))
     }
-
-    /// Extract the criterion prefix (everything before the first hyphen) for grouping.
-    pub fn criterion_prefix(criterion: &str) -> String {
-        criterion.split('-').next().unwrap_or(criterion).to_string()
-    }
 }
 
 #[cfg(test)]
@@ -73,16 +48,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_criterion_prefix() {
-        assert_eq!(StandSet::criterion_prefix("F-01"), "F");
-        assert_eq!(StandSet::criterion_prefix("AM-03"), "AM");
-        assert_eq!(StandSet::criterion_prefix("AI-04"), "AI");
-        assert_eq!(StandSet::criterion_prefix("single"), "single");
-        assert_eq!(StandSet::criterion_prefix("E-06"), "E");
-    }
-
-    #[test]
-    fn deserializes_all_case_and_set_fields() {
+    fn parses_used_fields_and_ignores_extra_metadata() {
+        // Real stand-set JSON carries per-case/per-set metadata the harness
+        // doesn't consume; serde must ignore those keys and still populate
+        // the fields we do use.
         let json = r#"{
             "частота": 16000,
             "случаев": 1,
@@ -97,15 +66,10 @@ mod tests {
             }]
         }"#;
         let set: StandSet = serde_json::from_str(json).expect("parse");
-        assert_eq!(set.sample_rate, 16000);
-        assert_eq!(set.count, 1);
+        assert_eq!(set.cases.len(), 1);
         let c = &set.cases[0];
         assert_eq!(c.file, "f-01.wav");
         assert_eq!(c.criterion, "F-01");
         assert_eq!(c.reference, "hi");
-        assert_eq!(c.voice, "Milena");
-        assert_eq!(c.tempo, 120);
-        assert_eq!(c.duration, 3.5);
-        assert_eq!(c.feature, "clean");
     }
 }
