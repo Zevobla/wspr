@@ -7,7 +7,6 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::Instant;
 
 use serde_json::json;
 use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
@@ -130,6 +129,20 @@ fn build_refiner(
     Ok(Box::new(NormalizingRefiner::new(inner, config.normalize)))
 }
 
+/// Words-per-minute from a word count and the *speech* duration (the
+/// recorded/uploaded audio's length), not pipeline processing time -
+/// processing wall-clock varies with backend/hardware/network and says
+/// nothing about how fast the person actually spoke (AL-12). Returns 0.0
+/// for a non-positive duration (e.g. a clip that trimmed to nothing)
+/// rather than dividing by zero.
+fn words_per_minute(word_count: usize, duration_secs: f32) -> f64 {
+    if duration_secs > 0.0 {
+        (word_count as f64) / (duration_secs as f64 / 60.0)
+    } else {
+        0.0
+    }
+}
+
 /// Saves a transcription result to `history.jsonl` inside `data_dir`.
 async fn save_to_history(
     data_dir: &Path,
@@ -137,6 +150,7 @@ async fn save_to_history(
     asr_id: &str,
     refine_id: &str,
     wpm: f64,
+    duration_secs: f64,
 ) -> anyhow::Result<()> {
     std::fs::create_dir_all(data_dir)?;
 
@@ -156,6 +170,7 @@ async fn save_to_history(
         "source": "cli",
         "wpm": wpm,
         "word_count": word_count,
+        "duration_secs": duration_secs,
     });
 
     let line = format!("{}\n", entry);
@@ -215,15 +230,22 @@ pub async fn run(
     let ctx = RefineContext::default();
 
     eprintln!("Transcribing and refining...");
-    let start = Instant::now();
     let (transcript, output) = pipeline.run_with_transcript(audio, &ctx).await?;
-    let elapsed = start.elapsed().as_secs_f64();
-    let wpm = (output.split_whitespace().count() as f64) / (elapsed / 60.0);
+    let wpm = words_per_minute(output.split_whitespace().count(), audio_duration_secs);
 
     if !no_store {
         match crate::resolve_data_dir(data_dir.as_deref()) {
             Ok(dir) => {
-                if let Err(e) = save_to_history(&dir, &output, asr_id, refine_id, wpm).await {
+                if let Err(e) = save_to_history(
+                    &dir,
+                    &output,
+                    asr_id,
+                    refine_id,
+                    wpm,
+                    audio_duration_secs as f64,
+                )
+                .await
+                {
                     eprintln!("Warning: failed to save to history: {}", e);
                 }
             }
@@ -299,10 +321,16 @@ pub async fn run_batch(
             eprintln!("Processing {}...", path.display());
             match crate::load_audio(&path).await {
                 Ok(audio) => {
+                    let audio_duration_secs = audio.duration_secs();
                     let ctx = RefineContext::default();
 
                     match pipeline.run(audio, &ctx).await {
                         Ok(output) => {
+                            let wpm = words_per_minute(
+                                output.split_whitespace().count(),
+                                audio_duration_secs,
+                            );
+
                             let result = json!({
                                 "file": path.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
                                 "text": output,
@@ -320,7 +348,8 @@ pub async fn run_batch(
                                         &output,
                                         asr_id,
                                         refine_id,
-                                        0.0,
+                                        wpm,
+                                        audio_duration_secs as f64,
                                     )
                                     .await;
                                 }
@@ -351,4 +380,32 @@ pub async fn run_batch(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn words_per_minute_uses_audio_duration_not_wall_clock() {
+        // 10 words over 30 seconds of audio is 20 wpm, regardless of how
+        // long the ASR/refine pipeline itself took to process it (AL-12).
+        assert_eq!(words_per_minute(10, 30.0), 20.0);
+    }
+
+    #[test]
+    fn words_per_minute_of_a_minute_long_clip_equals_word_count() {
+        assert_eq!(words_per_minute(145, 60.0), 145.0);
+    }
+
+    #[test]
+    fn words_per_minute_is_zero_for_a_non_positive_duration() {
+        assert_eq!(words_per_minute(5, 0.0), 0.0);
+        assert_eq!(words_per_minute(5, -1.0), 0.0);
+    }
+
+    #[test]
+    fn words_per_minute_of_zero_words_is_zero() {
+        assert_eq!(words_per_minute(0, 30.0), 0.0);
+    }
 }
