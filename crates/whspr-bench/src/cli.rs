@@ -31,11 +31,12 @@ impl Args {
     /// the stand set, decoding audio, ...) begins.
     ///
     /// Deliberately does NOT check model availability for `--asr
-    /// whisper-local` here: a model path can come from `--model` or, inside
-    /// the Nix devShell, from the `WHISPER_MODEL_PATH` env var that points
-    /// at the project's pinned model (see `WhisperLocal::resolve_model_path`
-    /// in `whspr-asr`). That resolution only makes sense at the point the
-    /// backend is actually constructed in `main`, not here.
+    /// whisper-local` here: a model path can come from `--model` or from
+    /// the `WHISPER_MODEL_PATH` env var pointing at a model the user has
+    /// downloaded themselves (whspr is bring-your-own-model -- see
+    /// `WhisperLocal::resolve_model_path` in `whspr-asr`). That resolution
+    /// only makes sense at the point the backend is actually constructed in
+    /// `main`, not here.
     pub fn validate(&self) -> Result<(), String> {
         match self.asr.as_str() {
             "mock" | "whisper-local" => Ok(()),
