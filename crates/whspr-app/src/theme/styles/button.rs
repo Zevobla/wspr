@@ -39,6 +39,21 @@ pub fn tonal(scheme: &color::Scheme, status: Status) -> Style {
     )
 }
 
+/// A high-emphasis *destructive/active* action -- the Dictate screen's
+/// "Stop recording" state, where a live capture is running and the button
+/// needs to read as clearly active (MD3 maps this to the `error` role, the
+/// same red the Flow Bar's Recording state uses).
+pub fn error(scheme: &color::Scheme, status: Status) -> Style {
+    let base = Style {
+        background: Some(Background::Color(scheme.error)),
+        text_color: scheme.on_error,
+        border: Border::default().rounded(shape::FULL),
+        ..Style::default()
+    };
+
+    styled(base, scheme.error, scheme.on_error, scheme, status)
+}
+
 /// A repeated, low-emphasis action against a card background (a speaker
 /// row's "Save"): outlined instead of filled so a whole list of rows
 /// doesn't turn into a wall of filled buttons.
@@ -166,6 +181,14 @@ mod tests {
         let style = tonal(scheme, Status::Active);
         assert!(style.background.is_some());
         assert_eq!(style.text_color, scheme.on_secondary_container);
+    }
+
+    #[test]
+    fn error_button_has_error_background() {
+        let scheme = &color::LIGHT;
+        let style = error(scheme, Status::Active);
+        assert_eq!(style.background, Some(Background::Color(scheme.error)));
+        assert_eq!(style.text_color, scheme.on_error);
     }
 
     #[test]
