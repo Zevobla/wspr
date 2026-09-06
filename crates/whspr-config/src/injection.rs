@@ -43,4 +43,16 @@ mod tests {
         let back: InjectionSettings = toml::from_str("").expect("deserialize empty table");
         assert_eq!(back.pre_paste_delay_ms, 0);
     }
+
+    #[test]
+    fn round_trips_as_part_of_full_config() {
+        let mut cfg = crate::Config::default();
+        cfg.injection.pre_paste_delay_ms = 250;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("serialize config");
+        let round_tripped: crate::Config =
+            toml::from_str(&toml_string).expect("deserialize config");
+
+        assert_eq!(round_tripped.injection, cfg.injection);
+    }
 }
