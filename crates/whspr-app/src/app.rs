@@ -142,6 +142,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             Task::none()
         }
+        Message::TabSelected(screen) => {
+            state.screen = screen;
+            Task::none()
+        }
+        Message::CopyTranscript => match &state.transcribed_text {
+            Some(text) if !text.trim().is_empty() => iced::clipboard::write(text.clone()),
+            _ => Task::none(),
+        },
         Message::Worker(event) => {
             match event {
                 crate::worker::WorkerEvent::StateChanged(pipeline_state) => {
