@@ -14,6 +14,8 @@ serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 llama-cpp-2.workspace = true
+tracing.workspace = true
+mlua = { workspace = true, features = ["luajit", "vendored"] }
 
 [dev-dependencies]
 wiremock.workspace = true
