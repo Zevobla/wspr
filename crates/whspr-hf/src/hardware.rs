@@ -51,24 +51,38 @@ pub fn estimated_footprint(model_bytes: u64) -> u64 {
     model_bytes.saturating_add(overhead)
 }
 
+/// RAM to keep free for the OS, this app, and whatever else the user is
+/// running. A model is only ever "fits" if loading it still leaves at least
+/// this much headroom -- a raw `footprint <= available` check reads far too
+/// generously (it would flag a 3 GB model on an 8 GB machine as fine).
+const OS_RESERVE_BYTES: u64 = 1536 * 1024 * 1024; // 1.5 GiB
+
+/// For a comfortable ([`Fit::Green`]) verdict a model's footprint must use at
+/// most this fraction (1/N) of available RAM, so most of the machine stays
+/// free. Small models clear this easily; a mid/large whisper model on ~8 GB
+/// does not, so it reads [`Fit::Yellow`] (tight) rather than green.
+const GREEN_HEADROOM_DIVISOR: u64 = 5;
+
 /// Pure fit verdict: compares a model's estimated peak footprint (see
-/// [`estimated_footprint`]) against `available_bytes` of RAM.
+/// [`estimated_footprint`]) against `available_bytes` of RAM, reserving
+/// [`OS_RESERVE_BYTES`] for everything else.
 ///
-/// - [`Fit::Green`]  when the footprint uses at most half of what's available
-///   (so there's clear headroom),
-/// - [`Fit::Yellow`] when it fits but uses more than half (tight),
-/// - [`Fit::Red`]    when it exceeds available RAM outright.
+/// - [`Fit::Red`]    when loading it would leave less than the OS reserve
+///   free (it would not practically load),
+/// - [`Fit::Green`]  when the footprint uses at most 1/[`GREEN_HEADROOM_DIVISOR`]
+///   of available RAM (comfortable headroom),
+/// - [`Fit::Yellow`] otherwise (it fits with the reserve, but is tight).
 ///
 /// Deterministic and side-effect-free so it can be unit-tested with injected
 /// RAM values rather than whatever the test host happens to have.
 pub fn fits(model_bytes: u64, available_bytes: u64) -> Fit {
     let footprint = estimated_footprint(model_bytes);
-    if footprint.saturating_mul(2) <= available_bytes {
-        Fit::Green
-    } else if footprint <= available_bytes {
-        Fit::Yellow
-    } else {
+    if footprint.saturating_add(OS_RESERVE_BYTES) > available_bytes {
         Fit::Red
+    } else if footprint.saturating_mul(GREEN_HEADROOM_DIVISOR) <= available_bytes {
+        Fit::Green
+    } else {
+        Fit::Yellow
     }
 }
 
@@ -107,6 +121,7 @@ mod tests {
     use super::*;
 
     const GB: u64 = 1024 * 1024 * 1024;
+    const MB: u64 = 1024 * 1024;
 
     #[test]
     fn footprint_adds_a_third_of_overhead() {
@@ -115,15 +130,27 @@ mod tests {
     }
 
     #[test]
-    fn green_when_footprint_at_most_half_of_available() {
-        // 1 GB model -> ~1.33 GB footprint; 8 GB free -> plenty of headroom.
-        assert_eq!(fits(GB, 8 * GB), Fit::Green);
+    fn small_models_are_green_on_an_8gb_machine() {
+        // tiny / base / small (whisper) all leave most of an 8 GB machine
+        // free, so they read comfortably green.
+        assert_eq!(fits(75 * MB, 8 * GB), Fit::Green);
+        assert_eq!(fits(142 * MB, 8 * GB), Fit::Green);
+        assert_eq!(fits(466 * MB, 8 * GB), Fit::Green);
     }
 
     #[test]
-    fn yellow_when_fits_but_over_half() {
-        // 3 GB model -> 4 GB footprint; 6 GB free: fits, but > half -> tight.
-        assert_eq!(fits(3 * GB, 6 * GB), Fit::Yellow);
+    fn medium_and_large_turbo_are_tight_on_8gb() {
+        // ~1.5-1.6 GB weights -> ~2.0-2.1 GB footprint: fits with the OS
+        // reserve, but uses well over a fifth of 8 GB -> tight, not green.
+        assert_eq!(fits(1500 * MB, 8 * GB), Fit::Yellow);
+        assert_eq!(fits(1600 * MB, 8 * GB), Fit::Yellow);
+    }
+
+    #[test]
+    fn large_v3_is_tight_not_green_on_8gb() {
+        // The regression this retune fixes: 3 GB weights -> 4 GB footprint on
+        // an ~8 GB machine must read Yellow (tight), never green.
+        assert_eq!(fits(3 * GB, 8 * GB), Fit::Yellow);
     }
 
     #[test]
@@ -133,10 +160,10 @@ mod tests {
     }
 
     #[test]
-    fn boundary_footprint_exactly_equals_available_is_yellow() {
-        // A model whose footprint is exactly available RAM fits (barely).
-        let model = 3 * GB; // footprint == 4 GB
-        assert_eq!(fits(model, 4 * GB), Fit::Yellow);
+    fn red_when_loading_would_starve_the_os_reserve() {
+        // 3.5 GB weights -> ~4.67 GB footprint fits raw under 5 GB, but the
+        // 1.5 GB OS reserve pushes it over -> Red.
+        assert_eq!(fits(3500 * MB, 5 * GB), Fit::Red);
     }
 
     #[test]
