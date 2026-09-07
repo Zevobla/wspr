@@ -5,11 +5,12 @@
 //! card uses), `field` (a caption tight above its control), and `kicker`
 //! (an uppercase tracked label).
 
-use iced::widget::{column, container, text};
-use iced::{Element, Length};
+use iced::widget::{column, row, text};
+use iced::{Alignment, Element, Length};
 
 use crate::state::Message;
-use crate::theme::{color, spacing, styles, type_scale};
+use crate::theme::widgets;
+use crate::theme::{color, spacing, type_scale};
 
 /// A titled section: an 18/800 head over `body`, flush on the ground (no
 /// card fill -- Modernist separates sections with rules and alignment).
@@ -30,20 +31,6 @@ pub(super) fn section<'a>(
     .into()
 }
 
-/// The one tinted fill, zero radius -- for the genuine card uses (onboarding
-/// columns, the machine-readout strip). Most Hub content is flush on the
-/// ground; reach for this only when a filled block is called for.
-pub(super) fn card<'a>(
-    scheme: &'static color::Scheme,
-    body: Element<'a, Message>,
-) -> Element<'a, Message> {
-    container(body)
-        .padding(spacing::MD)
-        .width(Length::Fill)
-        .style(move |_theme| styles::container::card(scheme))
-        .into()
-}
-
 /// An uppercase tracked kicker ("TRANSCRIPT · LIVE", "RECENT"). The string
 /// is uppercased here since iced has no `text-transform`.
 pub(super) fn kicker<'a>(
@@ -55,6 +42,26 @@ pub(super) fn kicker<'a>(
         .font(type_scale::KICKER.font())
         .color(scheme.primary)
         .into()
+}
+
+/// A settings row: a square Modernist toggle switch followed by its label.
+/// `on_toggle` is the message constructor (receives the new value).
+pub(super) fn toggle_row<'a>(
+    scheme: &'static color::Scheme,
+    label: &'static str,
+    value: bool,
+    on_toggle: fn(bool) -> Message,
+) -> Element<'a, Message> {
+    row![
+        widgets::toggle(value, on_toggle, scheme),
+        text(label)
+            .size(type_scale::LABEL_LARGE.size)
+            .font(type_scale::LABEL_LARGE.font())
+            .color(scheme.on_surface),
+    ]
+    .spacing(spacing::MD)
+    .align_y(Alignment::Center)
+    .into()
 }
 
 /// A field caption (12px, dimmed) tightly grouped above its control.
