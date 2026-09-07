@@ -39,6 +39,11 @@ thread_local! {
 pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
+        // Load the vendored Archivo variable face and make it the default,
+        // so every Hub/Flow Bar surface renders in the Modernist type
+        // family (see `crate::theme::fonts`).
+        .font(crate::theme::fonts::ARCHIVO_TTF)
+        .default_font(crate::theme::fonts::DEFAULT)
         .theme(|state: &State, _window| state.theme.clone())
         .subscription(subscription)
         .run()
