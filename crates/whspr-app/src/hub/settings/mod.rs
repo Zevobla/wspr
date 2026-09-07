@@ -1,15 +1,15 @@
 //! The Settings screen: the `Config` struct's editable fields, grouped into
 //! one `common::section` "card" (or small cluster of cards) per sub-module
 //! -- `general` (backend pickers, launch-at-login, sound), `capture`,
-//! `injection`, `privacy`, `devices` (microphone/hotkey preview), and
-//! `normalize` today, with further groups added alongside this doc comment
-//! as more of `Config` gets exposed here instead of requiring a
-//! hand-edited `config.toml`.
+//! `injection`, `privacy`, `devices` (microphone/hotkey preview),
+//! `normalize`, and `api_keys`.
 //!
 //! Split out of a single flat `settings.rs` once the file grew past this
 //! project's 600-line-per-file guideline (AA-06); each group's controls,
 //! `Message` wiring, and label helpers stay in its own file so no one file
-//! has to hold the whole screen.
+//! has to hold the whole screen. `normalize.macros`/`normalize.dictionary`
+//! are the one part of `Config` intentionally left unexposed here -- see
+//! `normalize`'s module doc comment for why.
 
 use iced::widget::column;
 use iced::Element;
@@ -17,6 +17,7 @@ use iced::Element;
 use crate::state::{Message, State};
 use crate::theme::{color, spacing};
 
+mod api_keys;
 mod capture;
 mod devices;
 mod general;
@@ -34,6 +35,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         privacy::view(state, scheme),
         devices::view(state, scheme),
         normalize::view(state, scheme),
+        api_keys::view(state, scheme),
     ]
     .spacing(spacing::XL)
     .into()

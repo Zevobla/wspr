@@ -357,4 +357,8 @@ pub enum Message {
     ParagraphBreakToggled(bool),
     /// The user toggled "Auto-punctuate" in the Normalize section.
     PunctuationToggleToggled(bool),
+    /// The user edited one of the API keys section's `text_input` fields:
+    /// (backend id, e.g. "openai"/"anthropic"/"deepgram", new value).
+    /// Written straight into `config.api_keys` -- see `crate::app::update`.
+    ApiKeyChanged(&'static str, String),
 }

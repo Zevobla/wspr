@@ -460,6 +460,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
             Task::none()
         }
+        Message::ApiKeyChanged(id, value) => {
+            state.config.api_keys.insert(id.to_string(), value);
+            persist_config(state);
+            Task::none()
+        }
     }
 }
 
