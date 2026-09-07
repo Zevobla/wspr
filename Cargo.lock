@@ -7328,6 +7328,7 @@ name = "whspr-hf"
 version = "0.1.0"
 dependencies = [
  "hf-hub",
+ "metal",
  "oauth2",
  "serde_json",
  "sysinfo",

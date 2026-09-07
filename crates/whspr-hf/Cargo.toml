@@ -27,3 +27,9 @@ serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+# The Metal GPU-budget probe (see `src/hardware/metal.rs`) only exists on
+# macOS; other targets fall back to a plain RAM-fraction heuristic and never
+# link this.
+[target.'cfg(target_os = "macos")'.dependencies]
+metal.workspace = true
