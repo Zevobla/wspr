@@ -107,7 +107,11 @@ mod tests {
     fn decimal(text: &str) -> Option<String> {
         let words: Vec<&str> = text.split(' ').collect();
         parse_decimal_at(&words, 0).map(|(s, count)| {
-            assert_eq!(count, words.len(), "expected the whole input to be consumed");
+            assert_eq!(
+                count,
+                words.len(),
+                "expected the whole input to be consumed"
+            );
             s
         })
     }
@@ -136,19 +140,13 @@ mod tests {
             decimal("три целых четырнадцать сотых"),
             Some("3.14".to_string())
         );
-        assert_eq!(
-            decimal("три целых пять десятых"),
-            Some("3.5".to_string())
-        );
+        assert_eq!(decimal("три целых пять десятых"), Some("3.5".to_string()));
         assert_eq!(
             decimal("ноль целых пять тысячных"),
             Some("0.005".to_string()),
             "denominator fixes the zero-padded digit count"
         );
-        assert_eq!(
-            decimal("одна целая пять десятых"),
-            Some("1.5".to_string())
-        );
+        assert_eq!(decimal("одна целая пять десятых"), Some("1.5".to_string()));
     }
 
     #[test]

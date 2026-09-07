@@ -182,7 +182,11 @@ mod tests {
     fn ordinal(text: &str) -> Option<String> {
         let words: Vec<&str> = text.split(' ').collect();
         parse_ordinal_at(&words, 0).map(|(s, count)| {
-            assert_eq!(count, words.len(), "expected the whole input to be consumed");
+            assert_eq!(
+                count,
+                words.len(),
+                "expected the whole input to be consumed"
+            );
             s
         })
     }

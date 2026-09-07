@@ -98,7 +98,8 @@ fn match_sqrt_prefix(cores: &[&str], i: usize) -> Option<usize> {
     {
         return Some(3);
     }
-    if w0 == "корень" && cores.get(i + 1).map(|s| s.to_lowercase()).as_deref() == Some("из") {
+    if w0 == "корень" && cores.get(i + 1).map(|s| s.to_lowercase()).as_deref() == Some("из")
+    {
         return Some(2);
     }
     None
@@ -242,10 +243,7 @@ mod tests {
             normalize_formulas("two plus three equals five"),
             "2 + 3 = 5"
         );
-        assert_eq!(
-            normalize_formulas("два плюс три равно пять"),
-            "2 + 3 = 5"
-        );
+        assert_eq!(normalize_formulas("два плюс три равно пять"), "2 + 3 = 5");
     }
 
     #[test]
@@ -283,10 +281,7 @@ mod tests {
         // "times" with nothing valid after it is not a formula - the
         // leading number is still passed through untouched (unconverted),
         // since this pass on its own doesn't digitize bare numbers.
-        assert_eq!(
-            normalize_formulas("three times a day"),
-            "three times a day"
-        );
+        assert_eq!(normalize_formulas("three times a day"), "three times a day");
     }
 
     #[test]

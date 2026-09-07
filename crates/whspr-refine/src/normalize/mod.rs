@@ -458,10 +458,7 @@ mod tests {
         let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
 
         let result = refiner
-            .refine(
-                "hello comma how are you period",
-                &RefineContext::default(),
-            )
+            .refine("hello comma how are you period", &RefineContext::default())
             .await
             .expect("refine should succeed");
 
