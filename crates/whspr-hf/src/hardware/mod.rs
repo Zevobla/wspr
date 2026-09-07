@@ -10,6 +10,15 @@
 //! [`metal::recommended_working_set`]): the former are pure functions
 //! unit-testable with injected byte counts, while the latter are the thin,
 //! untested `sysinfo`/Metal shims that feed them real numbers.
+//!
+//! [`estimated_footprint`]/[`fits`] are the coarse, size-only estimators (a
+//! byte count plus a [`ModelKind`], nothing more) used when a model's
+//! specific architecture isn't known. When it is -- the curated LLM registry
+//! ([`crate::models::LlmModel`]) or a GGUF file whose header
+//! ([`crate::gguf`]) parsed successfully -- [`kv_cache_bytes`],
+//! [`estimated_llm_footprint`] and [`fits_llm`] compute the exact
+//! KV-cache-aware figure instead, from the model's real
+//! layer/embedding/head counts and context length.
 
 mod metal;
 
@@ -54,9 +63,13 @@ const ASR_WEIGHT_DENOMINATOR: u64 = 10;
 const ASR_FIXED_OVERHEAD_BYTES: u64 = 3 * GIB / 10; // 0.3 GiB
 
 /// A modest, size-independent KV-cache estimate for a llama.cpp GGUF at a
-/// default context length.
-// TODO: read the GGUF header's n_layers/n_embd/n_ctx and compute the exact
-// KV size instead of this fixed estimate.
+/// default context length. This is the coarse fallback [`estimated_footprint`]
+/// uses when only a byte count and a [`ModelKind`] are available (no
+/// specific model identity) -- when the model's real architecture is known,
+/// [`estimated_llm_footprint`] computes the exact figure from
+/// [`kv_cache_bytes`] instead; see [`crate::models::LlmModel::estimated_footprint`]
+/// (the curated registry) and [`crate::gguf::estimated_footprint_for_file`]
+/// (a scanned local file).
 const LLM_KV_ESTIMATE_BYTES: u64 = 4 * GIB / 10; // 0.4 GiB
 /// Weights-adjacent compute-buffer overhead on top of the KV estimate above.
 const LLM_FIXED_OVERHEAD_BYTES: u64 = 7 * GIB / 10; // 0.7 GiB
@@ -104,7 +117,14 @@ const YELLOW_BUDGET_DENOMINATOR: u64 = 100;
 /// Deterministic and side-effect-free so it can be unit-tested with injected
 /// budget values rather than whatever the test host happens to have.
 pub fn fits(model_bytes: u64, usable_bytes: u64, kind: ModelKind) -> Fit {
-    let footprint = estimated_footprint(model_bytes, kind);
+    verdict(estimated_footprint(model_bytes, kind), usable_bytes)
+}
+
+/// The shared green/yellow/red threshold comparison behind both [`fits`] and
+/// [`fits_llm`] -- factored out so the exact, GGUF-metadata-based LLM path
+/// judges its footprint against exactly the same budget fractions as the
+/// coarse, size-only one.
+fn verdict(footprint: u64, usable_bytes: u64) -> Fit {
     let green_budget = usable_bytes
         .saturating_mul(GREEN_BUDGET_NUMERATOR)
         .saturating_div(GREEN_BUDGET_DENOMINATOR);
@@ -118,6 +138,82 @@ pub fn fits(model_bytes: u64, usable_bytes: u64, kind: ModelKind) -> Fit {
     } else {
         Fit::Red
     }
+}
+
+/// A llama.cpp GGUF's architecture shape -- exactly what [`kv_cache_bytes`]
+/// needs to compute an exact KV-cache estimate, whether baked into the
+/// curated registry ([`crate::models::LlmModel`]) or read from a local
+/// file's GGUF header ([`crate::gguf::GgufMetadata`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LlmShape {
+    /// Transformer block/layer count (GGUF `<arch>.block_count`).
+    pub n_layers: u64,
+    /// Hidden/embedding size (GGUF `<arch>.embedding_length`).
+    pub n_embd: u64,
+    /// Attention head count (GGUF `<arch>.attention.head_count`).
+    pub n_head: u64,
+    /// KV head count -- equal to [`Self::n_head`] for ordinary multi-head
+    /// attention, smaller under grouped-query attention (GQA) (GGUF
+    /// `<arch>.attention.head_count_kv`).
+    pub n_head_kv: u64,
+    /// The model's trained/released context length (GGUF
+    /// `<arch>.context_length`), *before* the [`DEFAULT_WORKING_CONTEXT`]
+    /// cap [`kv_cache_bytes`] applies.
+    pub context_length: u64,
+}
+
+/// f16 KV cache: 2 bytes per cached element (one `K` and one `V` per token
+/// per KV head).
+const KV_BYTES_PER_ELEM: u64 = 2;
+
+/// The working context assumed for the exact KV-cache estimate: a model's
+/// trained context capped at this sane default. A local text-refiner pass
+/// over one dictated utterance never remotely approaches a 32K/128K trained
+/// context, so pricing the KV cache at the full trained context would wildly
+/// overstate real memory use.
+const DEFAULT_WORKING_CONTEXT: u64 = 4096;
+
+/// Fixed compute-buffer/overhead pad added on top of weights + KV cache for
+/// the exact, GGUF-metadata-based footprint (see [`estimated_llm_footprint`]).
+/// Smaller than the coarse path's [`LLM_FIXED_OVERHEAD_BYTES`] because the
+/// exact path already prices the KV cache itself precisely rather than
+/// folding a margin for it into this pad.
+const LLM_EXACT_OVERHEAD_BYTES: u64 = GIB / 2; // 0.5 GiB
+
+/// The exact llama.cpp KV-cache size for `shape` at a working context of
+/// `min(shape.context_length, DEFAULT_WORKING_CONTEXT)`:
+/// `2 (K and V) * n_layers * n_ctx * n_embd_kv * bytes_per_elem`, where
+/// `n_embd_kv = head_dim * n_head_kv` (GQA-aware: `head_dim = n_embd /
+/// n_head`, so `n_embd_kv` shrinks below `n_embd` exactly when
+/// `n_head_kv < n_head`, and equals it for ordinary multi-head attention).
+/// Saturating throughout so a malformed/adversarial shape can't wrap.
+pub fn kv_cache_bytes(shape: LlmShape) -> u64 {
+    let n_ctx = shape.context_length.min(DEFAULT_WORKING_CONTEXT);
+    let head_dim = shape.n_embd.checked_div(shape.n_head).unwrap_or(0);
+    let n_embd_kv = head_dim.saturating_mul(shape.n_head_kv);
+    2u64.saturating_mul(shape.n_layers)
+        .saturating_mul(n_ctx)
+        .saturating_mul(n_embd_kv)
+        .saturating_mul(KV_BYTES_PER_ELEM)
+}
+
+/// Exact, GGUF-metadata-based footprint for an LLM of `model_bytes` weights
+/// and architecture `shape`: weights + [`kv_cache_bytes`] +
+/// [`LLM_EXACT_OVERHEAD_BYTES`]. The metadata-aware counterpart to
+/// [`estimated_footprint`]'s coarse, size-only [`ModelKind::Llm`] branch --
+/// used wherever a model's real architecture is known (the curated registry
+/// or a parsed local GGUF header).
+pub fn estimated_llm_footprint(model_bytes: u64, shape: LlmShape) -> u64 {
+    model_bytes
+        .saturating_add(kv_cache_bytes(shape))
+        .saturating_add(LLM_EXACT_OVERHEAD_BYTES)
+}
+
+/// The [`Fit`] verdict computed from the exact footprint
+/// ([`estimated_llm_footprint`]) against `usable_bytes`, using the same
+/// green/yellow/red thresholds as [`fits`] (see [`verdict`]).
+pub fn fits_llm(model_bytes: u64, shape: LlmShape, usable_bytes: u64) -> Fit {
+    verdict(estimated_llm_footprint(model_bytes, shape), usable_bytes)
 }
 
 /// RAM to keep free for the OS, this app, and whatever else the user is
