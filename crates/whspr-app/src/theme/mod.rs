@@ -13,6 +13,7 @@ pub mod shape;
 pub mod spacing;
 pub mod styles;
 pub mod type_scale;
+pub mod widgets;
 
 pub use color::Scheme;
 
