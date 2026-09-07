@@ -1,37 +1,35 @@
-//! MD3 shape tokens: the corner-radius scale, from a subtle round to a
-//! full pill. See the MD3 skill's component-shape-mapping table for which
-//! token each component defaults to; `styles` reaches for these instead of
-//! hardcoding a radius inline.
+//! Modernist shape tokens: there is only one radius, and it is zero.
+//!
+//! The Modernist system rounds nothing -- "Do not round a corner anywhere"
+//! (see `crate::theme`'s module doc and the design guide). Every corner in
+//! the Hub and Flow Bar is square. The old per-component radius scale
+//! (`XS`/`SM`/`MD`/`LG`/`FULL`) is kept as names so existing `styles::*`
+//! call sites compile unchanged, but every one now resolves to `NONE`, so
+//! flattening the whole UI needs no edit at any call site.
 
-/// Snackbars -- see `styles::container::error_banner`.
-pub const XS: f32 = 4.0;
-/// Text fields, pick lists, and their dropdown menus.
-pub const SM: f32 = 8.0;
-/// Cards -- the Hub's section panels.
-pub const MD: f32 = 12.0;
-/// FAB-scale elements -- the Flow Bar overlay.
-pub const LG: f32 = 16.0;
-/// Buttons and scrollbar thumbs: fully rounded regardless of height.
-pub const FULL: f32 = 9999.0;
+/// The single radius the system uses: none.
+pub const NONE: f32 = 0.0;
+
+/// Formerly snackbars/error banner. Now square.
+pub const XS: f32 = NONE;
+/// Formerly text fields and pick lists. Now square.
+pub const SM: f32 = NONE;
+/// Formerly cards. Now square.
+pub const MD: f32 = NONE;
+/// Formerly the Flow Bar overlay. Now square.
+pub const LG: f32 = NONE;
+/// Formerly fully-rounded buttons and scrollbar thumbs. Now square, like
+/// everything else -- Modernist has no pill.
+pub const FULL: f32 = NONE;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn shape_tokens_have_expected_values() {
-        assert_eq!(XS, 4.0);
-        assert_eq!(SM, 8.0);
-        assert_eq!(MD, 12.0);
-        assert_eq!(LG, 16.0);
-        assert_eq!(FULL, 9999.0);
-    }
-
-    #[test]
-    fn shape_tokens_scale_up_progressively() {
-        let steps = [XS, SM, MD, LG, FULL];
-        for pair in steps.windows(2) {
-            assert!(pair[0] < pair[1]);
+    fn every_radius_is_zero() {
+        for r in [NONE, XS, SM, MD, LG, FULL] {
+            assert_eq!(r, 0.0);
         }
     }
 }
