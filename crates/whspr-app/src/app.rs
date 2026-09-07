@@ -383,83 +383,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(crate::tray::Action::Quit) => iced::exit(),
             None => Task::none(),
         },
-        Message::HfSignIn => match state.config.huggingface.oauth_client_id.clone() {
-            Some(client_id) if !client_id.trim().is_empty() => {
-                state.hf_busy = true;
-                state.hf_status = Some("Opening your browser to sign in...".to_string());
-                Task::perform(crate::hf::run_login(client_id), Message::HfSignedIn)
-            }
-            _ => {
-                state.hf_status =
-                    Some("Set [huggingface].oauth-client-id in your config first.".to_string());
-                Task::none()
-            }
-        },
-        Message::HfSignedIn(Ok((username, token))) => {
-            state.hf_busy = false;
-            state.config.huggingface.token = Some(token);
-            state.hf_username = Some(username.clone());
-            state.hf_status = Some(format!("Signed in as {username}."));
-            persist_config(state);
-            // A fresh token may unlock gated models -- rescan.
-            state.hf_installed = crate::hf::scan_installed(&state.config);
-            Task::none()
-        }
-        Message::HfSignedIn(Err(error)) => {
-            state.hf_busy = false;
-            state.hf_status = Some(format!("Sign-in failed: {error}"));
-            Task::none()
-        }
-        Message::HfSignOut => {
-            state.config.huggingface.token = None;
-            state.hf_username = None;
-            state.hf_status = Some("Signed out.".to_string());
-            persist_config(state);
-            Task::none()
-        }
-        Message::HfDownloadModel(model_id) => match crate::hf::models_dir(&state.config) {
-            Some(dir) => {
-                state.hf_busy = true;
-                state.hf_status = Some(format!("Downloading {model_id}... this can take a while."));
-                let token = state.config.huggingface.token.clone();
-                Task::perform(
-                    crate::hf::run_download(model_id, token, dir),
-                    Message::HfModelDownloaded,
-                )
-            }
-            None => {
-                state.hf_status =
-                    Some("Could not determine a models directory to download into.".to_string());
-                Task::none()
-            }
-        },
-        Message::HfModelDownloaded(Ok(path)) => {
-            state.hf_busy = false;
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string());
-            state.hf_status = Some(format!(
-                "Downloaded {name}. Click \"Use this model\" to apply."
-            ));
-            state.hf_installed = crate::hf::scan_installed(&state.config);
-            Task::none()
-        }
-        Message::HfModelDownloaded(Err(error)) => {
-            state.hf_busy = false;
-            state.hf_status = Some(format!("Download failed: {error}"));
-            Task::none()
-        }
-        Message::HfUseModel(path) => {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string());
-            state.config.whisper.model_path = Some(path);
-            state.hf_status = Some(format!("Now dictating with {name}."));
-            persist_config(state);
-            Task::none()
-        }
         Message::TrayDoneTick => {
             if !tray_done_active(state.tray_done_until, std::time::Instant::now()) {
                 state.tray_done_until = None;
@@ -469,11 +392,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-        // Every Settings-tab control just mutates one `state.config` field
-        // and persists; those arms live in `crate::hub::settings::update`
-        // so this file stays under the 600-line cap (AA-06). Forward any
-        // message not handled above to it.
-        other => crate::hub::settings::update(state, other),
+        // The Models-tab (HuggingFace) messages are handled in
+        // `crate::hf::update`; any message it doesn't recognize is handed
+        // back and forwarded to the Settings handler. Both handlers live
+        // outside this file so it stays under the 600-line cap (AA-06).
+        other => match crate::hf::update(state, other) {
+            Ok(task) => task,
+            Err(other) => crate::hub::settings::update(state, other),
+        },
     }
 }
 
