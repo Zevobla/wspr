@@ -28,7 +28,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use whspr_core::{Result, WhsprError};
 
 pub use llm::{download_llm, llm_model_by_filename, llm_model_by_id, LlmModel, LLM_MODELS};
-pub use scan::{classify, installed, scan, InstalledModel, LocalModel, ModelKind, ScanResult};
+pub use scan::{
+    classify, delete, installed, scan, InstalledModel, LocalModel, ModelKind, ScanResult,
+};
 pub use whisper::{download, model_by_filename, model_by_id, WhisperModel, MODELS, REPO};
 
 /// `n` mebibytes as a byte count, evaluated at compile time so the registries

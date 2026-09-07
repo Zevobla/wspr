@@ -47,7 +47,7 @@ pub mod oauth;
 
 pub use hardware::{estimated_footprint, fits, probe, Fit, HardwareSpecs};
 pub use models::{
-    classify, download, download_llm, human_size, installed, llm_model_by_filename,
+    classify, delete, download, download_llm, human_size, installed, llm_model_by_filename,
     llm_model_by_id, model_by_filename, model_by_id, resolve_models_dir, scan, DownloadProgress,
     InstalledModel, LlmModel, LocalModel, ModelKind, ScanResult, WhisperModel, LLM_MODELS, MODELS,
     REPO,

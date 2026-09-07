@@ -6,6 +6,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use whspr_core::{Result, WhsprError};
+
 use super::llm::llm_model_by_filename;
 use super::whisper::model_by_filename;
 
@@ -150,6 +152,15 @@ pub fn scan(dirs: &[PathBuf]) -> ScanResult {
     result.asr.sort_by(|a, b| a.filename.cmp(&b.filename));
     result.llm.sort_by(|a, b| a.filename.cmp(&b.filename));
     result
+}
+
+/// Deletes the model file at `path` (a whisper GGML or GGUF the user
+/// downloaded or dropped into a model directory). The caller rescans
+/// afterward so the selectors drop it. Surfaces an honest error if the file
+/// can't be removed rather than silently succeeding.
+pub fn delete(path: &Path) -> Result<()> {
+    std::fs::remove_file(path)
+        .map_err(|e| WhsprError::Other(format!("failed to delete {}: {e}", path.display())))
 }
 
 /// One model file found in a models directory.
@@ -307,5 +318,22 @@ mod tests {
     fn scan_tolerates_missing_dirs_and_returns_empty() {
         let result = scan(&[PathBuf::from("/nonexistent/whspr-scan")]);
         assert!(result.asr.is_empty() && result.llm.is_empty());
+    }
+
+    #[test]
+    fn delete_removes_the_file_then_scan_no_longer_lists_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ggml-tiny.bin");
+        std::fs::write(&path, b"ggmlx").unwrap();
+        assert_eq!(scan(&[dir.path().to_path_buf()]).asr.len(), 1);
+
+        delete(&path).expect("deleting an existing model file should succeed");
+        assert!(!path.exists());
+        assert!(scan(&[dir.path().to_path_buf()]).asr.is_empty());
+    }
+
+    #[test]
+    fn delete_errors_on_a_missing_file() {
+        assert!(delete(Path::new("/nonexistent/whspr-delete/model.gguf")).is_err());
     }
 }
