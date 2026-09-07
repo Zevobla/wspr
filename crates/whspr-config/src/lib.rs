@@ -32,7 +32,7 @@ pub use capture::CaptureSettings;
 pub use device::DeviceSettings;
 pub use injection::InjectionSettings;
 pub use language::LanguageSettings;
-pub use normalize::NormalizeSettings;
+pub use normalize::{NormalizeSettings, NumberFormat};
 pub use privacy::PrivacySettings;
 pub use reload::{api_key_for, config_reload};
 pub use sound::SoundSettings;
