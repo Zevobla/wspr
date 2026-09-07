@@ -22,22 +22,19 @@ pub enum Screen {
 }
 
 /// Which section of the Settings screen's middle sub-nav is selected (the
-/// Modernist rail -> sub-nav -> form three-column layout). Declaration
-/// order is the sub-nav order (mockup 1c).
+/// Modernist rail -> sub-nav -> form three-column layout, mockup 1c). One
+/// variant per real `Config` group (each maps 1:1 to a `hub::settings`
+/// section view); declaration order is the sub-nav order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsSection {
     #[default]
+    General,
     Audio,
-    Hotkey,
-    Cleanup,
-    Language,
     Capture,
+    Cleanup,
     Typing,
     Privacy,
-    StartupSounds,
-    AccountsKeys,
-    Macros,
-    Dictionary,
+    Accounts,
 }
 
 /// Top-level state for the whspr GUI daemon (Hub window + Flow Bar window).
