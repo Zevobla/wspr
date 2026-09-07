@@ -222,6 +222,7 @@ mod tests {
         let pipeline =
             Pipeline::new(Box::new(spy), Box::new(NoopRefiner)).with_asr_options(AsrOptions {
                 language: Some("fr".to_string()),
+                ..Default::default()
             });
 
         pipeline

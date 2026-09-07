@@ -63,6 +63,11 @@ pub struct Transcript {
 #[derive(Debug, Clone, Default)]
 pub struct AsrOptions {
     pub language: Option<String>,
+    /// Translate the transcription to English (whisper's own `--translate`
+    /// mode) rather than transcribing in the detected/fixed source language
+    /// (J-10). Default `false`. Backends that don't support translation are
+    /// free to ignore this.
+    pub translate: bool,
 }
 
 /// Context handed to a `TextRefiner` so it can clean up raw ASR output with

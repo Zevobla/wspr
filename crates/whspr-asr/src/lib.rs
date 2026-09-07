@@ -553,6 +553,7 @@ mod tests {
         let asr = WhisperLocal::new(model_path);
         let opts = AsrOptions {
             language: Some("en".to_string()),
+            ..Default::default()
         };
 
         let transcript = asr
