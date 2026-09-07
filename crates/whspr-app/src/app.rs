@@ -445,6 +445,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
             Task::none()
         }
+        Message::NumberFormatSelected(label) => {
+            state.config.normalize.numbers_format = config_ui::number_format_from_label(label);
+            persist_config(state);
+            Task::none()
+        }
         Message::ParagraphBreakToggled(enabled) => {
             state.config.normalize.paragraph_break = enabled;
             persist_config(state);

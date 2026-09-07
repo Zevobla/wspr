@@ -8,10 +8,11 @@
 //! bloating this pass. Both still round-trip through the config file
 //! untouched; they just aren't reachable from the Hub yet.
 
-use iced::widget::{checkbox, column};
+use iced::widget::{checkbox, column, pick_list};
 use iced::Element;
 
-use crate::hub::common::section;
+use crate::config_ui::{self, NUMBER_FORMAT_LABELS};
+use crate::hub::common::{field, section};
 use crate::state::{Message, State};
 use crate::theme::{color, spacing, styles};
 
@@ -41,11 +42,28 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
         .on_toggle(Message::PunctuationToggleToggled);
 
+    let number_format_picker = pick_list(
+        NUMBER_FORMAT_LABELS,
+        Some(config_ui::number_format_label(
+            state.config.normalize.numbers_format,
+        )),
+        Message::NumberFormatSelected,
+    )
+    .style(move |_theme, status| styles::pick_list::field(scheme, status))
+    .menu_style(move |_theme| styles::pick_list::menu(scheme));
+
     section(
         scheme,
         "Normalize",
-        column![numbers, dates, times, paragraph_break, punctuation_toggle,]
-            .spacing(spacing::MD)
-            .into(),
+        column![
+            numbers,
+            dates,
+            times,
+            field(scheme, "Number rendering", number_format_picker.into()),
+            paragraph_break,
+            punctuation_toggle,
+        ]
+        .spacing(spacing::MD)
+        .into(),
     )
 }

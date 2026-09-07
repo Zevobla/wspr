@@ -349,6 +349,9 @@ pub enum Message {
     /// The user toggled "Normalize times to 24-hour HH:MM" in the
     /// Normalize section.
     NormalizeTimesToggled(bool),
+    /// The user picked "digits" or "words" in the Normalize section's
+    /// number-rendering `pick_list`.
+    NumberFormatSelected(&'static str),
     /// The user toggled "Insert paragraph breaks on long pauses" in the
     /// Normalize section.
     ParagraphBreakToggled(bool),
