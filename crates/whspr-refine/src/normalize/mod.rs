@@ -23,6 +23,8 @@
 //!   - `punctuation_toggle` (G-16) turns spoken "comma"/"period"/"точка"/
 //!     "запятая" into actual marks. Runs after the `numbers`-gated block
 //!     (see its call site below for why).
+//!   - `paragraph_break` (G-09) turns spoken "new paragraph"/"новый абзац"
+//!     into a blank-line break. Runs dead last (see its call site below).
 
 mod abbreviations;
 mod currency;
@@ -34,6 +36,7 @@ mod formulas;
 mod lua;
 mod macros;
 mod numbers;
+mod paragraph;
 mod percents;
 mod phones;
 mod punctuation;
@@ -137,6 +140,15 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     // "example точка com" as a domain.
     if settings.punctuation_toggle {
         text = punctuation::normalize_punctuation_words(&text);
+    }
+    // Must run dead last: every pass above tokenizes by splitting `text` on
+    // `' '` and rejoining the same way, but a paragraph break is an
+    // embedded `\n\n` with no surrounding space, which would otherwise fuse
+    // onto its neighboring words and make them unsplittable by any pass
+    // that ran afterward. See the `paragraph` module doc for the full
+    // reasoning.
+    if settings.paragraph_break {
+        text = paragraph::normalize_paragraph_breaks(&text);
     }
     text
 }
@@ -425,6 +437,52 @@ mod tests {
             .expect("refine should succeed");
 
         assert_eq!(result, "hello comma world");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_paragraph_break() {
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine("hello new paragraph world", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "hello\n\nworld");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_paragraph_break_runs_after_other_passes() {
+        // Proves paragraph_break running dead last doesn't break the passes
+        // that ran before it: a formula and a punctuation command word on
+        // either side of the break both still apply correctly.
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine(
+                "two plus three new paragraph hello comma world",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "2 + 3\n\nhello, world");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_respects_disabled_paragraph_break() {
+        let settings = NormalizeSettings {
+            paragraph_break: false,
+            ..Default::default()
+        };
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("hello new paragraph world", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "hello new paragraph world");
     }
 
     #[tokio::test]
