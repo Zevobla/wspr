@@ -20,6 +20,9 @@
 //!     user may want one without the other.
 //!   - `numbers_format` selects whether recognized numbers render as digits
 //!     (the `numbers` pass, as above) or stay spelled out.
+//!   - `punctuation_toggle` (G-16) turns spoken "comma"/"period"/"точка"/
+//!     "запятая" into actual marks. Runs after the `numbers`-gated block
+//!     (see its call site below for why).
 
 mod abbreviations;
 mod currency;
@@ -33,6 +36,7 @@ mod macros;
 mod numbers;
 mod percents;
 mod phones;
+mod punctuation;
 mod times;
 mod urls;
 
@@ -124,6 +128,15 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
         text = urls::normalize_urls(&text);
         text = abbreviations::normalize_abbreviations(&text);
         text = dedup::collapse_duplicate_words(&text);
+    }
+    // Must run *after* the `numbers`-gated block above, specifically after
+    // urls/emails: Russian "точка" means both "dot" (the URL/email
+    // separator those two passes match) and "period" (the punctuation word
+    // this pass matches). Running this first would consume every "точка"
+    // as a period before urls/emails ever got a chance to read
+    // "example точка com" as a domain.
+    if settings.punctuation_toggle {
+        text = punctuation::normalize_punctuation_words(&text);
     }
     text
 }
@@ -365,6 +378,53 @@ mod tests {
             .expect("refine should succeed");
 
         assert_eq!(result, "I have twenty five apples");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_punctuation_toggle() {
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine(
+                "hello comma how are you period",
+                &RefineContext::default(),
+            )
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "hello, how are you.");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_punctuation_toggle_runs_after_url_dot() {
+        // Regression guard for the ordering documented at the pass's call
+        // site: Russian "точка" must still assemble a URL/email when
+        // `punctuation_toggle` is on (the default), not get consumed as a
+        // bare "." first.
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine("сайт точка ru", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "сайт.ru");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_respects_disabled_punctuation_toggle() {
+        let settings = NormalizeSettings {
+            punctuation_toggle: false,
+            ..Default::default()
+        };
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("hello comma world", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "hello comma world");
     }
 
     #[tokio::test]
