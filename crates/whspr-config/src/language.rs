@@ -64,6 +64,57 @@ mod tests {
     use crate::{load_from, Config};
 
     #[test]
+    fn effective_language_is_none_when_auto_switch_is_on() {
+        let settings = LanguageSettings {
+            language_switch: true,
+            fixed_language: Some("es".to_string()),
+        };
+
+        // Auto-switch wins even if a fixed language is also set -- bilingual
+        // auto-detect is the default and takes priority.
+        assert_eq!(
+            effective_language(&settings, &Some("fr".to_string())),
+            None
+        );
+    }
+
+    #[test]
+    fn effective_language_uses_fixed_language_when_auto_switch_is_off() {
+        let settings = LanguageSettings {
+            language_switch: false,
+            fixed_language: Some("es".to_string()),
+        };
+
+        assert_eq!(
+            effective_language(&settings, &Some("fr".to_string())),
+            Some("es".to_string())
+        );
+    }
+
+    #[test]
+    fn effective_language_falls_back_to_manual_override_without_fixed_language() {
+        let settings = LanguageSettings {
+            language_switch: false,
+            fixed_language: None,
+        };
+
+        assert_eq!(
+            effective_language(&settings, &Some("fr".to_string())),
+            Some("fr".to_string())
+        );
+    }
+
+    #[test]
+    fn effective_language_is_none_without_auto_switch_fixed_language_or_override() {
+        let settings = LanguageSettings {
+            language_switch: false,
+            fixed_language: None,
+        };
+
+        assert_eq!(effective_language(&settings, &None), None);
+    }
+
+    #[test]
     fn language_settings_defaults_to_auto_switch() {
         assert_eq!(
             LanguageSettings::default(),
