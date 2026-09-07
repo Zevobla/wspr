@@ -321,4 +321,9 @@ pub enum Message {
     /// `text_input`. Same draft-then-parse handling as
     /// `RefineTimeoutMsChanged`.
     PrePasteDelayMsChanged(String),
+    /// The user toggled "Release the microphone when not recording" in the
+    /// Privacy section.
+    MicPrivacyToggled(bool),
+    /// The user toggled "Encrypt history at rest" in the Privacy section.
+    HistoryEncryptionToggled(bool),
 }

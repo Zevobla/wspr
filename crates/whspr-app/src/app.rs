@@ -395,6 +395,16 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::MicPrivacyToggled(enabled) => {
+            state.config.privacy.mic_privacy = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::HistoryEncryptionToggled(enabled) => {
+            state.config.privacy.history_encryption = enabled;
+            persist_config(state);
+            Task::none()
+        }
     }
 }
 
