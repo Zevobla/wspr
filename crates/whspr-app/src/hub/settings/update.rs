@@ -116,6 +116,15 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.api_keys.insert(id.to_string(), value);
             persist_config(state);
         }
+        // UI-only state (no config write): the Settings sub-nav selection
+        // and the History search box. Handled here because this is the sink
+        // `crate::app::update` forwards every unrecognized message to.
+        Message::SettingsSectionSelected(section) => {
+            state.settings_section = section;
+        }
+        Message::HistorySearchChanged(query) => {
+            state.history_search = query;
+        }
         _ => {}
     }
     Task::none()
