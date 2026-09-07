@@ -171,16 +171,17 @@ mod platform {
         icon_for_visual(super::visual_for(state))
     }
 
-    /// Renders the icon for a `TrayVisual` bucket -- a distinct shape
-    /// *and* color per bucket (see `TrayVisual`'s doc comment), reusing
-    /// the Flow Bar's semantic colors (`crate::theme::color`) so the tray
-    /// icon and the overlay agree on what each color means.
+    /// Renders the icon for a `TrayVisual` bucket. Modernist: the glyph is a
+    /// square whose *shape* changes (outline / solid / half-filled /
+    /// inverted-check), not just its color, so it stays legible in a
+    /// monochrome menu bar. Colors come from `crate::theme::color` so the
+    /// tray and Flow Bar agree on what each state means.
     fn icon_for_visual(visual: TrayVisual) -> Icon {
         let scheme = &crate::theme::color::LIGHT;
         match visual {
-            TrayVisual::Idle => render_ring(scheme.on_surface_variant),
-            TrayVisual::Recording => render_dot(scheme.error),
-            TrayVisual::Processing => render_diamond(scheme.tertiary),
+            TrayVisual::Idle => render_square_outline(scheme.on_surface_variant),
+            TrayVisual::Recording => render_square_solid(scheme.error),
+            TrayVisual::Processing => render_square_half(scheme.tertiary),
             TrayVisual::Done => render_check(scheme.success_container, scheme.on_success_container),
         }
     }
@@ -221,38 +222,45 @@ mod platform {
         ]
     }
 
-    /// Recording: a solid filled dot.
-    fn render_dot(color: iced::Color) -> Icon {
-        render_icon(move |dx, dy| in_disc(dx, dy, RADIUS).then_some(color))
+    /// Recording: a solid filled square.
+    fn render_square_solid(color: iced::Color) -> Icon {
+        render_icon(move |dx, dy| in_square(dx, dy, RADIUS).then_some(color))
     }
 
-    /// Idle: a hollow ring -- visually the opposite of Recording's filled
-    /// dot (empty vs. full) rather than just a dimmer color.
-    fn render_ring(color: iced::Color) -> Icon {
-        const THICKNESS: f32 = 4.0;
-        render_icon(move |dx, dy| in_ring(dx, dy, RADIUS, RADIUS - THICKNESS).then_some(color))
+    /// Idle: a hollow 2px-outlined square -- the opposite of Recording's
+    /// solid fill (empty vs. full), not just a dimmer color.
+    fn render_square_outline(color: iced::Color) -> Icon {
+        const THICKNESS: f32 = 3.0;
+        render_icon(move |dx, dy| {
+            (in_square(dx, dy, RADIUS) && !in_square(dx, dy, RADIUS - THICKNESS)).then_some(color)
+        })
     }
 
-    /// Processing (Transcribing|Refining): a filled diamond -- a
-    /// corner-having silhouette a dot/ring never produces, so it reads as
-    /// a different shape even at tray-icon size, not just a different
-    /// color.
-    fn render_diamond(color: iced::Color) -> Icon {
-        render_icon(move |dx, dy| in_diamond(dx, dy, RADIUS).then_some(color))
+    /// Processing (Transcribing|Refining): an outlined square with its left
+    /// half filled -- a "half done" silhouette distinct from full/empty.
+    fn render_square_half(color: iced::Color) -> Icon {
+        const THICKNESS: f32 = 3.0;
+        render_icon(move |dx, dy| {
+            if !in_square(dx, dy, RADIUS) {
+                return None;
+            }
+            let border = !in_square(dx, dy, RADIUS - THICKNESS);
+            (border || dx <= 0.0).then_some(color)
+        })
     }
 
-    /// Done: a filled circle (`fill`) with a checkmark stroke (`mark`)
-    /// drawn over it.
+    /// Done: a solid (inverted) square `fill` with a `mark`-colored
+    /// checkmark stroke drawn over it.
     fn render_check(fill: iced::Color, mark: iced::Color) -> Icon {
         const HALF_WIDTH: f32 = 1.6;
-        // Checkmark path, in the same center-relative coordinates as
-        // `paint` below: a short leg down-right, then a longer leg
-        // up-right, sized to sit inside the circle with margin.
+        // Checkmark path, in center-relative coordinates: a short leg
+        // down-right, then a longer leg up-right, sized to sit inside the
+        // square with margin.
         let p0 = (-5.0, 0.5);
         let p1 = (-1.5, 4.5);
         let p2 = (5.5, -4.5);
         render_icon(move |dx, dy| {
-            if !in_disc(dx, dy, RADIUS) {
+            if !in_square(dx, dy, RADIUS) {
                 return None;
             }
             let on_stroke = dist_to_segment((dx, dy), p0, p1) <= HALF_WIDTH
@@ -262,23 +270,9 @@ mod platform {
     }
 
     /// Whether `(dx, dy)` (relative to the icon's center) falls inside a
-    /// disc of `radius`.
-    fn in_disc(dx: f32, dy: f32, radius: f32) -> bool {
-        (dx * dx + dy * dy).sqrt() <= radius
-    }
-
-    /// Whether `(dx, dy)` falls in the annulus between `inner` and
-    /// `outer` -- `in_disc` with a hole cut out of the middle.
-    fn in_ring(dx: f32, dy: f32, outer: f32, inner: f32) -> bool {
-        let dist = (dx * dx + dy * dy).sqrt();
-        dist <= outer && dist >= inner
-    }
-
-    /// Whether `(dx, dy)` falls inside a diamond (a square rotated 45
-    /// degrees) of `radius` -- taxicab distance instead of Euclidean, so
-    /// its silhouette has corners a disc never has.
-    fn in_diamond(dx: f32, dy: f32, radius: f32) -> bool {
-        dx.abs() + dy.abs() <= radius
+    /// square of half-side `half` -- the one silhouette Modernist uses.
+    fn in_square(dx: f32, dy: f32, half: f32) -> bool {
+        dx.abs() <= half && dy.abs() <= half
     }
 
     /// Euclidean distance from point `p` to the segment `a`-`b`, clamping
@@ -304,25 +298,22 @@ mod platform {
         use super::*;
 
         #[test]
-        fn in_disc_includes_center_and_excludes_beyond_radius() {
-            assert!(in_disc(0.0, 0.0, 5.0));
-            assert!(!in_disc(6.0, 0.0, 5.0));
+        fn in_square_includes_center_and_corner_but_excludes_beyond_half() {
+            assert!(in_square(0.0, 0.0, 5.0));
+            // A square includes its corners (unlike a disc of the same
+            // "radius"): (5, 5) is in a half-5 square.
+            assert!(in_square(5.0, 5.0, 5.0));
+            assert!(!in_square(6.0, 0.0, 5.0));
         }
 
         #[test]
-        fn in_ring_excludes_the_center_hole() {
-            assert!(!in_ring(0.0, 0.0, 10.0, 6.0));
-            assert!(in_ring(8.0, 0.0, 10.0, 6.0));
-            assert!(!in_ring(11.0, 0.0, 10.0, 6.0));
-        }
-
-        /// The whole reason Processing reads as a different shape than a
-        /// plain filled circle: at radius 10, (7, 7) is inside the disc
-        /// (distance ~9.9) but outside the diamond (|7| + |7| = 14 > 10).
-        #[test]
-        fn in_diamond_excludes_a_disc_corner_point_the_disc_would_include() {
-            assert!(in_disc(7.0, 7.0, 10.0));
-            assert!(!in_diamond(7.0, 7.0, 10.0));
+        fn in_square_outline_excludes_the_center_hole() {
+            // The 3px-thick outline: inside the hole is excluded, the
+            // border band is included, outside the square is excluded.
+            let border = |dx: f32, dy: f32| in_square(dx, dy, 10.0) && !in_square(dx, dy, 7.0);
+            assert!(!border(0.0, 0.0));
+            assert!(border(9.0, 0.0));
+            assert!(!border(11.0, 0.0));
         }
 
         #[test]
