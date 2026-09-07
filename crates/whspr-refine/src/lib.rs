@@ -460,4 +460,31 @@ mod tests {
         let refiner = AnthropicRefiner::new("key", "claude-3");
         assert_eq!(refiner.id(), "anthropic");
     }
+
+    #[test]
+    fn build_cleanup_prompt_mentions_numbers_and_formulas() {
+        let prompt = build_cleanup_prompt("two plus two", &RefineContext::default());
+        assert!(prompt.contains("numbers"));
+        assert!(prompt.contains("formulas"));
+    }
+
+    #[test]
+    fn effective_instructions_with_no_config_value_is_just_the_default() {
+        assert_eq!(effective_instructions(None), DEFAULT_REFINE_INSTRUCTIONS);
+        assert_eq!(
+            effective_instructions(Some("")),
+            DEFAULT_REFINE_INSTRUCTIONS
+        );
+        assert_eq!(
+            effective_instructions(Some("   ")),
+            DEFAULT_REFINE_INSTRUCTIONS
+        );
+    }
+
+    #[test]
+    fn effective_instructions_extends_default_with_configured_value() {
+        let combined = effective_instructions(Some("Always sign off with my name"));
+        assert!(combined.starts_with(DEFAULT_REFINE_INSTRUCTIONS));
+        assert!(combined.contains("Always sign off with my name"));
+    }
 }
