@@ -18,10 +18,8 @@
 //!     cubed, square root of) and rewrites it as symbolic notation. Kept
 //!     independent of `numbers` rather than folded into that gate, since a
 //!     user may want one without the other.
-//!
-//! The extended passes share the existing `numbers` toggle rather than
-//! introducing new config fields, so this module stays self-contained and
-//! `whspr-config` is untouched.
+//!   - `numbers_format` selects whether recognized numbers render as digits
+//!     (the `numbers` pass, as above) or stay spelled out.
 
 mod abbreviations;
 mod currency;
@@ -39,7 +37,7 @@ mod times;
 mod urls;
 
 use async_trait::async_trait;
-use whspr_config::NormalizeSettings;
+use whspr_config::{NormalizeSettings, NumberFormat};
 use whspr_core::{RefineContext, Result, TextRefiner};
 
 /// Wraps any `TextRefiner` and runs the enabled normalizers over whatever
@@ -101,7 +99,11 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     if settings.times {
         text = times::normalize_times(&text);
     }
-    if settings.numbers {
+    // `numbers_format: Words` means "keep spelled-out numbers as spelled
+    // out" -- at minimum, that has to mean this pass (the one that turns a
+    // bare number word into a digit) doesn't run, so "twenty five" stays
+    // "twenty five" instead of becoming "25".
+    if settings.numbers && settings.numbers_format == NumberFormat::Digits {
         text = numbers::normalize_numbers(&text);
     }
     // Independent of `numbers`: a user may want spoken arithmetic rewritten
@@ -342,6 +344,27 @@ mod tests {
             .expect("refine should succeed");
 
         assert_eq!(result, input);
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_numbers_format_words_skips_digitization() {
+        // With the default `Digits` format the very first test in this file
+        // (`normalizing_refiner_applies_all_enabled_passes`) already proves
+        // "twenty five" becomes "25". Selecting `Words` instead must make
+        // that pass a no-op, while everything else (dates/times/formulas)
+        // keeps working normally.
+        let settings = NormalizeSettings {
+            numbers_format: NumberFormat::Words,
+            ..Default::default()
+        };
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("I have twenty five apples", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "I have twenty five apples");
     }
 
     #[tokio::test]
