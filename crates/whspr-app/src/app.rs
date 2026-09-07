@@ -540,4 +540,23 @@ mod tests {
     fn hub_title_is_correct() {
         assert_eq!(HUB_TITLE, "whspr");
     }
+
+    #[test]
+    fn tray_done_active_true_before_the_deadline() {
+        let now = std::time::Instant::now();
+        let until = now + std::time::Duration::from_secs(2);
+        assert!(tray_done_active(Some(until), now));
+    }
+
+    #[test]
+    fn tray_done_active_false_after_the_deadline() {
+        let now = std::time::Instant::now();
+        let until = now - std::time::Duration::from_millis(1);
+        assert!(!tray_done_active(Some(until), now));
+    }
+
+    #[test]
+    fn tray_done_active_false_when_nothing_pending() {
+        assert!(!tray_done_active(None, std::time::Instant::now()));
+    }
 }
