@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <!-- whspr app icon, direction 1c "Poster" (primary): accent ground, ground-colour w, ink full stop. -->
   <rect x="0" y="0" width="1024" height="1024" fill="#ec3013"/>
-  <text x="96" y="792" font-family="Archivo" font-weight="800" font-size="800" fill="#f3f2f2">w</text>
+  <text x="96" y="712" font-family="Archivo" font-weight="800" font-size="800" fill="#f3f2f2">w</text>
   <rect x="784" y="552" width="152" height="152" fill="#201e1d"/>
   <rect x="0" y="704" width="1024" height="40" fill="#f3f2f2"/>
 </svg>
