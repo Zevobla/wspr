@@ -13,8 +13,17 @@ sysinfo.workspace = true
 # Model download + local cache; `tokio` feature for the async API,
 # `rustls-tls` so its reqwest never links native-tls/openssl.
 hf-hub.workspace = true
-# The mpsc channel a caller can subscribe to for download progress.
-tokio = { workspace = true, features = ["sync"] }
+# The mpsc channel for download progress + spawn_blocking for the OAuth
+# redirect listener.
+tokio = { workspace = true, features = ["sync", "rt"] }
+# OAuth PKCE flow. The `reqwest` (rustls) client used for the token exchange
+# and whoami call comes via oauth2's re-exported reqwest, so this crate never
+# depends on reqwest directly (and can't get a mismatched version).
+oauth2.workspace = true
+# Opens the system browser at the authorize URL.
+webbrowser.workspace = true
+# Parses the whoami-v2 JSON response.
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

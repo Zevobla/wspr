@@ -43,9 +43,13 @@
 
 pub mod hardware;
 pub mod models;
+pub mod oauth;
 
 pub use hardware::{estimated_footprint, fits, probe, Fit, HardwareSpecs};
 pub use models::{
     download, human_size, installed, model_by_filename, model_by_id, resolve_models_dir,
     DownloadProgress, InstalledModel, WhisperModel, MODELS, REPO,
+};
+pub use oauth::{
+    run_login, AuthSession, HfIdentity, OauthConfig, DEFAULT_LOGIN_TIMEOUT, DEFAULT_REDIRECT_PORT,
 };
