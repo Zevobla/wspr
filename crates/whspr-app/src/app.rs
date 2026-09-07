@@ -39,6 +39,14 @@ thread_local! {
 pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
+        // Load the three static Archivo faces and make Regular the default,
+        // so every Hub/Flow Bar surface renders in the Modernist type
+        // family and each weight resolves to its own crisp static face
+        // (see `crate::theme::fonts`).
+        .font(crate::theme::fonts::ARCHIVO_REGULAR)
+        .font(crate::theme::fonts::ARCHIVO_SEMIBOLD)
+        .font(crate::theme::fonts::ARCHIVO_EXTRABOLD)
+        .default_font(crate::theme::fonts::DEFAULT)
         .theme(|state: &State, _window| state.theme.clone())
         .subscription(subscription)
         .run()
@@ -65,8 +73,16 @@ fn boot() -> (State, Task<Message>) {
     // Scan every model directory so the Models tab's ASR + refiner selectors
     // are populated with already-installed models right away (see `crate::hf`).
     state.hf_models = crate::hf::scan(&state.config);
+    // Env-gated headless screenshot dev-path (see `crate::screenshot`).
+    state.screenshot_path = crate::screenshot::path_from_env();
+    // When capturing, honor the requested screen + theme so any surface can
+    // be shot headlessly; normal runs are untouched.
+    if state.screenshot_path.is_some() {
+        state.screen = crate::screenshot::screen_from_env();
+        state.theme = crate::screenshot::theme_from_env();
+    }
 
-    let (_id, open_hub) = window::open(window::Settings::default());
+    let (_id, open_hub) = window::open(crate::hub::window_settings());
     let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
 
     let open = Task::batch([
@@ -382,6 +398,25 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::DragHubWindow => match state.hub_window {
+            Some(id) => window::drag(id),
+            None => Task::none(),
+        },
+        Message::TakeScreenshot => match state.hub_window {
+            Some(id) if !state.screenshot_taken => {
+                state.screenshot_taken = true;
+                window::screenshot(id).map(Message::ScreenshotTaken)
+            }
+            _ => Task::none(),
+        },
+        Message::ScreenshotTaken(shot) => {
+            if let Some(path) = state.screenshot_path.clone() {
+                if let Err(e) = crate::screenshot::save(&path, &shot) {
+                    eprintln!("whspr screenshot failed: {e}");
+                }
+            }
+            iced::exit()
+        }
         // The Models-tab (HuggingFace) messages are handled in
         // `crate::hf::update`; any message it doesn't recognize is handed
         // back and forwarded to the Settings handler. Both handlers live
@@ -511,6 +546,7 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
         tray_poll_subscription(state),
         tray_done_subscription(state),
         mic_level_subscription(state),
+        crate::screenshot::subscription(state),
     ])
 }
 

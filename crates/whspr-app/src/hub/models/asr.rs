@@ -11,7 +11,7 @@ use crate::model_menu::{asr_options, selected_asr};
 use crate::state::{Message, State};
 use crate::theme::{color, spacing, styles};
 
-use super::common::{body_text, delete_button, download_button, manage_row};
+use super::common::{body_text, catalog_table, delete_button, download_button, CatalogRow};
 
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     let selector = pick_list(
@@ -22,7 +22,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     .style(move |_theme, status| styles::pick_list::field(scheme, status))
     .menu_style(move |_theme| styles::pick_list::menu(scheme));
 
-    let mut rows: Vec<Element<'a, Message>> = Vec::new();
+    let mut rows: Vec<CatalogRow<'a>> = Vec::new();
 
     // The curated whisper catalog: download the ones you don't have, delete
     // the ones you do.
@@ -36,25 +36,25 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
             Some(m) => delete_button(scheme, state.hf_busy, m.path.clone()),
             None => download_button(scheme, state.hf_busy, Message::HfDownloadModel(model.id)),
         };
-        rows.push(manage_row(
-            scheme,
-            model.label.to_string(),
-            model.size_bytes,
-            state.hf_specs.fit(model.size_bytes),
+        rows.push(CatalogRow {
+            name: model.label.to_string(),
+            size_bytes: model.size_bytes,
+            fit: state
+                .hf_specs
+                .fit(model.size_bytes, whspr_hf::ModelKind::Asr),
             action,
-        ));
+        });
     }
 
     // Whisper files the user dropped in themselves (not in the catalog):
     // deletable, and already selectable in the picker above.
     for m in state.hf_models.asr.iter().filter(|m| m.known_id.is_none()) {
-        rows.push(manage_row(
-            scheme,
-            m.filename.clone(),
-            m.size_bytes,
-            state.hf_specs.fit(m.size_bytes),
-            delete_button(scheme, state.hf_busy, m.path.clone()),
-        ));
+        rows.push(CatalogRow {
+            name: m.filename.clone(),
+            size_bytes: m.size_bytes,
+            fit: state.hf_specs.fit(m.size_bytes, whspr_hf::ModelKind::Asr),
+            action: delete_button(scheme, state.hf_busy, m.path.clone()),
+        });
     }
 
     section(
@@ -67,7 +67,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                     .to_string(),
                 scheme,
             ),
-            column(rows).spacing(spacing::MD),
+            catalog_table(scheme, rows),
         ]
         .spacing(spacing::MD)
         .into(),

@@ -1,145 +1,127 @@
-//! Button styles: `filled` (primary actions), `tonal` (secondary
-//! emphasis), `outlined` (repeated per-row actions), and `text` (low-
-//! emphasis utility actions). MD3 maps every button variant to the `full`
-//! shape token and communicates hover/press via a state-layer wash rather
-//! than a new fill color -- see `crate::theme::color::state_layer`.
+//! Modernist button styles. The public function names are carried over
+//! from the previous scheme so call sites compile unchanged, but each now
+//! realizes a Modernist variant (design guide `.btn-*`):
+//!
+//! - `filled`   -> `.btn-primary`: solid accent, paper text; hover/press
+//!   step the accent one/two ramp steps (never a translucent wash).
+//! - `outlined` -> `.btn-secondary`: transparent with a 1px divider border,
+//!   ink text; hover/press are a faint ink wash.
+//! - `text`     -> `.btn-ghost`: accent text, no border; hover/press a faint
+//!   accent wash.
+//! - `tonal`    -> a neutral tinted fill (segmented/inactive emphasis).
+//! - `error`    -> the destructive/active accent fill (Dictate's "Stop").
+//!
+//! Every variant has zero radius (`shape::NONE`); labels are laid out
+//! flush-left by the caller (see `crate::theme::widgets`), not centered.
 
 use iced::widget::button::{Status, Style};
 use iced::{Background, Border, Color};
 
 use crate::theme::{color, shape};
 
-/// A primary, high-emphasis action ("Diarize a recording...").
+const GHOST_HOVER: f32 = 0.10;
+const GHOST_PRESSED: f32 = 0.18;
+const SECONDARY_HOVER: f32 = 0.07;
+const SECONDARY_PRESSED: f32 = 0.14;
+
+/// `.btn-primary`: a solid accent fill (the one primary action per screen).
 pub fn filled(scheme: &color::Scheme, status: Status) -> Style {
     let base = Style {
         background: Some(Background::Color(scheme.primary)),
         text_color: scheme.on_primary,
-        border: Border::default().rounded(shape::FULL),
+        border: Border::default().rounded(shape::NONE),
         ..Style::default()
     };
-
-    styled(base, scheme.primary, scheme.on_primary, scheme, status)
+    match status {
+        Status::Active => base,
+        Status::Hovered => Style {
+            background: Some(Background::Color(scheme.accent_hover)),
+            ..base
+        },
+        Status::Pressed => Style {
+            background: Some(Background::Color(scheme.accent_pressed)),
+            ..base
+        },
+        Status::Disabled => disabled(scheme, base),
+    }
 }
 
-/// A complementary, tonal-emphasis action ("Preview a new hotkey").
+/// A neutral tinted fill for secondary emphasis where a border would read
+/// too quietly (segmented-control active option shares this look).
 pub fn tonal(scheme: &color::Scheme, status: Status) -> Style {
     let base = Style {
         background: Some(Background::Color(scheme.secondary_container)),
         text_color: scheme.on_secondary_container,
-        border: Border::default().rounded(shape::FULL),
+        border: Border::default().rounded(shape::NONE),
         ..Style::default()
     };
-
-    styled(
-        base,
-        scheme.secondary_container,
-        scheme.on_secondary_container,
-        scheme,
-        status,
-    )
+    match status {
+        Status::Active => base,
+        Status::Hovered => Style {
+            background: Some(Background::Color(color::state_layer(
+                scheme.secondary_container,
+                scheme.on_secondary_container,
+                color::HOVER_STATE_OPACITY,
+            ))),
+            ..base
+        },
+        Status::Pressed => Style {
+            background: Some(Background::Color(color::state_layer(
+                scheme.secondary_container,
+                scheme.on_secondary_container,
+                color::PRESSED_STATE_OPACITY,
+            ))),
+            ..base
+        },
+        Status::Disabled => disabled(scheme, base),
+    }
 }
 
-/// A high-emphasis *destructive/active* action -- the Dictate screen's
-/// "Stop recording" state, where a live capture is running and the button
-/// needs to read as clearly active (MD3 maps this to the `error` role, the
-/// same red the Flow Bar's Recording state uses).
-pub fn error(scheme: &color::Scheme, status: Status) -> Style {
-    let base = Style {
-        background: Some(Background::Color(scheme.error)),
-        text_color: scheme.on_error,
-        border: Border::default().rounded(shape::FULL),
-        ..Style::default()
-    };
-
-    styled(base, scheme.error, scheme.on_error, scheme, status)
-}
-
-/// A repeated, low-emphasis action against a card background (a speaker
-/// row's "Save"): outlined instead of filled so a whole list of rows
-/// doesn't turn into a wall of filled buttons.
+/// `.btn-secondary`: transparent with a 1px divider border and ink text.
 pub fn outlined(scheme: &color::Scheme, status: Status) -> Style {
     let base = Style {
         background: None,
-        text_color: scheme.primary,
+        text_color: scheme.on_surface,
         border: Border {
             color: scheme.outline,
             width: 1.0,
-            radius: shape::FULL.into(),
+            radius: shape::NONE.into(),
         },
         ..Style::default()
     };
-
-    washed(base, scheme.primary, scheme, status)
+    match status {
+        Status::Active => base,
+        Status::Hovered => washed(base, scheme.on_surface, SECONDARY_HOVER),
+        Status::Pressed => washed(base, scheme.on_surface, SECONDARY_PRESSED),
+        Status::Disabled => disabled(scheme, base),
+    }
 }
 
-/// A text-only utility action (the Hub header's theme toggle).
+/// `.btn-ghost`: accent text, no border, a faint accent wash on hover.
 pub fn text(scheme: &color::Scheme, status: Status) -> Style {
     let base = Style {
         background: None,
         text_color: scheme.primary,
         ..Style::default()
     };
-
-    washed(base, scheme.primary, scheme, status)
-}
-
-/// Applies MD3's state-layer wash on top of a filled `base` style.
-fn styled(
-    base: Style,
-    fill: Color,
-    on_fill: Color,
-    scheme: &color::Scheme,
-    status: Status,
-) -> Style {
     match status {
         Status::Active => base,
-        Status::Hovered => Style {
-            background: Some(Background::Color(color::state_layer(
-                fill,
-                on_fill,
-                color::HOVER_STATE_OPACITY,
-            ))),
-            ..base
-        },
-        Status::Pressed => Style {
-            background: Some(Background::Color(color::state_layer(
-                fill,
-                on_fill,
-                color::PRESSED_STATE_OPACITY,
-            ))),
-            ..base
-        },
+        Status::Hovered => washed(base, scheme.primary, GHOST_HOVER),
+        Status::Pressed => washed(base, scheme.primary, GHOST_PRESSED),
         Status::Disabled => disabled(scheme, base),
     }
 }
 
-/// Applies MD3's state-layer wash on top of a transparent-background
-/// `base` style (outlined/text buttons), where there's no fill to tint --
-/// just a translucent wash of the content color itself.
-fn washed(base: Style, content: Color, scheme: &color::Scheme, status: Status) -> Style {
-    match status {
-        Status::Active => base,
-        Status::Hovered => Style {
-            background: Some(Background::Color(color::wash(
-                content,
-                color::HOVER_STATE_OPACITY,
-            ))),
-            ..base
-        },
-        Status::Pressed => Style {
-            background: Some(Background::Color(color::wash(
-                content,
-                color::PRESSED_STATE_OPACITY,
-            ))),
-            ..base
-        },
-        Status::Disabled => disabled(scheme, base),
+/// Lays a translucent wash of `content` over a transparent `base`.
+fn washed(base: Style, content: Color, opacity: f32) -> Style {
+    Style {
+        background: Some(Background::Color(color::wash(content, opacity))),
+        ..base
     }
 }
 
-/// MD3's disabled treatment: `on_surface` at low opacity for the
-/// container, its border (if any), and its content -- applied from the
-/// scheme's neutral role rather than each variant's own colors, per spec.
+/// The disabled treatment: fill/border/content drop to `on_surface` at a
+/// low opacity, per the scheme's neutral disabled roles.
 fn disabled(scheme: &color::Scheme, base: Style) -> Style {
     let border = if base.border.width > 0.0 {
         Border {
@@ -149,7 +131,6 @@ fn disabled(scheme: &color::Scheme, base: Style) -> Style {
     } else {
         base.border
     };
-
     Style {
         background: base.background.map(|_| {
             Background::Color(color::wash(
@@ -168,11 +149,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn filled_button_has_primary_background() {
+    fn filled_button_has_accent_background() {
         let scheme = &color::LIGHT;
         let style = filled(scheme, Status::Active);
-        assert!(style.background.is_some());
+        assert_eq!(style.background, Some(Background::Color(scheme.primary)));
         assert_eq!(style.text_color, scheme.on_primary);
+    }
+
+    #[test]
+    fn filled_button_darkens_on_hover_and_press() {
+        let scheme = &color::LIGHT;
+        assert_eq!(
+            filled(scheme, Status::Hovered).background,
+            Some(Background::Color(scheme.accent_hover))
+        );
+        assert_eq!(
+            filled(scheme, Status::Pressed).background,
+            Some(Background::Color(scheme.accent_pressed))
+        );
     }
 
     #[test]
@@ -184,23 +178,17 @@ mod tests {
     }
 
     #[test]
-    fn error_button_has_error_background() {
-        let scheme = &color::LIGHT;
-        let style = error(scheme, Status::Active);
-        assert_eq!(style.background, Some(Background::Color(scheme.error)));
-        assert_eq!(style.text_color, scheme.on_error);
-    }
-
-    #[test]
-    fn outlined_button_has_no_background() {
+    fn secondary_button_is_transparent_with_ink_text_and_a_border() {
         let scheme = &color::LIGHT;
         let style = outlined(scheme, Status::Active);
         assert!(style.background.is_none());
-        assert_eq!(style.text_color, scheme.primary);
+        assert_eq!(style.text_color, scheme.on_surface);
+        assert_eq!(style.border.width, 1.0);
+        assert_eq!(style.border.color, scheme.outline);
     }
 
     #[test]
-    fn text_button_has_no_background() {
+    fn ghost_button_has_accent_text_and_no_background() {
         let scheme = &color::LIGHT;
         let style = text(scheme, Status::Active);
         assert!(style.background.is_none());
@@ -208,11 +196,21 @@ mod tests {
     }
 
     #[test]
-    fn filled_button_disabled_has_on_surface_color() {
+    fn every_button_variant_is_square() {
+        let scheme = &color::LIGHT;
+        for style in [
+            filled(scheme, Status::Active),
+            tonal(scheme, Status::Active),
+            outlined(scheme, Status::Active),
+        ] {
+            assert_eq!(style.border.radius, shape::NONE.into());
+        }
+    }
+
+    #[test]
+    fn filled_button_disabled_dims_content() {
         let scheme = &color::LIGHT;
         let style = filled(scheme, Status::Disabled);
-        assert!(style.background.is_some());
-        // Disabled buttons use on_surface color, not their original color
         assert_eq!(
             style.text_color,
             color::wash(scheme.on_surface, color::DISABLED_CONTENT_OPACITY)

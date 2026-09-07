@@ -1,14 +1,13 @@
 //! The "General" section: the language override and the launch-at-login /
 //! sound-feedback toggles. The ASR and refiner backend pickers live in the
-//! Models tab now -- one unified selector each, listing local files and cloud
-//! backends together (see `crate::hub::models`) -- so they're intentionally
-//! not duplicated here.
+//! Models tab now (one unified selector each), so they're intentionally not
+//! duplicated here.
 
-use iced::widget::{checkbox, column, pick_list};
+use iced::widget::{column, pick_list};
 use iced::Element;
 
 use crate::config_ui;
-use crate::hub::common::{field, section};
+use crate::hub::common::{field, section, toggle_row};
 use crate::state::{Message, State};
 use crate::theme::{color, spacing, styles};
 
@@ -21,18 +20,6 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     .style(move |_theme, status| styles::pick_list::field(scheme, status))
     .menu_style(move |_theme| styles::pick_list::menu(scheme));
 
-    let autostart_toggle: Element<'_, Message> = checkbox(state.config.autostart.enabled)
-        .label("Launch at login")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::AutostartToggled)
-        .into();
-
-    let sound_toggle: Element<'_, Message> = checkbox(state.config.sound.enabled)
-        .label("Play a sound on start/stop")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::SoundFeedbackToggled)
-        .into();
-
     section(
         scheme,
         "General",
@@ -42,8 +29,18 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                 "Language ('auto' = no override)",
                 language_picker.into()
             ),
-            autostart_toggle,
-            sound_toggle,
+            toggle_row(
+                scheme,
+                "Launch at login",
+                state.config.autostart.enabled,
+                Message::AutostartToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Play a sound on start/stop",
+                state.config.sound.enabled,
+                Message::SoundFeedbackToggled,
+            ),
         ]
         .spacing(spacing::MD)
         .into(),

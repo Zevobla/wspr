@@ -6,11 +6,14 @@
 //! iced's `Theme`/`Style`/`Border`/`Color` model directly.
 
 pub mod color;
+pub mod fonts;
+pub mod icons;
 pub mod motion;
 pub mod shape;
 pub mod spacing;
 pub mod styles;
 pub mod type_scale;
+pub mod widgets;
 
 pub use color::Scheme;
 
@@ -46,8 +49,10 @@ mod tests {
 
     #[test]
     fn scheme_returns_light_as_fallback() {
+        // The accent is theme-constant in Modernist, so the ground (paper
+        // vs ink) is what distinguishes the two schemes.
         let dark = scheme(&iced::Theme::Dark);
         let light = scheme(&iced::Theme::Light);
-        assert_ne!(dark.primary, light.primary);
+        assert_ne!(dark.surface, light.surface);
     }
 }

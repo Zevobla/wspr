@@ -1,14 +1,13 @@
-//! The "Devices" group: the input-device picker (`microphone_section`), the
-//! `config.device` flag toggles (`flags_section`), and the hotkey preview
-//! (`hotkey_section`) -- hardware- and input-adjacent settings kept
-//! together the way they already were before the Settings screen was split
-//! into per-topic groups (see `super`'s module doc comment).
+//! The "Audio & devices" group: the input-device picker
+//! (`microphone_section`), the `config.device` flag toggles
+//! (`flags_section`), and the hotkey preview (`hotkey_section`).
 
-use iced::widget::{button, checkbox, column, pick_list, text};
-use iced::Element;
+use iced::widget::{button, column, pick_list, row, text};
+use iced::{Alignment, Element};
 
-use crate::hub::common::{field, section};
+use crate::hub::common::{field, section, toggle_row};
 use crate::state::{Message, State};
+use crate::theme::widgets;
 use crate::theme::{color, spacing, styles, type_scale};
 
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
@@ -42,40 +41,40 @@ fn microphone_section<'a>(
 }
 
 fn flags_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let device_hotplug = checkbox(state.config.device.device_hotplug)
-        .label("Rescan devices when one is plugged/unplugged")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::DeviceHotplugToggled);
-
-    let active_window = checkbox(state.config.device.active_window)
-        .label("Track the focused app for per-app stats")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::ActiveWindowToggled);
-
-    let bluetooth_source = checkbox(state.config.device.bluetooth_source)
-        .label("Allow Bluetooth microphones")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::BluetoothSourceToggled);
-
-    let virtual_source = checkbox(state.config.device.virtual_source)
-        .label("Allow virtual/software audio sources")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::VirtualSourceToggled);
-
-    let tray_static = checkbox(state.config.device.tray_static)
-        .label("Keep the tray icon static (no flicker on state changes)")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::TrayStaticToggled);
-
     section(
         scheme,
         "Devices",
         column![
-            device_hotplug,
-            active_window,
-            bluetooth_source,
-            virtual_source,
-            tray_static,
+            toggle_row(
+                scheme,
+                "Rescan devices when one is plugged/unplugged",
+                state.config.device.device_hotplug,
+                Message::DeviceHotplugToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Track the focused app for per-app stats",
+                state.config.device.active_window,
+                Message::ActiveWindowToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Allow Bluetooth microphones",
+                state.config.device.bluetooth_source,
+                Message::BluetoothSourceToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Allow virtual/software audio sources",
+                state.config.device.virtual_source,
+                Message::VirtualSourceToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Keep the tray icon static (no flicker on state changes)",
+                state.config.device.tray_static,
+                Message::TrayStaticToggled,
+            ),
         ]
         .spacing(spacing::MD)
         .into(),
@@ -86,15 +85,24 @@ fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Eleme
     let capture_label = if state.hotkey_capturing {
         "Press any key..."
     } else {
-        "Preview a new hotkey"
+        "Change"
     };
     let capture_button = button(
         text(capture_label)
             .size(type_scale::LABEL_LARGE.size)
             .font(type_scale::LABEL_LARGE.font()),
     )
-    .style(move |_theme, status| styles::button::tonal(scheme, status))
+    .style(move |_theme, status| styles::button::text(scheme, status))
     .on_press(Message::StartHotkeyCapture);
+
+    // The fixed push-to-talk combo rendered as Modernist keycaps.
+    let keycaps = row![
+        widgets::kbd("Ctrl", scheme),
+        widgets::kbd("Space", scheme),
+        capture_button,
+    ]
+    .spacing(spacing::SM)
+    .align_y(Alignment::Center);
 
     let preview: Element<'_, Message> = match &state.captured_hotkey {
         Some(combo) => text(format!("Captured: {combo} (preview only, not yet applied)"))
@@ -102,28 +110,21 @@ fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Eleme
             .font(type_scale::BODY_MEDIUM.font())
             .color(scheme.on_surface_variant)
             .into(),
-        None => text("No preview captured yet")
-            .size(type_scale::BODY_MEDIUM.size)
-            .font(type_scale::BODY_MEDIUM.font())
-            .color(scheme.on_surface_variant)
-            .into(),
+        None => text(
+            "Ctrl+Space is fixed -- whspr-inject doesn't yet support registering a \
+              different combo at runtime.",
+        )
+        .size(type_scale::BODY_MEDIUM.size)
+        .font(type_scale::BODY_MEDIUM.font())
+        .color(scheme.on_surface_variant)
+        .into(),
     };
 
     section(
         scheme,
         "Hotkey",
-        column![
-            text(
-                "Active hotkey: Ctrl+Space (fixed -- whspr-inject doesn't yet support \
-                  registering a different combo at runtime)"
-            )
-            .size(type_scale::BODY_MEDIUM.size)
-            .font(type_scale::BODY_MEDIUM.font())
-            .color(scheme.on_surface_variant),
-            capture_button,
-            preview,
-        ]
-        .spacing(spacing::SM)
-        .into(),
+        column![field(scheme, "Push to talk", keycaps.into()), preview]
+            .spacing(spacing::SM)
+            .into(),
     )
 }

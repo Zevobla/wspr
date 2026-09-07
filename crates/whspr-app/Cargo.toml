@@ -13,8 +13,11 @@ path = "src/main.rs"
 # "tokio" enables iced's tokio-backed executor, so `Task`/`Subscription`
 # futures run on a real tokio runtime -- needed to bridge to the async
 # `whspr_core::Pipeline` and to tokio mpsc channels (hotkey events, pipeline
-# state callbacks) from within iced's async world.
-iced = { workspace = true, features = ["tokio"] }
+# state callbacks) from within iced's async world. "svg" turns on iced's
+# resvg-backed `svg` widget, used to render the vendored Lucide line icons
+# (see `crate::theme::icons`); it's a feature flag on the existing iced dep,
+# pure-Rust (resvg), and needs no new workspace dependency or system library.
+iced = { workspace = true, features = ["tokio", "svg"] }
 whspr-core = { workspace = true, features = ["testkit"] }
 whspr-inject.workspace = true
 whspr-audio.workspace = true
@@ -53,6 +56,11 @@ tray-icon.workspace = true
 # Size-based log rotation (O-19). See `crate::logging`.
 file-rotate.workspace = true
 tracing-subscriber.workspace = true
+# PNG encoder for the env-gated headless screenshot dev-path (see
+# `crate::screenshot`): `WHSPR_SCREENSHOT=<path>` captures the Hub window to a
+# PNG and exits. A leaf, pure-Rust dep declared directly here (not a shared
+# workspace dependency) since it's this crate's dev/verification concern only.
+png = "0.17"
 
 [dev-dependencies]
 tempfile.workspace = true

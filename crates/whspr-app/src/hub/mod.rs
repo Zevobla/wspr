@@ -1,18 +1,17 @@
-//! The Hub window: a header, a top tab bar, and one screen at a time below
-//! it -- Dictate (the default), Speakers, History, Settings -- restyled on
-//! the MD3 tokens in `crate::theme` (see that module's doc comment for the
-//! overall token system this app styles from). Every screen module
-//! (`dictate`, `speakers`, `history`, `settings`) is an M3 "card" list
-//! (`common::section`, tonal `surface_container_low`); every field
-//! caption/control pair is grouped with `common::field`.
+//! The Hub window: a left numbered nav rail, and one screen at a time to
+//! its right (a header band over a scrolling body). Restyled on the
+//! Modernist tokens in `crate::theme` -- flat, architectural, set in
+//! Archivo, near-mono red on paper, zero radius, strong 2px rules (see that
+//! module's doc comment).
 //!
-//! whspr's core action -- record/dictate -- is Dictate, not buried among
-//! settings as an equally-weighted card the way the old single-column
-//! layout had it; see `crate::state::Screen` for the enum driving which
-//! screen is showing.
+//! The rail (01 Dictate / 02 History / 03 Models / 04 Speakers / 05
+//! Settings) replaces the old top tab bar; `crate::state::Screen`'s
+//! declaration order is the rail order. Each screen module (`dictate`,
+//! `history`, `models`, `speakers`, `settings`) renders its own body from
+//! the shared widgets in `crate::theme::widgets`.
 
-use iced::widget::{button, column, container, row, scrollable, text, Space};
-use iced::{Alignment, Element, Length};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
+use iced::{Alignment, Background, Border, Element, Length};
 
 mod common;
 mod dictate;
@@ -22,97 +21,279 @@ pub(crate) mod settings;
 mod speakers;
 
 use crate::state::{Message, Screen, State};
-use crate::theme::{self, color, spacing, styles, type_scale};
+use crate::theme::widgets::{self, screen_header};
+use crate::theme::{color, spacing, styles, type_scale};
 
-/// Every tab, in the order the tab bar shows them.
+/// Every screen, in nav-rail order.
 const SCREENS: [Screen; 5] = [
     Screen::Dictate,
-    Screen::Speakers,
-    Screen::Models,
     Screen::History,
+    Screen::Models,
+    Screen::Speakers,
     Screen::Settings,
 ];
 
+/// The brand block's padding, from the rail reference (`WhsprRail.dc.html`:
+/// `padding: 38px 20px 0`). Left is 20px -- flush with the "01/02/..." nav
+/// numbers below it -- the same on every platform. The 38px top is what
+/// clears the macOS traffic lights (which float at ~y20, above the brand);
+/// on other platforms it's just header padding.
+const BRAND_PAD: iced::Padding = iced::Padding {
+    top: 38.0,
+    right: 20.0,
+    bottom: 0.0,
+    left: 20.0,
+};
+
+/// The Hub window's settings. On macOS the system title bar is hidden and
+/// made transparent with a full-size content view, so the app's own paper
+/// ground and rounded corners reach the top edge and the traffic lights
+/// float directly over the custom header (the Claude-desktop pattern).
+/// `decorations` stays `true` -- that keeps the traffic lights and rounded
+/// corners; only the title bar chrome is removed. The whole custom header
+/// is the drag handle (see `Message::DragHubWindow`).
+#[cfg(target_os = "macos")]
+pub fn window_settings() -> iced::window::Settings {
+    iced::window::Settings {
+        platform_specific: iced::window::settings::PlatformSpecific {
+            title_hidden: true,
+            titlebar_transparent: true,
+            fullsize_content_view: true,
+        },
+        ..iced::window::Settings::default()
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn window_settings() -> iced::window::Settings {
+    iced::window::Settings::default()
+}
+
 /// Renders the Hub window's content for the current state.
 pub fn view(state: &State) -> Element<'_, Message> {
-    let scheme = theme::scheme(&state.theme);
+    let scheme = crate::theme::scheme(&state.theme);
 
     let screen_content = match state.screen {
         Screen::Dictate => dictate::view(state, scheme),
-        Screen::Speakers => speakers::view(state, scheme),
-        Screen::Models => models::view(state, scheme),
         Screen::History => history::view(state, scheme),
+        Screen::Models => models::view(state, scheme),
+        Screen::Speakers => speakers::view(state, scheme),
         Screen::Settings => settings::view(state, scheme),
     };
 
-    let body = scrollable(screen_content)
+    let body = scrollable(
+        container(screen_content)
+            .width(Length::Fill)
+            .padding([spacing::XL, spacing::XXL]),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_theme, status| styles::scrollable::rail(scheme, status));
+
+    // The whole header band is the window's drag handle (there is no system
+    // title bar on macOS). Interactive children (the theme toggle) capture
+    // their own presses first, so dragging only starts on the empty header.
+    let header = mouse_area(screen_header(
+        screen_title(state.screen),
+        header_trailing(state, scheme),
+        scheme,
+    ))
+    .on_press(Message::DragHubWindow);
+
+    let main = column![header, error_banner(state, scheme), body,]
         .width(Length::Fill)
-        .style(move |_theme, status| styles::scrollable::rail(scheme, status));
+        .height(Length::Fill);
 
     container(
-        column![
-            header(state, scheme),
-            tab_bar(state.screen, scheme),
-            divider(scheme),
-            error_banner(state, scheme),
-            body
+        row![
+            nav_rail(state, scheme),
+            widgets::vrule(spacing::layout::RULE, scheme),
+            main
         ]
-        .spacing(spacing::LG)
-        .padding(spacing::XL)
-        .width(Length::Fill),
+        .width(Length::Fill)
+        .height(Length::Fill),
     )
     .style(move |_theme| styles::container::surface(scheme))
     .into()
 }
 
-/// The tab bar's button label for a screen -- pure so the wording is
-/// testable without standing up the whole tab bar (mirrors
-/// `theme_toggle_label`'s reasoning below).
-fn tab_label(screen: Screen) -> &'static str {
+/// The rail's label for a screen -- pure so the wording stays testable.
+fn rail_label(screen: Screen) -> &'static str {
     match screen {
         Screen::Dictate => "Dictate",
-        Screen::Speakers => "Speakers",
-        Screen::Models => "Models",
         Screen::History => "History",
+        Screen::Models => "Models",
+        Screen::Speakers => "Speakers",
         Screen::Settings => "Settings",
     }
 }
 
-/// The top tab bar: one button per `Screen`, the active one styled `tonal`
-/// (a secondary-container tint) and every other one styled `text` (no
-/// background) -- the same active/inactive mapping MD3 uses for segmented
-/// controls, reusing the button styles `crate::hub::settings`'s hotkey
-/// preview and this Hub's own header already style from.
-fn tab_bar(current: Screen, scheme: &'static color::Scheme) -> Element<'static, Message> {
-    row(SCREENS.map(|screen| tab_button(scheme, screen, current == screen)))
-        .spacing(spacing::SM)
-        .into()
+/// A screen's header title.
+fn screen_title(screen: Screen) -> &'static str {
+    rail_label(screen)
 }
 
-fn tab_button(
-    scheme: &'static color::Scheme,
-    screen: Screen,
-    active: bool,
-) -> Element<'static, Message> {
-    button(
-        text(tab_label(screen))
-            .size(type_scale::LABEL_LARGE.size)
-            .font(type_scale::LABEL_LARGE.font()),
+/// The left numbered nav rail: a brand block, the five rail items, and a
+/// bottom status block, all on the paper ground with a 2px right rule drawn
+/// as a sibling in `view`.
+fn nav_rail<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let items = column(
+        SCREENS
+            .into_iter()
+            .enumerate()
+            .map(|(i, screen)| rail_item(scheme, screen, i + 1, state.screen == screen)),
     )
-    .style(move |_theme, status| {
-        if active {
-            styles::button::tonal(scheme, status)
-        } else {
-            styles::button::text(scheme, status)
-        }
-    })
-    .on_press(Message::TabSelected(screen))
+    .spacing(spacing::XS);
+
+    // The brand block is part of the draggable header (it sits under the
+    // floating traffic lights on macOS).
+    let brand = mouse_area(brand(scheme)).on_press(Message::DragHubWindow);
+
+    container(
+        column![
+            brand,
+            widgets::hr(scheme),
+            container(items).padding([spacing::MD, 0.0]),
+            Space::new().height(Length::Fill),
+            widgets::hr(scheme),
+            status_block(state, scheme),
+        ]
+        .width(Length::Fill),
+    )
+    .width(Length::Fixed(spacing::layout::RAIL_W))
+    .height(Length::Fill)
+    .style(move |_theme| styles::container::rail(scheme))
     .into()
 }
 
-/// The theme-toggle button's label names the theme you'd switch *to*, not
-/// the one you're currently in -- kept as a pure `&Theme -> &str` so the
-/// wording stays testable without standing up the whole `header` view.
+/// The rail's brand block: a 12px accent square + the "whspr" wordmark, in
+/// a `RAIL_HEADER_H`-tall band matched to the screen header.
+fn brand<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+    container(
+        row![
+            widgets::status_square(widgets::Mark::Solid, 12.0, scheme),
+            text("whspr")
+                .size(type_scale::TITLE_MEDIUM.size)
+                .font(type_scale::TITLE_MEDIUM.font())
+                .color(scheme.on_surface),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+    )
+    .height(Length::Fixed(spacing::layout::RAIL_HEADER_H))
+    .padding(BRAND_PAD)
+    .into()
+}
+
+/// A single rail item: `NN`, the label, and a trailing 8px active square.
+fn rail_item<'a>(
+    scheme: &'static color::Scheme,
+    screen: Screen,
+    number: usize,
+    active: bool,
+) -> Element<'a, Message> {
+    let label_color = if active {
+        scheme.primary
+    } else {
+        scheme.on_surface
+    };
+    let num_color = if active {
+        scheme.primary
+    } else {
+        scheme.on_surface_variant
+    };
+    let mark: Element<'a, Message> = if active {
+        widgets::status_square(widgets::Mark::Solid, 8.0, scheme)
+    } else {
+        Space::new().width(Length::Fixed(8.0)).into()
+    };
+
+    let content = row![
+        container(
+            text(format!("{number:02}"))
+                .size(type_scale::KICKER.size)
+                .font(type_scale::KICKER.font())
+                .color(num_color)
+        )
+        .width(Length::Fixed(24.0)),
+        text(rail_label(screen))
+            .size(type_scale::LABEL_LARGE.size)
+            .font(type_scale::LABEL_LARGE.font())
+            .color(label_color)
+            .width(Length::Fill),
+        mark,
+    ]
+    .spacing(spacing::SM)
+    .align_y(Alignment::Center);
+
+    button(content)
+        .width(Length::Fill)
+        .padding([10.0, 20.0])
+        .on_press(Message::TabSelected(screen))
+        .style(move |_theme, status| ghost_row(scheme, status))
+        .into()
+}
+
+/// A flush-left, transparent row button with a faint ink hover -- the rail
+/// item and Settings sub-nav share this.
+pub(crate) fn ghost_row(scheme: &'static color::Scheme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: None,
+        text_color: scheme.on_surface,
+        border: Border::default().rounded(0.0),
+        ..button::Style::default()
+    };
+    match status {
+        button::Status::Hovered | button::Status::Pressed => button::Style {
+            background: Some(Background::Color(color::wash(scheme.on_surface, 0.07))),
+            ..base
+        },
+        _ => base,
+    }
+}
+
+/// The rail's bottom status block: the pipeline word, the input device, and
+/// the offline tag.
+fn status_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let device = state
+        .selected_device
+        .clone()
+        .unwrap_or_else(|| "No microphone".to_string());
+
+    column![
+        row![
+            widgets::status_square(widgets::Mark::Ink, 8.0, scheme),
+            text(pipeline_word(state.pipeline_state))
+                .size(type_scale::LABEL_MEDIUM.size)
+                .font(type_scale::LABEL_LARGE.font())
+                .color(scheme.on_surface),
+        ]
+        .spacing(spacing::SM)
+        .align_y(Alignment::Center),
+        text(device)
+            .size(type_scale::LABEL_MEDIUM.size)
+            .font(type_scale::LABEL_MEDIUM.font())
+            .color(scheme.on_surface_variant),
+        widgets::tag(widgets::TagKind::Outline, "On this Mac · offline", scheme),
+    ]
+    .spacing(spacing::SM)
+    .padding([spacing::LG, 20.0])
+    .into()
+}
+
+/// A glanceable word for the pipeline's current state (rail + Flow Bar).
+fn pipeline_word(state: whspr_core::PipelineState) -> &'static str {
+    match state {
+        whspr_core::PipelineState::Idle => "Ready",
+        whspr_core::PipelineState::Recording => "Listening",
+        whspr_core::PipelineState::Transcribing => "Transcribing",
+        whspr_core::PipelineState::Refining => "Cleaning up",
+        whspr_core::PipelineState::Injecting => "Typing",
+        whspr_core::PipelineState::Error => "Error",
+    }
+}
+
+/// The theme-toggle button's label names the theme you'd switch *to*.
 fn theme_toggle_label(theme: &iced::Theme) -> &'static str {
     match theme {
         iced::Theme::Dark => "Switch to light",
@@ -120,48 +301,34 @@ fn theme_toggle_label(theme: &iced::Theme) -> &'static str {
     }
 }
 
-fn header<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let theme_label = theme_toggle_label(&state.theme);
-
-    row![
-        text("whspr")
-            .size(type_scale::TITLE_LARGE.size)
-            .font(type_scale::TITLE_LARGE.font())
-            .color(scheme.on_surface)
-            .width(Length::Fill),
-        button(
-            text(theme_label)
-                .size(type_scale::LABEL_LARGE.size)
-                .font(type_scale::LABEL_LARGE.font())
-        )
-        .style(move |_theme, status| styles::button::text(scheme, status))
-        .on_press(Message::ThemeToggled),
-    ]
-    .align_y(Alignment::Center)
+/// The screen header's trailing slot: the theme toggle (a ghost action).
+fn header_trailing<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    button(
+        text(theme_toggle_label(&state.theme))
+            .size(type_scale::LABEL_LARGE.size)
+            .font(type_scale::LABEL_LARGE.font()),
+    )
+    .style(move |_theme, status| styles::button::text(scheme, status))
+    .on_press(Message::ThemeToggled)
     .into()
 }
 
-/// A 1px `outline_variant` rule under the header.
-fn divider(scheme: &'static color::Scheme) -> Element<'static, Message> {
-    container(Space::new())
-        .width(Length::Fill)
-        .height(Length::Fixed(1.0))
-        .style(move |_theme| styles::container::divider(scheme))
-        .into()
-}
-
+/// A mono accent error notice under the header when a worker error exists.
 fn error_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     match &state.last_error {
         Some(error) => container(
-            text(format!("Last worker error: {error}"))
-                .size(type_scale::BODY_MEDIUM.size)
-                .font(type_scale::BODY_MEDIUM.font()),
+            container(
+                text(format!("Last worker error: {error}"))
+                    .size(type_scale::BODY_MEDIUM.size)
+                    .font(type_scale::BODY_MEDIUM.font()),
+            )
+            .padding(spacing::MD)
+            .width(Length::Fill)
+            .style(move |_theme| styles::container::error_banner(scheme)),
         )
-        .padding(spacing::MD)
-        .width(Length::Fill)
-        .style(move |_theme| styles::container::error_banner(scheme))
+        .padding([spacing::SM, spacing::XXL])
         .into(),
-        None => column![].into(),
+        None => Space::new().into(),
     }
 }
 
@@ -171,31 +338,32 @@ mod tests {
 
     #[test]
     fn theme_toggle_label_names_the_target_theme() {
-        // The label advertises the theme the click switches *to*.
         assert_eq!(theme_toggle_label(&iced::Theme::Dark), "Switch to light");
         assert_eq!(theme_toggle_label(&iced::Theme::Light), "Switch to dark");
     }
 
     #[test]
-    fn every_tab_has_a_distinct_label() {
-        let labels: Vec<&str> = SCREENS.iter().map(|&s| tab_label(s)).collect();
-        // No two tabs share a label, so the bar is unambiguous.
+    fn every_rail_item_has_a_distinct_label() {
+        let labels: Vec<&str> = SCREENS.iter().map(|&s| rail_label(s)).collect();
         for (i, a) in labels.iter().enumerate() {
             for b in &labels[i + 1..] {
                 assert_ne!(a, b);
             }
         }
-        assert_eq!(tab_label(Screen::Dictate), "Dictate");
+        assert_eq!(rail_label(Screen::Dictate), "Dictate");
     }
 
     #[test]
-    fn exactly_one_tab_is_active_for_each_screen() {
-        // The tab bar highlights `active == current`, so for whatever screen
-        // is showing, exactly one of the four tabs reads as active -- and
-        // it's the one matching that screen.
-        for current in SCREENS {
-            let active: Vec<Screen> = SCREENS.into_iter().filter(|&s| s == current).collect();
-            assert_eq!(active, vec![current]);
+    fn rail_is_numbered_in_screen_order() {
+        assert_eq!(SCREENS[0], Screen::Dictate);
+        assert_eq!(SCREENS[4], Screen::Settings);
+    }
+
+    #[test]
+    fn pipeline_word_covers_every_state() {
+        use whspr_core::PipelineState::*;
+        for s in [Idle, Recording, Transcribing, Refining, Injecting, Error] {
+            assert!(!pipeline_word(s).is_empty());
         }
     }
 }

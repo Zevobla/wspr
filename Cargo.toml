@@ -82,6 +82,13 @@ sysinfo = { version = "0.39", default-features = false, features = [
 ] }
 webbrowser = "1.0"
 
+# macOS-only: queries the Metal default device's `recommendedMaxWorkingSetSize`
+# (the unified-memory GPU budget) for the "fits your machine" badge, mirroring
+# what LM Studio uses on Apple Silicon. Opted into `whspr-hf` only under a
+# `cfg(target_os = "macos")` target dependency, so non-mac builds never link
+# it (see `crates/whspr-hf/src/hardware/metal.rs`).
+metal = "0.32"
+
 # Scripting (macros) - a crate opts in with features = ["luajit", "vendored"]
 # to embed a JIT-compiled Lua engine; the vendored LuaJIT builds from source
 # via the existing cmake/clang toolchain, so no new system library is needed.
