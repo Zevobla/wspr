@@ -69,6 +69,7 @@ impl AsrBackend for WhisperLocal {
         let model_path = self.model_path.clone();
         let samples = audio.samples.clone();
         let language = opts.language.clone();
+        let translate = opts.translate;
 
         // whisper.cpp inference is CPU-bound and can take real wall-clock
         // seconds; run it on a blocking-pool thread rather than blocking the
@@ -76,7 +77,7 @@ impl AsrBackend for WhisperLocal {
         // all `Send + Sync` (whisper-rs marks them so explicitly), so moving
         // them into the closure and running synchronously in there is sound.
         tokio::task::spawn_blocking(move || {
-            transcribe_blocking(&model_path, &samples, language.as_deref())
+            transcribe_blocking(&model_path, &samples, language.as_deref(), translate)
         })
         .await
         .map_err(|e| WhsprError::Asr(format!("WhisperLocal worker thread panicked: {}", e)))?
@@ -93,6 +94,7 @@ fn transcribe_blocking(
     model_path: &std::path::Path,
     samples: &[f32],
     language: Option<&str>,
+    translate: bool,
 ) -> Result<Transcript> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -107,6 +109,9 @@ fn transcribe_blocking(
         patience: -1.0,
     });
     params.set_language(language);
+    // J-10: translate the transcription to English rather than leaving it
+    // in the detected/fixed source language.
+    params.set_translate(translate);
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
