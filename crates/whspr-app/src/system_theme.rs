@@ -2,9 +2,20 @@
 //! changing via the Hub's manual "Switch to dark/light" link).
 //!
 //! `dark-light` has no push-based OS appearance-changed event that plays
-//! nicely with iced's `Subscription`, so this polls `dark_light::detect()`
-//! on a plain `iced::time::every` tick -- cheap (a single OS query) and
-//! plenty responsive for something a human just flipped in System Settings.
+//! nicely with iced's `Subscription`, so this polls `detect()` on a plain
+//! `iced::time::every` tick -- cheap (a single OS query) and plenty
+//! responsive for something a human just flipped in System Settings.
+//!
+//! On macOS, `detect()` reads `AppleInterfaceStyle` straight from the
+//! global preferences domain via the `defaults` CLI (`detect_macos`)
+//! instead of trusting `dark_light::detect()` alone: `dark_light` gets
+//! there through `NSUserDefaults`/AppKit, which for an unbundled binary
+//! (no Info.plist, launched via `cargo run` rather than a `.app`) has been
+//! observed to not reliably reflect the system's actual current
+//! appearance. Shelling out to the same tool a human would run to check
+//! sidesteps whatever bundle/AppKit state that path depends on.
+//! `dark_light::detect()` remains the cross-platform fallback for every
+//! other OS (and if the `defaults` binary itself can't be spawned).
 //!
 //! `State::system_theme` tracks the *last detected OS appearance*,
 //! separately from `State::theme` (what's actually rendered). That split is
@@ -33,11 +44,49 @@ fn theme_from_mode(mode: dark_light::Mode) -> iced::Theme {
     }
 }
 
-/// The current OS appearance, as an iced theme.
+/// Reads the macOS global domain's `AppleInterfaceStyle` preference
+/// directly via the `defaults` CLI -- ground truth for the system's
+/// current appearance, independent of the calling process's own bundle
+/// state. Returns `None` when the `defaults` binary itself can't even be
+/// spawned, so the caller can fall back to `dark_light`.
+#[cfg(target_os = "macos")]
+fn detect_macos() -> Option<iced::Theme> {
+    let output = std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .ok()?;
+    Some(theme_from_apple_interface_style(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn detect_macos() -> Option<iced::Theme> {
+    None
+}
+
+/// Pure mapping from a `defaults read -g AppleInterfaceStyle` invocation's
+/// outcome to a theme. The key is only ever set to the string `"Dark"`
+/// (trailing newline included) in Dark mode; Light mode leaves it unset
+/// entirely, which `defaults read` reports as a non-zero exit.
+#[cfg(target_os = "macos")]
+fn theme_from_apple_interface_style(command_succeeded: bool, stdout: &str) -> iced::Theme {
+    if command_succeeded && stdout.trim().eq_ignore_ascii_case("dark") {
+        iced::Theme::Dark
+    } else {
+        iced::Theme::Light
+    }
+}
+
+/// The current OS appearance, as an iced theme: the reliable macOS read
+/// when available, otherwise `dark_light`'s cross-platform detection.
 fn detect() -> iced::Theme {
-    dark_light::detect()
-        .map(theme_from_mode)
-        .unwrap_or(iced::Theme::Light)
+    detect_macos().unwrap_or_else(|| {
+        dark_light::detect()
+            .map(theme_from_mode)
+            .unwrap_or(iced::Theme::Light)
+    })
 }
 
 /// Sets the boot-time theme: the headless screenshot harness's forced theme
