@@ -444,4 +444,51 @@ mod tests {
     fn words_per_minute_of_zero_words_is_zero() {
         assert_eq!(words_per_minute(0, 30.0), 0.0);
     }
+
+    #[test]
+    fn build_refiner_noop_choice_is_wrapped_in_normalizing_refiner() {
+        let config = whspr_config::Config::default();
+
+        let refiner =
+            build_refiner(&config, None).expect("default (noop) refiner should always build");
+        // NormalizingRefiner::id() delegates to the inner refiner's id, so
+        // this also proves the wrapping happened rather than returning the
+        // bare NoopRefiner.
+        assert_eq!(refiner.id(), "noop");
+    }
+
+    #[test]
+    fn build_refiner_openai_uses_configured_model() {
+        let mut config = whspr_config::Config::default();
+        config
+            .api_keys
+            .insert("openai".to_string(), "test-key".to_string());
+        config.refine_settings.openai_model = "gpt-4o".to_string();
+
+        let refiner =
+            build_refiner(&config, Some("openai")).expect("configured api key should be enough");
+        assert_eq!(refiner.id(), "openai");
+    }
+
+    #[test]
+    fn build_refiner_llama_local_requires_a_configured_model_path() {
+        let config = whspr_config::Config::default();
+
+        // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
+        // available -- match directly instead.
+        match build_refiner(&config, Some("llama-local")) {
+            Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
+            Err(error) => assert!(error.to_string().contains("llama_model_path")),
+        }
+    }
+
+    #[test]
+    fn build_refiner_llama_local_uses_configured_model_path() {
+        let mut config = whspr_config::Config::default();
+        config.refine_settings.llama_model_path = Some(PathBuf::from("/explicit/model.gguf"));
+
+        let refiner = build_refiner(&config, Some("llama-local"))
+            .expect("an explicit llama_model_path should be enough to build");
+        assert_eq!(refiner.id(), "llama-local");
+    }
 }
