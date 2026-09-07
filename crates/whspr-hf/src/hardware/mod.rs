@@ -1,26 +1,31 @@
-//! The "fits your machine" badge: a `sysinfo`-backed RAM probe plus a pure,
-//! injected-input heuristic mapping a model's on-disk size against available
-//! RAM to a red/yellow/green verdict (LM-Studio's model-list badge is the
-//! reference).
+//! The "fits your machine" badge: a GPU/unified-memory budget probe plus a
+//! pure, injected-input heuristic mapping a model's estimated footprint
+//! against that budget to a red/yellow/green verdict (LM-Studio's model-list
+//! badge is the reference, both in the traffic-light badge and in what the
+//! budget is judged against -- on Apple Silicon models run against Metal's
+//! unified memory, not bare system RAM).
 //!
-//! The verdict logic ([`fits`]) is deliberately split from the live probe
-//! ([`probe`]): [`fits`] takes plain byte counts so it's a pure function
-//! unit-testable with injected RAM values, while [`probe`] is the thin,
-//! untested `sysinfo`/Metal shim that feeds it real numbers.
+//! The verdict logic ([`fits`], [`estimated_footprint`], [`usable_memory`])
+//! is deliberately split from the live probes ([`probe`], [`gpu_budget`],
+//! [`metal::recommended_working_set`]): the former are pure functions
+//! unit-testable with injected byte counts, while the latter are the thin,
+//! untested `sysinfo`/Metal shims that feed them real numbers.
 
 mod metal;
 
 use sysinfo::System;
 
-/// How comfortably a model is expected to fit in a machine's RAM. Mirrors
-/// LM-Studio's three-state model badge.
+use crate::models::ModelKind;
+
+/// How comfortably a model is expected to fit in a machine's usable
+/// GPU/unified-memory budget. Mirrors LM-Studio's three-state model badge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fit {
     /// Loads with comfortable headroom to spare.
     Green,
     /// Fits, but leaves little room -- expect memory pressure.
     Yellow,
-    /// The estimated footprint exceeds available RAM; likely won't load.
+    /// The estimated footprint exceeds the usable budget; likely won't load.
     Red,
 }
 
@@ -30,63 +35,95 @@ impl Fit {
         match self {
             Fit::Green => "Fits your machine",
             Fit::Yellow => "Tight fit",
-            Fit::Red => "Too large",
+            Fit::Red => "Won't fit",
         }
     }
 }
 
-/// Runtime memory overhead whisper.cpp needs on top of the raw model weights
-/// (KV cache + compute buffers), as a fraction of the model size. A coarse
-/// rule of thumb, not a measured constant -- the heuristic only needs to be
-/// good enough to color a badge, and the split between [`fits`] and [`probe`]
-/// keeps it honest and testable.
-const RUNTIME_OVERHEAD_NUMERATOR: u64 = 1;
-const RUNTIME_OVERHEAD_DENOMINATOR: u64 = 3;
+/// One gibibyte, as a byte count -- the unit every constant below is
+/// expressed in.
+const GIB: u64 = 1024 * 1024 * 1024;
 
-/// Estimated peak RAM a model of `model_bytes` needs to load and run: the
-/// weights plus [`RUNTIME_OVERHEAD_NUMERATOR`]/[`RUNTIME_OVERHEAD_DENOMINATOR`]
-/// of that again for runtime buffers. Saturating so an absurd size can't wrap.
-pub fn estimated_footprint(model_bytes: u64) -> u64 {
-    let overhead = model_bytes
-        .saturating_mul(RUNTIME_OVERHEAD_NUMERATOR)
-        .saturating_div(RUNTIME_OVERHEAD_DENOMINATOR);
-    model_bytes.saturating_add(overhead)
+/// whisper.cpp pre-allocates a fixed working set (KV cache + compute
+/// buffers) rather than scaling it with context length, so its overhead is a
+/// weight-proportional term plus one small fixed pad rather than a separate
+/// context-dependent one.
+const ASR_WEIGHT_NUMERATOR: u64 = 13;
+const ASR_WEIGHT_DENOMINATOR: u64 = 10;
+/// The fixed pad on top of the weight-proportional term above.
+const ASR_FIXED_OVERHEAD_BYTES: u64 = 3 * GIB / 10; // 0.3 GiB
+
+/// A modest, size-independent KV-cache estimate for a llama.cpp GGUF at a
+/// default context length.
+// TODO: read the GGUF header's n_layers/n_embd/n_ctx and compute the exact
+// KV size instead of this fixed estimate.
+const LLM_KV_ESTIMATE_BYTES: u64 = 4 * GIB / 10; // 0.4 GiB
+/// Weights-adjacent compute-buffer overhead on top of the KV estimate above.
+const LLM_FIXED_OVERHEAD_BYTES: u64 = 7 * GIB / 10; // 0.7 GiB
+
+/// Estimated peak memory a model of `model_bytes` needs to load and run,
+/// using [`ModelKind`]-specific math: whisper GGML pre-allocates a fixed
+/// working set ([`ASR_WEIGHT_NUMERATOR`]/[`ASR_WEIGHT_DENOMINATOR`] of the
+/// weights, plus [`ASR_FIXED_OVERHEAD_BYTES`]), while a llama.cpp GGUF adds a
+/// KV-cache estimate and its own fixed overhead
+/// ([`LLM_KV_ESTIMATE_BYTES`] + [`LLM_FIXED_OVERHEAD_BYTES`]). Saturating so
+/// an absurd size can't wrap.
+pub fn estimated_footprint(model_bytes: u64, kind: ModelKind) -> u64 {
+    match kind {
+        ModelKind::Asr => model_bytes
+            .saturating_mul(ASR_WEIGHT_NUMERATOR)
+            .saturating_div(ASR_WEIGHT_DENOMINATOR)
+            .saturating_add(ASR_FIXED_OVERHEAD_BYTES),
+        ModelKind::Llm => model_bytes
+            .saturating_add(LLM_KV_ESTIMATE_BYTES)
+            .saturating_add(LLM_FIXED_OVERHEAD_BYTES),
+    }
+}
+
+/// For a comfortable ([`Fit::Green`]) verdict a model's footprint must use at
+/// most this fraction of the usable budget, so most of it stays free.
+const GREEN_BUDGET_NUMERATOR: u64 = 60;
+const GREEN_BUDGET_DENOMINATOR: u64 = 100;
+/// Above [`Fit::Green`] but at or under this fraction of the usable budget
+/// still loads, just tight ([`Fit::Yellow`]); beyond it reads [`Fit::Red`].
+const YELLOW_BUDGET_NUMERATOR: u64 = 90;
+const YELLOW_BUDGET_DENOMINATOR: u64 = 100;
+
+/// Pure fit verdict: compares a model's estimated peak footprint (see
+/// [`estimated_footprint`]) against `usable_bytes` -- the machine's usable
+/// GPU/unified-memory budget (see [`usable_memory`]), which already has the
+/// OS/app reserve subtracted out.
+///
+/// - [`Fit::Green`]  when the footprint uses at most
+///   [`GREEN_BUDGET_NUMERATOR`]/[`GREEN_BUDGET_DENOMINATOR`] of the budget
+///   (comfortable headroom),
+/// - [`Fit::Yellow`] when it's over that but still at most
+///   [`YELLOW_BUDGET_NUMERATOR`]/[`YELLOW_BUDGET_DENOMINATOR`] (fits, tight),
+/// - [`Fit::Red`]    otherwise (would not practically load).
+///
+/// Deterministic and side-effect-free so it can be unit-tested with injected
+/// budget values rather than whatever the test host happens to have.
+pub fn fits(model_bytes: u64, usable_bytes: u64, kind: ModelKind) -> Fit {
+    let footprint = estimated_footprint(model_bytes, kind);
+    let green_budget = usable_bytes
+        .saturating_mul(GREEN_BUDGET_NUMERATOR)
+        .saturating_div(GREEN_BUDGET_DENOMINATOR);
+    let yellow_budget = usable_bytes
+        .saturating_mul(YELLOW_BUDGET_NUMERATOR)
+        .saturating_div(YELLOW_BUDGET_DENOMINATOR);
+    if footprint <= green_budget {
+        Fit::Green
+    } else if footprint <= yellow_budget {
+        Fit::Yellow
+    } else {
+        Fit::Red
+    }
 }
 
 /// RAM to keep free for the OS, this app, and whatever else the user is
-/// running. A model is only ever "fits" if loading it still leaves at least
-/// this much headroom -- a raw `footprint <= available` check reads far too
-/// generously (it would flag a 3 GB model on an 8 GB machine as fine).
-const OS_RESERVE_BYTES: u64 = 1536 * 1024 * 1024; // 1.5 GiB
-
-/// For a comfortable ([`Fit::Green`]) verdict a model's footprint must use at
-/// most this fraction (1/N) of available RAM, so most of the machine stays
-/// free. Small models clear this easily; a mid/large whisper model on ~8 GB
-/// does not, so it reads [`Fit::Yellow`] (tight) rather than green.
-const GREEN_HEADROOM_DIVISOR: u64 = 5;
-
-/// Pure fit verdict: compares a model's estimated peak footprint (see
-/// [`estimated_footprint`]) against `available_bytes` of RAM, reserving
-/// [`OS_RESERVE_BYTES`] for everything else.
-///
-/// - [`Fit::Red`]    when loading it would leave less than the OS reserve
-///   free (it would not practically load),
-/// - [`Fit::Green`]  when the footprint uses at most 1/[`GREEN_HEADROOM_DIVISOR`]
-///   of available RAM (comfortable headroom),
-/// - [`Fit::Yellow`] otherwise (it fits with the reserve, but is tight).
-///
-/// Deterministic and side-effect-free so it can be unit-tested with injected
-/// RAM values rather than whatever the test host happens to have.
-pub fn fits(model_bytes: u64, available_bytes: u64) -> Fit {
-    let footprint = estimated_footprint(model_bytes);
-    if footprint.saturating_add(OS_RESERVE_BYTES) > available_bytes {
-        Fit::Red
-    } else if footprint.saturating_mul(GREEN_HEADROOM_DIVISOR) <= available_bytes {
-        Fit::Green
-    } else {
-        Fit::Yellow
-    }
-}
+/// running -- subtracted from available RAM before it ever reaches
+/// [`usable_memory`]'s `min` against the GPU budget.
+const OS_RESERVE_BYTES: u64 = 3 * GIB / 2; // 1.5 GiB
 
 /// LM-Studio's default unified-memory fraction: how much of total physical
 /// RAM is assumed usable as GPU working set when there's no better signal
@@ -112,35 +149,35 @@ pub fn gpu_budget(total_ram: u64) -> u64 {
     metal::recommended_working_set().unwrap_or_else(|| unified_memory_fraction(total_ram))
 }
 
-/// The tighter of the GPU/unified-memory budget and the currently-available
-/// RAM once [`OS_RESERVE_BYTES`] is set aside for the OS, this app, and
-/// anything else running -- a raw `min(gpu_budget, available_ram)` would let
-/// a machine under memory pressure read as fine just because its GPU budget
-/// is large. Pure and unit-tested with injected values; not yet consumed by
-/// [`fits`] (see the follow-up commit that reworks the verdict around it).
+/// The budget [`fits`] actually judges a model against: the tighter of the
+/// GPU/unified-memory budget and the currently-available RAM once
+/// [`OS_RESERVE_BYTES`] is set aside for the OS, this app, and anything else
+/// running -- a raw `min(gpu_budget, available_ram)` would let a machine
+/// under memory pressure read as fine just because its GPU budget is large.
+/// Pure and unit-tested with injected values.
 pub fn usable_memory(gpu_budget: u64, available_ram: u64) -> u64 {
     gpu_budget.min(available_ram.saturating_sub(OS_RESERVE_BYTES))
 }
 
-/// A snapshot of the host's RAM, in bytes. Kept as plain fields so callers
-/// (and [`fits`]) never have to touch `sysinfo`/Metal directly.
+/// A snapshot of the host's memory budget, in bytes. Kept as plain fields so
+/// callers (and [`fits`]) never have to touch `sysinfo`/Metal directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HardwareSpecs {
     /// Total physical RAM installed.
     pub total_ram: u64,
     /// RAM the OS reports as currently available to new allocations.
     pub available_ram: u64,
-    /// The usable GPU/unified-memory budget (see [`usable_memory`]) --
-    /// already the tighter of [`gpu_budget`] and
+    /// The usable GPU/unified-memory budget models are judged against (see
+    /// [`usable_memory`]) -- already the tighter of [`gpu_budget`] and
     /// [`available_ram`](Self::available_ram) less the OS reserve.
     pub usable_ram: u64,
 }
 
 impl HardwareSpecs {
-    /// The fit verdict for a model of `model_bytes` on this machine, using
-    /// [`available_ram`](Self::available_ram) as the budget.
-    pub fn fit(&self, model_bytes: u64) -> Fit {
-        fits(model_bytes, self.available_ram)
+    /// The fit verdict for a model of `model_bytes` of kind `kind` on this
+    /// machine, using [`usable_ram`](Self::usable_ram) as the budget.
+    pub fn fit(&self, model_bytes: u64, kind: ModelKind) -> Fit {
+        fits(model_bytes, self.usable_ram, kind)
     }
 }
 
@@ -170,63 +207,76 @@ mod tests {
     const MB: u64 = 1024 * 1024;
 
     #[test]
-    fn footprint_adds_a_third_of_overhead() {
-        // 3 GB of weights -> 3 GB + 1 GB overhead = 4 GB.
-        assert_eq!(estimated_footprint(3 * GB), 4 * GB);
+    fn asr_footprint_scales_weights_and_adds_a_fixed_pad() {
+        // 3 GB of weights -> 3.9 GB (x1.3) + 0.3 GB pad = 4.2 GB.
+        assert_eq!(
+            estimated_footprint(3 * GB, ModelKind::Asr),
+            (3 * GB * 13 / 10) + ASR_FIXED_OVERHEAD_BYTES
+        );
     }
 
     #[test]
-    fn small_models_are_green_on_an_8gb_machine() {
-        // tiny / base / small (whisper) all leave most of an 8 GB machine
-        // free, so they read comfortably green.
-        assert_eq!(fits(75 * MB, 8 * GB), Fit::Green);
-        assert_eq!(fits(142 * MB, 8 * GB), Fit::Green);
-        assert_eq!(fits(466 * MB, 8 * GB), Fit::Green);
+    fn llm_footprint_adds_kv_and_fixed_overhead() {
+        // 2 GB of weights -> 2 GB + 0.4 GB KV + 0.7 GB overhead = 3.1 GB.
+        assert_eq!(
+            estimated_footprint(2 * GB, ModelKind::Llm),
+            2 * GB + LLM_KV_ESTIMATE_BYTES + LLM_FIXED_OVERHEAD_BYTES
+        );
     }
 
     #[test]
-    fn medium_and_large_turbo_are_tight_on_8gb() {
-        // ~1.5-1.6 GB weights -> ~2.0-2.1 GB footprint: fits with the OS
-        // reserve, but uses well over a fifth of 8 GB -> tight, not green.
-        assert_eq!(fits(1500 * MB, 8 * GB), Fit::Yellow);
-        assert_eq!(fits(1600 * MB, 8 * GB), Fit::Yellow);
+    fn small_whisper_models_are_green_on_a_3gb_usable_budget() {
+        // tiny / base / small (whisper) all leave most of a modest 3 GB
+        // usable budget free, so they read comfortably green.
+        let usable = 3 * GB;
+        assert_eq!(fits(75 * MB, usable, ModelKind::Asr), Fit::Green);
+        assert_eq!(fits(142 * MB, usable, ModelKind::Asr), Fit::Green);
+        assert_eq!(fits(466 * MB, usable, ModelKind::Asr), Fit::Green);
     }
 
     #[test]
-    fn large_v3_is_tight_not_green_on_8gb() {
-        // The regression this retune fixes: 3 GB weights -> 4 GB footprint on
-        // an ~8 GB machine must read Yellow (tight), never green.
-        assert_eq!(fits(3 * GB, 8 * GB), Fit::Yellow);
+    fn medium_and_large_turbo_whisper_are_tight_on_a_3gb_usable_budget() {
+        // ~1.5-1.6 GB weights -> ~2.2-2.4 GB footprint on a 3 GB usable
+        // budget: over the 60% (1.8 GB) green line but under the 90%
+        // (2.7 GB) yellow one.
+        let usable = 3 * GB;
+        assert_eq!(fits(1500 * MB, usable, ModelKind::Asr), Fit::Yellow);
+        assert_eq!(fits(1620 * MB, usable, ModelKind::Asr), Fit::Yellow);
     }
 
     #[test]
-    fn red_when_footprint_exceeds_available() {
-        // 3 GB model -> 4 GB footprint; only 2 GB free -> won't load.
-        assert_eq!(fits(3 * GB, 2 * GB), Fit::Red);
+    fn large_v3_whisper_exceeds_a_3gb_usable_budget() {
+        // 3 GB weights -> ~4.2 GB footprint, over 90% (2.7 GB) of a 3 GB
+        // usable budget -> won't fit.
+        assert_eq!(fits(3100 * MB, 3 * GB, ModelKind::Asr), Fit::Red);
     }
 
     #[test]
-    fn red_when_loading_would_starve_the_os_reserve() {
-        // 3.5 GB weights -> ~4.67 GB footprint fits raw under 5 GB, but the
-        // 1.5 GB OS reserve pushes it over -> Red.
-        assert_eq!(fits(3500 * MB, 5 * GB), Fit::Red);
+    fn a_small_llm_is_green_on_an_8gb_usable_budget() {
+        // ~1.1 GB weights -> ~2.2 GB footprint, well under 60% (4.8 GB) of
+        // an 8 GB usable budget.
+        assert_eq!(fits(1120 * MB, 8 * GB, ModelKind::Llm), Fit::Green);
     }
 
     #[test]
-    fn zero_available_ram_is_always_red() {
-        assert_eq!(fits(GB, 0), Fit::Red);
+    fn a_3b_llm_is_tight_on_a_4gb_usable_budget() {
+        // ~2.0 GB weights -> ~3.1 GB footprint on a 4 GB usable budget:
+        // over the 60% (2.4 GB) green line but under the 90% (3.6 GB)
+        // yellow one.
+        assert_eq!(fits(2020 * MB, 4 * GB, ModelKind::Llm), Fit::Yellow);
     }
 
     #[test]
-    fn specs_fit_uses_available_not_total() {
-        // Lots of total RAM but almost none available -> Red, proving the
-        // budget is `available_ram`, not `total_ram`.
-        let specs = HardwareSpecs {
-            total_ram: 64 * GB,
-            available_ram: GB / 2,
-            usable_ram: 0,
-        };
-        assert_eq!(specs.fit(GB), Fit::Red);
+    fn a_7b_class_llm_is_red_on_a_4gb_usable_budget() {
+        // ~4.4 GB weights (Q4_K_M 7B-class) -> ~5.4 GB footprint, way past
+        // a 4 GB usable budget -> won't fit.
+        assert_eq!(fits(4400 * MB, 4 * GB, ModelKind::Llm), Fit::Red);
+    }
+
+    #[test]
+    fn zero_usable_budget_is_always_red() {
+        assert_eq!(fits(GB, 0, ModelKind::Asr), Fit::Red);
+        assert_eq!(fits(GB, 0, ModelKind::Llm), Fit::Red);
     }
 
     #[test]
@@ -254,5 +304,17 @@ mod tests {
     fn usable_memory_saturates_when_reserve_exceeds_available() {
         // Less available RAM than the OS reserve alone -> zero, not a wrap.
         assert_eq!(usable_memory(64 * GB, GB / 2), 0);
+    }
+
+    #[test]
+    fn specs_fit_uses_usable_ram_not_total() {
+        // Lots of total RAM but a tiny usable budget -> Red, proving the
+        // budget is `usable_ram`, not `total_ram`.
+        let specs = HardwareSpecs {
+            total_ram: 64 * GB,
+            available_ram: 64 * GB,
+            usable_ram: GB / 2,
+        };
+        assert_eq!(specs.fit(GB, ModelKind::Asr), Fit::Red);
     }
 }
