@@ -29,6 +29,9 @@ pub(crate) fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
         - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
         - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
         - Add proper punctuation and capitalization\n\
+        - Format numbers and simple formulas cleanly: render spoken numbers as digits and simple \
+        math expressions with standard symbols (+, -, *, /, =, %) where unambiguous, whether the \
+        speaker used English or Russian words for them\n\
         - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
         - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
     );
@@ -232,8 +235,9 @@ impl TextRefiner for AnthropicRefiner {
         let cleanup_prompt = build_cleanup_prompt(raw, ctx);
 
         let system_message = "You are a text cleanup assistant for speech-to-text output. \
-            Remove filler words, resolve self-corrections, add punctuation and capitalization. \
-            Output ONLY the cleaned text, nothing else.";
+            Remove filler words, resolve self-corrections, add punctuation and capitalization, \
+            and render numbers/simple formulas cleanly using digits and standard symbols where \
+            unambiguous. Output ONLY the cleaned text, nothing else.";
 
         let request = AnthropicRequest {
             model: self.model.clone(),
