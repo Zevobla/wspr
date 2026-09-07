@@ -1,15 +1,16 @@
-//! Small shared widgets for the Models screen: body/label text, the "fits
-//! your machine" pill, a per-model management row, and the download/delete
-//! action buttons. Pulled out of the section modules (`asr`, `refine`,
-//! `dirs`) so they don't each redefine the same helpers.
+//! Shared widgets for the Models screen: body/label text, the theme-aware
+//! fit tag, the catalog table, and the download/delete action buttons.
+//! Pulled out of the section modules (`asr`, `refine`, `dirs`) so they
+//! don't each redefine the same helpers.
 
 use std::path::PathBuf;
 
-use iced::widget::{button, container, row, text, Space};
-use iced::{Alignment, Background, Border, Element, Length};
+use iced::widget::{button, row, text};
+use iced::{Alignment, Element, Length};
 
 use crate::state::Message;
-use crate::theme::{color, shape, spacing, styles, type_scale};
+use crate::theme::widgets::{self, TagKind};
+use crate::theme::{color, icons, spacing, styles, type_scale};
 
 /// A `BODY_MEDIUM`, de-emphasized paragraph -- the wording used across this
 /// screen's status/help lines.
@@ -32,88 +33,105 @@ pub(super) fn label_text(content: &'static str) -> Element<'static, Message> {
         .into()
 }
 
-/// A small colored "fits your machine" pill for a [`whspr_hf::Fit`] verdict:
-/// green (`success_container`), yellow (`tertiary_container`), red
-/// (`error_container`), reusing the scheme's tonal container roles.
-pub(super) fn fit_badge(
+/// The "fits your machine" verdict as a theme-aware Modernist tag: a calm
+/// neutral tag for green (fits), an accent-tinted tag for yellow (tight),
+/// and an accent-outline tag for red (too large). All three read on both
+/// the light and dark grounds because `widgets::tag` draws from the
+/// scheme's neutral/accent ramps (which invert per theme).
+pub(super) fn fit_tag(
     fit: whspr_hf::Fit,
     scheme: &'static color::Scheme,
 ) -> Element<'static, Message> {
-    let (bg, fg) = match fit {
-        whspr_hf::Fit::Green => (scheme.success_container, scheme.on_success_container),
-        whspr_hf::Fit::Yellow => (scheme.tertiary_container, scheme.on_tertiary_container),
-        whspr_hf::Fit::Red => (scheme.error_container, scheme.on_error_container),
+    let kind = match fit {
+        whspr_hf::Fit::Green => TagKind::Neutral,
+        whspr_hf::Fit::Yellow => TagKind::Accent,
+        whspr_hf::Fit::Red => TagKind::Outline,
     };
-
-    container(
-        text(fit.label())
-            .size(type_scale::LABEL_MEDIUM.size)
-            .font(type_scale::LABEL_MEDIUM.font())
-            .color(fg),
-    )
-    .padding(spacing::XS)
-    .style(move |_theme| iced::widget::container::Style {
-        background: Some(Background::Color(bg)),
-        text_color: Some(fg),
-        border: Border::default().rounded(shape::SM),
-        ..Default::default()
-    })
-    .into()
+    widgets::tag(kind, fit.label(), scheme)
 }
 
-/// One row in a model-management table: name, size, fit badge, and a
-/// right-aligned action (a download or delete button).
-pub(super) fn manage_row<'a>(
+/// One catalog row: the model name, its on-disk size, the fit verdict, and
+/// the trailing action (download or delete).
+pub(super) struct CatalogRow<'a> {
+    pub name: String,
+    pub size_bytes: u64,
+    pub fit: whspr_hf::Fit,
+    pub action: Element<'a, Message>,
+}
+
+/// The model catalog as a Modernist `table`: Model / Size / Fit / action.
+pub(super) fn catalog_table<'a>(
     scheme: &'static color::Scheme,
-    name: String,
-    size_bytes: u64,
-    fit: whspr_hf::Fit,
-    action: Element<'a, Message>,
+    rows: Vec<CatalogRow<'a>>,
 ) -> Element<'a, Message> {
-    let name = text(name)
-        .size(type_scale::BODY_MEDIUM.size)
-        .font(type_scale::BODY_MEDIUM.font())
-        .color(scheme.on_surface)
-        .width(Length::Fixed(240.0));
+    let cells: Vec<Vec<Element<'a, Message>>> = rows
+        .into_iter()
+        .map(|r| {
+            vec![
+                text(r.name)
+                    .size(type_scale::BODY_MEDIUM.size)
+                    .font(type_scale::BODY_MEDIUM.font())
+                    .color(scheme.on_surface)
+                    .into(),
+                text(whspr_hf::human_size(r.size_bytes))
+                    .size(type_scale::BODY_MEDIUM.size)
+                    .font(type_scale::BODY_MEDIUM.font())
+                    .color(scheme.on_surface_variant)
+                    .into(),
+                fit_tag(r.fit, scheme),
+                r.action,
+            ]
+        })
+        .collect();
 
-    let size = text(whspr_hf::human_size(size_bytes))
-        .size(type_scale::BODY_MEDIUM.size)
-        .font(type_scale::BODY_MEDIUM.font())
-        .color(scheme.on_surface_variant)
-        .width(Length::Fixed(90.0));
-
-    row![
-        name,
-        size,
-        fit_badge(fit, scheme),
-        Space::new().width(Length::Fill),
-        action,
-    ]
-    .spacing(spacing::SM)
-    .align_y(Alignment::Center)
-    .into()
+    widgets::table(
+        vec![
+            ("Model", Length::Fill),
+            ("Size", Length::Fixed(96.0)),
+            ("Fit", Length::Fixed(150.0)),
+            ("", Length::Fixed(140.0)),
+        ],
+        cells,
+        scheme,
+    )
 }
 
-/// A "Download" button that fires `message` unless a background op is busy.
+/// A "Download" button (with a download icon) that fires `message` unless a
+/// background op is busy.
 pub(super) fn download_button(
     scheme: &'static color::Scheme,
     busy: bool,
     message: Message,
 ) -> Element<'static, Message> {
-    button(label_text("Download"))
-        .style(move |_theme, status| styles::button::tonal(scheme, status))
-        .on_press_maybe((!busy).then_some(message))
-        .into()
+    button(
+        row![
+            icons::icon(icons::DOWNLOAD, 14.0, scheme.on_secondary_container),
+            label_text("Download"),
+        ]
+        .spacing(spacing::SM)
+        .align_y(Alignment::Center),
+    )
+    .style(move |_theme, status| styles::button::tonal(scheme, status))
+    .on_press_maybe((!busy).then_some(message))
+    .into()
 }
 
-/// A "Delete" button that removes the model file at `path` unless busy.
+/// A "Delete" button (with a trash icon) that removes the model file at
+/// `path` unless busy.
 pub(super) fn delete_button(
     scheme: &'static color::Scheme,
     busy: bool,
     path: PathBuf,
 ) -> Element<'static, Message> {
-    button(label_text("Delete"))
-        .style(move |_theme, status| styles::button::outlined(scheme, status))
-        .on_press_maybe((!busy).then_some(Message::HfDeleteModel(path)))
-        .into()
+    button(
+        row![
+            icons::icon(icons::TRASH, 14.0, scheme.on_surface),
+            label_text("Delete"),
+        ]
+        .spacing(spacing::SM)
+        .align_y(Alignment::Center),
+    )
+    .style(move |_theme, status| styles::button::outlined(scheme, status))
+    .on_press_maybe((!busy).then_some(Message::HfDeleteModel(path)))
+    .into()
 }
