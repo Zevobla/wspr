@@ -14,6 +14,10 @@
 //!     it feeds: currency (F-13), percents/fractions (F-14), phone numbers
 //!     (F-15), emails (F-16), URLs (F-17), acronym uppercasing (F-18), and
 //!     consecutive-duplicate-word collapse (F-19).
+//!   - `formulas` recognizes spoken arithmetic (operator words, squared/
+//!     cubed, square root of) and rewrites it as symbolic notation. Kept
+//!     independent of `numbers` rather than folded into that gate, since a
+//!     user may want one without the other.
 //!
 //! The extended passes share the existing `numbers` toggle rather than
 //! introducing new config fields, so this module stays self-contained and
@@ -25,6 +29,7 @@ mod dates;
 mod dedup;
 mod emails;
 mod fillers;
+mod formulas;
 mod lua;
 mod macros;
 mod numbers;
@@ -79,8 +84,11 @@ impl TextRefiner for NormalizingRefiner {
 ///
 /// The extended `numbers`-gated passes then run in dependency order: the
 /// number-word pass first (so "five dollars" is already "5 dollars" for the
-/// currency pass), emails before URLs (so an address is assembled before its
-/// bare domain could be), and the duplicate-word collapse last.
+/// currency pass), with the independently-toggled `formulas` pass slotted
+/// in right after (so operator words claim their operands before the
+/// phone-number pass could mistake a bare "2 + 3" for a space-separated
+/// digit run), then emails before URLs (so an address is assembled before
+/// its bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     let mut text = macros::expand_macros(text, &settings.macros);
     // Strip verbal fillers/disfluencies ("эээ", "ну", "короче", "um", "uh",
@@ -95,6 +103,18 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     }
     if settings.numbers {
         text = numbers::normalize_numbers(&text);
+    }
+    // Independent of `numbers`: a user may want spoken arithmetic rewritten
+    // as symbols without forcing every other bare number to render as a
+    // digit, or vice versa. Runs after the plain number-word pass (so an
+    // isolated operand like "two" in "two plus three" is already "2") but
+    // before the `numbers`-gated block below, since it must claim its
+    // operator/number runs before the phone-number heuristic in that block
+    // gets a chance to eat a space-separated pair of digit tokens.
+    if settings.formulas {
+        text = formulas::normalize_formulas(&text);
+    }
+    if settings.numbers {
         text = currency::normalize_currency(&text);
         text = percents::normalize_percents(&text);
         text = phones::normalize_phones(&text);
@@ -212,6 +232,39 @@ mod tests {
             .expect("refine should succeed");
 
         assert_eq!(result, "the meeting costs $5 call 5551234567");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_formulas_pass() {
+        // Proves the formulas pass runs through the real refiner path, and
+        // that it wins the phone-number heuristic's race for a bare
+        // space-separated pair of digit tokens (see the doc comment above).
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine("two plus three equals five", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "2 + 3 = 5");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_respects_disabled_formulas_toggle() {
+        let settings = NormalizeSettings {
+            formulas: false,
+            ..Default::default()
+        };
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("two plus three", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        // Numbers still digitize (numbers stays on), but the operator word
+        // is left alone since the formulas toggle is off.
+        assert_eq!(result, "2 plus 3");
     }
 
     #[tokio::test]
