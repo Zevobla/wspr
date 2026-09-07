@@ -33,7 +33,7 @@ pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
 pub use capture::CaptureSettings;
 pub use device::DeviceSettings;
 pub use injection::InjectionSettings;
-pub use language::LanguageSettings;
+pub use language::{effective_language, LanguageSettings};
 pub use normalize::NormalizeSettings;
 pub use privacy::PrivacySettings;
 pub use refine::RefineSettings;

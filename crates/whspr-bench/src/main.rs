@@ -49,6 +49,7 @@ async fn main() -> Result<()> {
     // Prepare ASR options
     let opts = AsrOptions {
         language: Some(args.language.clone()),
+        ..Default::default()
     };
 
     // Process each case

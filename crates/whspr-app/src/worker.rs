@@ -197,8 +197,21 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     // focused app. Synthetic text injection needs macOS Accessibility
     // permission the dev binary isn't granted, and calling it without that
     // hard-traps the process, so the on-screen path is the reliable default.
-    let pipeline =
-        Pipeline::new(asr_backend, refiner).with_state_callback(Box::new(move |state| {
+    // Resolves to `None` (whisper's full multilingual auto-detect across
+    // every language it supports, not limited to any particular pair) by
+    // default, unless the user turned auto-switch off in Settings -- see
+    // `whspr_config::effective_language` for the full resolution order.
+    // Without this, live dictation silently ignored the configured language
+    // entirely (the file-transcribe path already applied it via
+    // `Config.language` directly; this makes both paths agree).
+    let language = whspr_config::effective_language(&config.language_settings, &config.language);
+
+    let pipeline = Pipeline::new(asr_backend, refiner)
+        .with_language(language)
+        // J-10: translate the transcription to English, if the user turned
+        // that on in Settings.
+        .with_translate(config.capture.translate)
+        .with_state_callback(Box::new(move |state| {
             let _ = state_tx.send(state);
         }));
 
