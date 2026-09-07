@@ -13,7 +13,9 @@ use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
 use whspr_config::{api_key_for, AsrChoice, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, Pipeline, RefineContext, TextRefiner};
-use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner};
+use whspr_refine::{
+    effective_instructions, AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner,
+};
 
 /// Builds an ASR backend from command-line flags, defaulting to a real
 /// `WhisperLocal` backend when `--asr` is not explicitly passed.
@@ -97,7 +99,8 @@ fn build_asr_backend(
 /// rule-based number/date/time normalization (toggled per-rule by
 /// `config.normalize`) on top of whatever the backend itself returns — see
 /// `NormalizingRefiner`'s own doc comment: it's meant to wrap any refiner,
-/// `NoopRefiner` included, not replace one.
+/// `NoopRefiner` included, not replace one. Model IDs/paths come from
+/// `config.refine_settings` rather than being hardcoded.
 fn build_refiner(
     config: &whspr_config::Config,
     refine_id: Option<&str>,
@@ -114,7 +117,10 @@ fn build_refiner(
             let api_key = api_key_for(config, "openai").ok_or_else(|| {
                 anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
             })?;
-            Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini"))
+            Box::new(OpenAiRefiner::new(
+                api_key,
+                config.refine_settings.openai_model.clone(),
+            ))
         }
         RefineChoice::Anthropic => {
             let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
@@ -122,9 +128,25 @@ fn build_refiner(
                     "Anthropic API key not configured (set [api_keys].anthropic in config)"
                 )
             })?;
-            Box::new(AnthropicRefiner::new(api_key, "claude-3-5-sonnet-20241022"))
+            Box::new(AnthropicRefiner::new(
+                api_key,
+                config.refine_settings.anthropic_model.clone(),
+            ))
         }
-        RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
+        RefineChoice::LlamaLocal => {
+            let model_path = config
+                .refine_settings
+                .llama_model_path
+                .clone()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                    "no llama-local model configured: set [refine_settings].llama_model_path in \
+                     the config file to a GGUF model file you've downloaded (whspr doesn't ship \
+                     or fetch one for you), or pass --refine noop for no LLM cleanup"
+                )
+                })?;
+            Box::new(LlamaLocal::new(model_path))
+        }
     };
 
     Ok(Box::new(NormalizingRefiner::new(
@@ -231,7 +253,12 @@ pub async fn run(
     // the same as before this was wired up.
     let pipeline = Pipeline::new(asr_backend, refiner)
         .with_language(language.or_else(|| config.language.clone()));
-    let ctx = RefineContext::default();
+    let ctx = RefineContext {
+        instructions: Some(effective_instructions(
+            config.refine_settings.instructions.as_deref(),
+        )),
+        ..Default::default()
+    };
 
     eprintln!("Transcribing and refining...");
     let (transcript, output) = pipeline.run_with_transcript(audio, &ctx).await?;
@@ -326,7 +353,12 @@ pub async fn run_batch(
             match crate::load_audio(&path).await {
                 Ok(audio) => {
                     let audio_duration_secs = audio.duration_secs();
-                    let ctx = RefineContext::default();
+                    let ctx = RefineContext {
+                        instructions: Some(effective_instructions(
+                            config.refine_settings.instructions.as_deref(),
+                        )),
+                        ..Default::default()
+                    };
 
                     match pipeline.run(audio, &ctx).await {
                         Ok(output) => {
@@ -411,5 +443,52 @@ mod tests {
     #[test]
     fn words_per_minute_of_zero_words_is_zero() {
         assert_eq!(words_per_minute(0, 30.0), 0.0);
+    }
+
+    #[test]
+    fn build_refiner_noop_choice_is_wrapped_in_normalizing_refiner() {
+        let config = whspr_config::Config::default();
+
+        let refiner =
+            build_refiner(&config, None).expect("default (noop) refiner should always build");
+        // NormalizingRefiner::id() delegates to the inner refiner's id, so
+        // this also proves the wrapping happened rather than returning the
+        // bare NoopRefiner.
+        assert_eq!(refiner.id(), "noop");
+    }
+
+    #[test]
+    fn build_refiner_openai_uses_configured_model() {
+        let mut config = whspr_config::Config::default();
+        config
+            .api_keys
+            .insert("openai".to_string(), "test-key".to_string());
+        config.refine_settings.openai_model = "gpt-4o".to_string();
+
+        let refiner =
+            build_refiner(&config, Some("openai")).expect("configured api key should be enough");
+        assert_eq!(refiner.id(), "openai");
+    }
+
+    #[test]
+    fn build_refiner_llama_local_requires_a_configured_model_path() {
+        let config = whspr_config::Config::default();
+
+        // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
+        // available -- match directly instead.
+        match build_refiner(&config, Some("llama-local")) {
+            Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
+            Err(error) => assert!(error.to_string().contains("llama_model_path")),
+        }
+    }
+
+    #[test]
+    fn build_refiner_llama_local_uses_configured_model_path() {
+        let mut config = whspr_config::Config::default();
+        config.refine_settings.llama_model_path = Some(PathBuf::from("/explicit/model.gguf"));
+
+        let refiner = build_refiner(&config, Some("llama-local"))
+            .expect("an explicit llama_model_path should be enough to build");
+        assert_eq!(refiner.id(), "llama-local");
     }
 }

@@ -6,7 +6,7 @@
 //! the trait nor the type is ours), so we keep small label tables here
 //! instead and translate both ways.
 
-use whspr_config::{AsrChoice, RefineChoice, SpeakerEmbeddingChoice};
+use whspr_config::{AsrChoice, NumberFormat, RefineChoice, SpeakerEmbeddingChoice};
 
 /// Labels shown in the ASR backend `pick_list`, in display order.
 pub const ASR_LABELS: [&str; 3] = ["whisper-local", "openai", "deepgram"];
@@ -19,11 +19,15 @@ pub const REFINE_LABELS: [&str; 4] = ["noop", "openai", "anthropic", "llama-loca
 pub const EMBEDDING_LABELS: [&str; 2] = ["cam-plus-plus", "eres2net"];
 
 /// Labels shown in the language-override `pick_list`, in display order.
-/// "auto" means no override (`Config.language == None`); every other entry
-/// is a BCP47 code passed straight through. A curated subset of whisper's
-/// supported languages, not an exhaustive list -- easy to extend later.
-pub const LANGUAGE_LABELS: [&str; 11] = [
-    "auto", "en", "ru", "es", "fr", "de", "it", "pt", "ja", "ko", "zh",
+/// "auto" means full multilingual auto-detect across every language whisper
+/// supports (`Config.language == None`, via `whspr_config::effective_language`
+/// -- not limited to any particular pair); every other entry is a BCP47 code
+/// passed straight through as a *fixed* language. A broader, curated subset
+/// of whisper's ~99 supported languages, not an exhaustive list -- easy to
+/// extend later.
+pub const LANGUAGE_LABELS: [&str; 29] = [
+    "auto", "en", "ru", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "nl", "pl", "tr", "uk",
+    "ar", "hi", "sv", "cs", "fi", "da", "no", "el", "he", "ro", "hu", "vi", "th", "id",
 ];
 
 /// The label a `pick_list` should show as selected for the given choice.
@@ -118,6 +122,28 @@ pub fn language_from_label(label: &str) -> Option<String> {
     }
 }
 
+/// Labels shown in the normalize screen's number-rendering `pick_list`, in
+/// display order.
+pub const NUMBER_FORMAT_LABELS: [&str; 2] = ["digits", "words"];
+
+/// The label a `pick_list` should show as selected for the given choice.
+pub fn number_format_label(choice: NumberFormat) -> &'static str {
+    match choice {
+        NumberFormat::Digits => "digits",
+        NumberFormat::Words => "words",
+    }
+}
+
+/// Recovers the `NumberFormat` for a label previously produced by
+/// `number_format_label`. Falls back to the default choice for any
+/// unrecognized label rather than panicking.
+pub fn number_format_from_label(label: &str) -> NumberFormat {
+    match label {
+        "words" => NumberFormat::Words,
+        _ => NumberFormat::Digits,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +226,23 @@ mod tests {
     #[test]
     fn language_from_label_auto_is_none() {
         assert_eq!(language_from_label("auto"), None);
+    }
+
+    #[test]
+    fn number_format_label_roundtrips_through_from_label() {
+        for choice in [NumberFormat::Digits, NumberFormat::Words] {
+            assert_eq!(
+                number_format_from_label(number_format_label(choice)),
+                choice
+            );
+        }
+    }
+
+    #[test]
+    fn number_format_from_label_falls_back_to_digits_for_unknown_label() {
+        assert_eq!(
+            number_format_from_label("not-a-real-format"),
+            NumberFormat::Digits
+        );
     }
 }

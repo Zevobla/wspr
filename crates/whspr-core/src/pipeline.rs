@@ -76,6 +76,15 @@ impl Pipeline {
         self
     }
 
+    /// Convenience over `with_asr_options` for the common case of just
+    /// setting the translate-to-English flag (J-10: whisper's own
+    /// `--translate` mode). Default `false`, so this is opt-in and doesn't
+    /// change behavior for existing callers that never call it.
+    pub fn with_translate(mut self, translate: bool) -> Self {
+        self.asr_options.translate = translate;
+        self
+    }
+
     fn report(&self, state: PipelineState) {
         if let Some(cb) = &self.on_state {
             cb(state);
@@ -213,6 +222,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn with_translate_reaches_the_asr_backend() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        let pipeline = Pipeline::new(Box::new(spy), Box::new(NoopRefiner)).with_translate(true);
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert!(seen_options.lock().unwrap().as_ref().unwrap().translate);
+    }
+
+    #[tokio::test]
+    async fn default_pipeline_passes_translate_false() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        // No .with_translate() call - the default, pre-J-10 behavior must
+        // be unchanged.
+        let pipeline = Pipeline::new(Box::new(spy), Box::new(NoopRefiner));
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert!(!seen_options.lock().unwrap().as_ref().unwrap().translate);
+    }
+
+    #[tokio::test]
     async fn with_asr_options_reaches_the_asr_backend() {
         let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
         let spy = SpyAsr {
@@ -222,6 +273,7 @@ mod tests {
         let pipeline =
             Pipeline::new(Box::new(spy), Box::new(NoopRefiner)).with_asr_options(AsrOptions {
                 language: Some("fr".to_string()),
+                ..Default::default()
             });
 
         pipeline

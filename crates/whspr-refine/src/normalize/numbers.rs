@@ -1,9 +1,14 @@
 //! F-10: number words (English and Russian cardinals) written as digits.
 //!
-//! Supports compounds up to the millions ("one hundred and twenty five",
+//! Supports compounds up to the billions ("one hundred and twenty five",
 //! "двести тридцать" -> "230", "восемь миллионов триста сорок тысяч" ->
-//! "8340000"). Scoped deliberately: no billions+, no ordinals
-//! ("twenty-fifth", "двадцать пятого"). Fractions live in the percents pass.
+//! "8340000"), plus two narrower extensions in their own submodules:
+//! decimals (`decimals`, "three point five" -> "3.5") and ordinals
+//! (`ordinals`, "twenty fifth" -> "25th"). `u64` only, still no
+//! negatives. Fractions live in the percents pass.
+
+mod decimals;
+mod ordinals;
 
 use super::split_punct;
 
@@ -56,6 +61,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "hundred" => Scale(100),
         "thousand" => Scale(1000),
         "million" => Scale(1_000_000),
+        "billion" => Scale(1_000_000_000),
         // Russian ones/teens/tens
         "ноль" => Unit(0),
         "один" | "одна" | "одно" => Unit(1),
@@ -97,6 +103,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "девятьсот" => Unit(900),
         "тысяча" | "тысячи" | "тысяч" => Scale(1000),
         "миллион" | "миллиона" | "миллионов" => Scale(1_000_000),
+        "миллиард" | "миллиарда" | "миллиардов" => Scale(1_000_000_000),
         _ => return None,
     })
 }
@@ -224,7 +231,12 @@ pub(super) fn parse_number_at(cores: &[&str], i: usize) -> Option<(u64, usize)> 
 
 /// Replaces every maximal run of number words in `text` with its digit
 /// value, leaving everything else - including surrounding punctuation on
-/// the first/last word of a run - untouched.
+/// the first/last word of a run - untouched. Decimals and ordinals are
+/// tried first at each position (most specific pattern wins), since a
+/// plain cardinal run would otherwise claim just their leading words - e.g.
+/// "three point five" would stop at "three" and leave "point five" behind,
+/// and "twenty fifth" would stop at "twenty" since "fifth" isn't a
+/// cardinal word at all.
 pub fn normalize_numbers(text: &str) -> String {
     let words: Vec<&str> = text.split(' ').collect();
     let cores: Vec<&str> = words.iter().map(|w| split_punct(w).0).collect();
@@ -232,7 +244,17 @@ pub fn normalize_numbers(text: &str) -> String {
     let mut out = Vec::with_capacity(words.len());
     let mut i = 0;
     while i < words.len() {
-        if let Some((value, count)) = parse_run(&cores[i..]) {
+        if let Some((body, count)) = decimals::parse_decimal_at(&cores, i) {
+            let (_, prefix, _) = split_punct(words[i]);
+            let (_, _, suffix) = split_punct(words[i + count - 1]);
+            out.push(format!("{prefix}{body}{suffix}"));
+            i += count;
+        } else if let Some((body, count)) = ordinals::parse_ordinal_at(&cores, i) {
+            let (_, prefix, _) = split_punct(words[i]);
+            let (_, _, suffix) = split_punct(words[i + count - 1]);
+            out.push(format!("{prefix}{body}{suffix}"));
+            i += count;
+        } else if let Some((value, count)) = parse_run(&cores[i..]) {
             let (_, prefix, _) = split_punct(words[i]);
             let (_, _, suffix) = split_punct(words[i + count - 1]);
             out.push(format!("{prefix}{value}{suffix}"));
@@ -316,6 +338,46 @@ mod tests {
         assert_eq!(
             normalize_numbers("one million two hundred thousand"),
             "1200000"
+        );
+    }
+
+    #[test]
+    fn billions() {
+        assert_eq!(normalize_numbers("one billion"), "1000000000");
+        assert_eq!(normalize_numbers("два миллиарда"), "2000000000");
+        // Billions accumulate with lower scales the same way millions do.
+        assert_eq!(
+            normalize_numbers("one billion two hundred million"),
+            "1200000000"
+        );
+        assert_eq!(
+            normalize_numbers("два миллиарда пятьсот миллионов"),
+            "2500000000"
+        );
+    }
+
+    #[test]
+    fn decimals_wired_into_the_text_pass() {
+        // Proves `decimals::parse_decimal_at` is actually consulted here,
+        // not just unit-tested in isolation - the plain cardinal parser
+        // alone would stop at "three" and leave "point five" untouched.
+        assert_eq!(normalize_numbers("three point five"), "3.5");
+        assert_eq!(normalize_numbers("три целых четырнадцать сотых"), "3.14");
+        assert_eq!(
+            normalize_numbers("I have three point five apples"),
+            "I have 3.5 apples"
+        );
+    }
+
+    #[test]
+    fn ordinals_wired_into_the_text_pass() {
+        // Same proof for `ordinals::parse_ordinal_at`.
+        assert_eq!(normalize_numbers("twenty fifth"), "25th");
+        assert_eq!(normalize_numbers("twenty-fifth"), "25th");
+        assert_eq!(normalize_numbers("двадцать пятый"), "25-й");
+        assert_eq!(
+            normalize_numbers("the twenty fifth of the month"),
+            "the 25th of the month"
         );
     }
 

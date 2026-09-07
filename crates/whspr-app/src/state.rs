@@ -104,6 +104,25 @@ pub struct State {
     /// `tray::Handle::create` needs iced's winit event loop to already be
     /// running on the calling thread.
     pub tray: Option<crate::tray::Handle>,
+    /// When set, the tray icon is showing a lingering "Done" display (see
+    /// `crate::tray::TrayVisual::Done`) that should revert once
+    /// `std::time::Instant::now()` passes this deadline. Set by
+    /// `Message::Worker`'s `Completed` arm, cleared by
+    /// `Message::TrayDoneTick` (see `crate::app::tray_done_subscription`)
+    /// -- `None` whenever no dictation has completed recently enough to
+    /// still be lingering.
+    pub tray_done_until: Option<std::time::Instant>,
+    /// Live contents of the Capture section's "Refine timeout (ms)"
+    /// `text_input`, decoupled from `config.capture.refine_timeout_ms`
+    /// itself (a `u64`) so a keystroke that doesn't yet parse -- e.g. the
+    /// field is momentarily empty while the user retypes it -- doesn't get
+    /// stomped back to the last-committed value on the next render. Only a
+    /// successful parse writes through to `config` (see
+    /// `crate::app::update`'s `RefineTimeoutMsChanged` arm).
+    pub refine_timeout_draft: String,
+    /// Live contents of the Injection section's "Pre-paste delay (ms)"
+    /// `text_input`. Same reasoning as `refine_timeout_draft`.
+    pub pre_paste_delay_draft: String,
     /// The signed-in HuggingFace username (from the OAuth `whoami` call), if
     /// a login completed this session. `None` when signed out; a saved token
     /// alone doesn't populate this (we don't re-run `whoami` at boot).
@@ -128,6 +147,8 @@ impl State {
     /// fields start empty; `crate::app::boot` fills them in separately since
     /// enumerating devices is its own concern from loading config.
     pub fn new(config: Config) -> Self {
+        let refine_timeout_draft = config.capture.refine_timeout_ms.to_string();
+        let pre_paste_delay_draft = config.injection.pre_paste_delay_ms.to_string();
         // Computed before the struct literal moves `config` into place: a
         // saved token means "already signed in" even before any whoami call.
         let hf_status = config
@@ -157,6 +178,9 @@ impl State {
             mic_level: 0.0,
             pipeline_state_since: std::time::Instant::now(),
             tray: None,
+            tray_done_until: None,
+            refine_timeout_draft,
+            pre_paste_delay_draft,
             hf_username: None,
             hf_status,
             hf_busy: false,
@@ -189,6 +213,25 @@ mod tests {
         assert!(state.speaker_rename_drafts.is_empty());
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
+        assert!(state.tray_done_until.is_none());
+    }
+
+    #[test]
+    fn state_new_seeds_refine_timeout_draft_from_config() {
+        let mut config = whspr_config::Config::default();
+        config.capture.refine_timeout_ms = 12345;
+        let state = State::new(config);
+
+        assert_eq!(state.refine_timeout_draft, "12345");
+    }
+
+    #[test]
+    fn state_new_seeds_pre_paste_delay_draft_from_config() {
+        let mut config = whspr_config::Config::default();
+        config.injection.pre_paste_delay_ms = 250;
+        let state = State::new(config);
+
+        assert_eq!(state.pre_paste_delay_draft, "250");
     }
 
     #[test]
@@ -289,6 +332,81 @@ pub enum Message {
     /// menu clicks (`crate::tray::Handle::poll_action`) and acts on the
     /// last one. Only ever fires once `state.tray` exists.
     TrayPoll,
+    /// A tick of the tray's lingering-"Done" clock (see
+    /// `crate::app::tray_done_subscription`): once
+    /// `State::tray_done_until` has passed, reverts the tray icon back to
+    /// whatever `state.pipeline_state` actually is. Only ever fires while
+    /// a "Done" display is pending.
+    TrayDoneTick,
+    /// The user toggled "Suppress background noise" in the Capture section.
+    /// Persisted immediately -- see `crate::app::persist_config`.
+    NoiseSuppressionToggled(bool),
+    /// The user dragged the Capture section's input-gain slider. The
+    /// `iced::widget::slider` already clamps to the range it's given, so
+    /// this always carries an in-range value.
+    InputGainChanged(f32),
+    /// The user dragged the Capture section's voice-activity-threshold
+    /// slider. Same clamping note as `InputGainChanged`.
+    VadThresholdChanged(f32),
+    /// The user toggled "Translate to English" in the Capture section.
+    TranslateToggled(bool),
+    /// The user toggled "Shorten the transcript" in the Capture section.
+    ShortenToggled(bool),
+    /// The user toggled "Auto-send when recording pauses" in the Capture
+    /// section.
+    AutoSendToggled(bool),
+    /// The user toggled "Detect input fields before injecting" in the
+    /// Capture section.
+    InputFieldDetectionToggled(bool),
+    /// The user edited the Capture section's "Refine timeout (ms)"
+    /// `text_input`. Always updates `State::refine_timeout_draft`; only
+    /// writes through to `config.capture.refine_timeout_ms` (clamped) and
+    /// persists when the text parses as a `u64` -- see `crate::app::update`.
+    RefineTimeoutMsChanged(String),
+    /// The user edited the Injection section's "Pre-paste delay (ms)"
+    /// `text_input`. Same draft-then-parse handling as
+    /// `RefineTimeoutMsChanged`.
+    PrePasteDelayMsChanged(String),
+    /// The user toggled "Release the microphone when not recording" in the
+    /// Privacy section.
+    MicPrivacyToggled(bool),
+    /// The user toggled "Encrypt history at rest" in the Privacy section.
+    HistoryEncryptionToggled(bool),
+    /// The user toggled "Rescan devices when one is plugged/unplugged" in
+    /// the Devices section.
+    DeviceHotplugToggled(bool),
+    /// The user toggled "Track the focused app for per-app stats" in the
+    /// Devices section.
+    ActiveWindowToggled(bool),
+    /// The user toggled "Allow Bluetooth microphones" in the Devices
+    /// section.
+    BluetoothSourceToggled(bool),
+    /// The user toggled "Allow virtual/software audio sources" in the
+    /// Devices section.
+    VirtualSourceToggled(bool),
+    /// The user toggled "Keep the tray icon static" in the Devices section.
+    TrayStaticToggled(bool),
+    /// The user toggled "Normalize spoken numbers to digits" in the
+    /// Normalize section.
+    NormalizeNumbersToggled(bool),
+    /// The user toggled "Normalize dates to YYYY-MM-DD" in the Normalize
+    /// section.
+    NormalizeDatesToggled(bool),
+    /// The user toggled "Normalize times to 24-hour HH:MM" in the
+    /// Normalize section.
+    NormalizeTimesToggled(bool),
+    /// The user picked "digits" or "words" in the Normalize section's
+    /// number-rendering `pick_list`.
+    NumberFormatSelected(&'static str),
+    /// The user toggled "Insert paragraph breaks on long pauses" in the
+    /// Normalize section.
+    ParagraphBreakToggled(bool),
+    /// The user toggled "Auto-punctuate" in the Normalize section.
+    PunctuationToggleToggled(bool),
+    /// The user edited one of the API keys section's `text_input` fields:
+    /// (backend id, e.g. "openai"/"anthropic"/"deepgram", new value).
+    /// Written straight into `config.api_keys` -- see `crate::app::update`.
+    ApiKeyChanged(&'static str, String),
     /// The user clicked "Sign in with HuggingFace" on the Models tab: starts
     /// the browser OAuth flow (see `crate::hf::run_login`).
     HfSignIn,

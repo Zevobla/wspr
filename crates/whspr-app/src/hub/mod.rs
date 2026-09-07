@@ -18,7 +18,7 @@ mod common;
 mod dictate;
 mod history;
 mod models;
-mod settings;
+pub(crate) mod settings;
 mod speakers;
 
 use crate::state::{Message, Screen, State};
