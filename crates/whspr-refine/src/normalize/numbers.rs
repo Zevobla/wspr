@@ -1,9 +1,10 @@
 //! F-10: number words (English and Russian cardinals) written as digits.
 //!
-//! Supports compounds up to the millions ("one hundred and twenty five",
+//! Supports compounds up to the billions ("one hundred and twenty five",
 //! "двести тридцать" -> "230", "восемь миллионов триста сорок тысяч" ->
-//! "8340000"). Scoped deliberately: no billions+, no ordinals
-//! ("twenty-fifth", "двадцать пятого"). Fractions live in the percents pass.
+//! "8340000"). Scoped deliberately: no ordinals ("twenty-fifth", "двадцать
+//! пятого"). `u64` only, still no negatives. Fractions live in the
+//! percents pass.
 
 use super::split_punct;
 
@@ -56,6 +57,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "hundred" => Scale(100),
         "thousand" => Scale(1000),
         "million" => Scale(1_000_000),
+        "billion" => Scale(1_000_000_000),
         // Russian ones/teens/tens
         "ноль" => Unit(0),
         "один" | "одна" | "одно" => Unit(1),
@@ -97,6 +99,7 @@ fn word_value(word: &str) -> Option<WordKind> {
         "девятьсот" => Unit(900),
         "тысяча" | "тысячи" | "тысяч" => Scale(1000),
         "миллион" | "миллиона" | "миллионов" => Scale(1_000_000),
+        "миллиард" | "миллиарда" | "миллиардов" => Scale(1_000_000_000),
         _ => return None,
     })
 }
@@ -316,6 +319,21 @@ mod tests {
         assert_eq!(
             normalize_numbers("one million two hundred thousand"),
             "1200000"
+        );
+    }
+
+    #[test]
+    fn billions() {
+        assert_eq!(normalize_numbers("one billion"), "1000000000");
+        assert_eq!(normalize_numbers("два миллиарда"), "2000000000");
+        // Billions accumulate with lower scales the same way millions do.
+        assert_eq!(
+            normalize_numbers("one billion two hundred million"),
+            "1200000000"
+        );
+        assert_eq!(
+            normalize_numbers("два миллиарда пятьсот миллионов"),
+            "2500000000"
         );
     }
 
