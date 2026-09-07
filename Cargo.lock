@@ -7212,6 +7212,7 @@ dependencies = [
  "hound",
  "iced",
  "png 0.17.16",
+ "resvg",
  "rfd",
  "rodio",
  "serde_json",

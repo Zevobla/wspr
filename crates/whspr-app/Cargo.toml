@@ -68,6 +68,16 @@ png = "0.17"
 # (not in the root `[workspace.dependencies]`).
 dark-light = "3.0"
 
+[build-dependencies]
+# Rasterizes `assets/icon.svg` into the window icon at build time (see
+# `build.rs`) so only a vector lives in git. `resvg` re-exports the exact
+# `usvg`/`tiny-skia` versions it needs (`resvg::usvg`, `resvg::tiny_skia`),
+# and both are already in the lockfile via iced's `svg` feature above, so
+# this pulls no new major dependency tree -- just the one crate, declared
+# directly here (not a shared workspace dependency) since it's this crate's
+# own build-time concern.
+resvg = "0.45"
+
 [dev-dependencies]
 tempfile.workspace = true
 # Synthesizes a throwaway WAV fixture for `speakers::run_diarize_scan`'s
