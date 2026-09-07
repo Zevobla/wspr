@@ -4,50 +4,50 @@
 //! that used to only be reachable by hand-editing `config.toml`'s
 //! `[capture]` table.
 
-use iced::widget::{checkbox, column, slider, text, text_input};
+use iced::widget::{column, slider, text, text_input};
 use iced::Element;
 
-use crate::hub::common::{field, section};
+use crate::hub::common::{field, section, toggle_row};
 use crate::state::{Message, State};
 use crate::theme::{color, spacing, styles, type_scale};
 
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let noise_suppression = checkbox(state.config.capture.noise_suppression)
-        .label("Suppress background noise")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::NoiseSuppressionToggled);
-
-    let translate = checkbox(state.config.capture.translate)
-        .label("Translate to English")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::TranslateToggled);
-
-    let shorten = checkbox(state.config.capture.shorten)
-        .label("Shorten the transcript")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::ShortenToggled);
-
-    let auto_send = checkbox(state.config.capture.auto_send)
-        .label("Auto-send when recording pauses")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::AutoSendToggled);
-
-    let input_field_detection = checkbox(state.config.capture.input_field_detection)
-        .label("Detect input fields before injecting")
-        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
-        .on_toggle(Message::InputFieldDetectionToggled);
-
     section(
         scheme,
         "Capture",
         column![
-            noise_suppression,
+            toggle_row(
+                scheme,
+                "Suppress background noise",
+                state.config.capture.noise_suppression,
+                Message::NoiseSuppressionToggled,
+            ),
             input_gain_field(state, scheme),
             vad_threshold_field(state, scheme),
-            translate,
-            shorten,
-            auto_send,
-            input_field_detection,
+            toggle_row(
+                scheme,
+                "Translate to English",
+                state.config.capture.translate,
+                Message::TranslateToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Shorten the transcript",
+                state.config.capture.shorten,
+                Message::ShortenToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Auto-send when recording pauses",
+                state.config.capture.auto_send,
+                Message::AutoSendToggled,
+            ),
+            toggle_row(
+                scheme,
+                "Detect input fields before injecting",
+                state.config.capture.input_field_detection,
+                Message::InputFieldDetectionToggled,
+            ),
             refine_timeout_field(state, scheme),
         ]
         .spacing(spacing::MD)
