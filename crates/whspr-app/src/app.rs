@@ -22,6 +22,11 @@ use crate::state::{Message, State};
 
 const HUB_TITLE: &str = "whspr";
 
+/// How long the tray's "Done" icon lingers after a completed dictation
+/// before reverting -- see `tray_done_subscription`/`Message::TrayDoneTick`
+/// and `Message::Worker`'s `Completed` arm, which starts the linger.
+const TRAY_DONE_LINGER: std::time::Duration = std::time::Duration::from_secs(2);
+
 thread_local! {
     /// The live mic capture backing the in-app Record button. cpal's stream
     /// is `!Send`/`!Debug`, so it can't live in `State`; it's only ever
@@ -157,8 +162,29 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.pipeline_state_since = std::time::Instant::now();
                     }
                     state.pipeline_state = pipeline_state;
-                    if let Some(tray) = &state.tray {
-                        tray.set_state(pipeline_state);
+
+                    let showing_done =
+                        tray_done_active(state.tray_done_until, std::time::Instant::now());
+                    match (showing_done, pipeline_state) {
+                        // A lingering "Done" (started by the `Completed`
+                        // arm below) wins over a same-window Idle -- the
+                        // pipeline reports `Injecting` then immediately
+                        // `Idle`, so without this the Idle transition
+                        // would erase the "Done" glance the linger exists
+                        // to provide; `TrayDoneTick` reverts it once the
+                        // linger actually elapses instead.
+                        (true, whspr_core::PipelineState::Idle) => {}
+                        // Any other state change (a fresh dictation
+                        // starting) preempts a still-pending linger
+                        // instead of fighting it every tick.
+                        _ => {
+                            if showing_done {
+                                state.tray_done_until = None;
+                            }
+                            if let Some(tray) = &state.tray {
+                                tray.set_state(pipeline_state);
+                            }
+                        }
                     }
                 }
                 crate::worker::WorkerEvent::Completed {
@@ -185,6 +211,16 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         text,
                         duration_secs: Some(duration_secs),
                     });
+                    // Show a lingering "Done" tray icon: the pipeline has
+                    // no state for "just finished" (see `StateChanged`'s
+                    // handling above and `crate::tray`'s module doc
+                    // comment), so this is timed app-side and reverted by
+                    // `Message::TrayDoneTick` once `TRAY_DONE_LINGER`
+                    // elapses.
+                    if let Some(tray) = &state.tray {
+                        tray.set_visual(crate::tray::TrayVisual::Done);
+                    }
+                    state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
@@ -344,7 +380,24 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(crate::tray::Action::Quit) => iced::exit(),
             None => Task::none(),
         },
+        Message::TrayDoneTick => {
+            if !tray_done_active(state.tray_done_until, std::time::Instant::now()) {
+                state.tray_done_until = None;
+                if let Some(tray) = &state.tray {
+                    tray.set_state(state.pipeline_state);
+                }
+            }
+            Task::none()
+        }
     }
+}
+
+/// Whether the tray's lingering "Done" display is still within its window
+/// at `now`. Pure so the Idle-suppression branch in `update`'s
+/// `StateChanged` arm, and the revert in `TrayDoneTick`, are unit-testable
+/// without a real clock tick.
+fn tray_done_active(tray_done_until: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    tray_done_until.is_some_and(|until| now < until)
 }
 
 /// Saves `state.config` to the platform config directory immediately,
@@ -435,12 +488,27 @@ fn tray_poll_subscription(state: &State) -> iced::Subscription<Message> {
     }
 }
 
+/// Keeps the tray's lingering "Done" display on-screen for
+/// `TRAY_DONE_LINGER` after a completed dictation (see `Message::Worker`'s
+/// `Completed` arm), then reverts it via `Message::TrayDoneTick`. Only
+/// ticks while a linger is actually pending -- same idiom as
+/// `tray_poll_subscription`/`mic_level_subscription` -- so an idle tray
+/// costs nothing the rest of the time.
+fn tray_done_subscription(state: &State) -> iced::Subscription<Message> {
+    if state.tray_done_until.is_some() {
+        iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayDoneTick)
+    } else {
+        iced::Subscription::none()
+    }
+}
+
 fn subscription(state: &State) -> iced::Subscription<Message> {
     iced::Subscription::batch([
         hotkey_capture_subscription(state),
         worker_subscription(state),
         flow_bar_animation_subscription(state),
         tray_poll_subscription(state),
+        tray_done_subscription(state),
         mic_level_subscription(state),
     ])
 }
@@ -470,5 +538,24 @@ mod tests {
     #[test]
     fn hub_title_is_correct() {
         assert_eq!(HUB_TITLE, "whspr");
+    }
+
+    #[test]
+    fn tray_done_active_true_before_the_deadline() {
+        let now = std::time::Instant::now();
+        let until = now + std::time::Duration::from_secs(2);
+        assert!(tray_done_active(Some(until), now));
+    }
+
+    #[test]
+    fn tray_done_active_false_after_the_deadline() {
+        let now = std::time::Instant::now();
+        let until = now - std::time::Duration::from_millis(1);
+        assert!(!tray_done_active(Some(until), now));
+    }
+
+    #[test]
+    fn tray_done_active_false_when_nothing_pending() {
+        assert!(!tray_done_active(None, std::time::Instant::now()));
     }
 }
