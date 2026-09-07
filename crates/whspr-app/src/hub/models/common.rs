@@ -13,7 +13,10 @@ use crate::theme::{color, shape, spacing, styles, type_scale};
 
 /// A `BODY_MEDIUM`, de-emphasized paragraph -- the wording used across this
 /// screen's status/help lines.
-pub(super) fn body_text(content: String, scheme: &'static color::Scheme) -> Element<'static, Message> {
+pub(super) fn body_text(
+    content: String,
+    scheme: &'static color::Scheme,
+) -> Element<'static, Message> {
     text(content)
         .size(type_scale::BODY_MEDIUM.size)
         .font(type_scale::BODY_MEDIUM.font())
@@ -32,7 +35,10 @@ pub(super) fn label_text(content: &'static str) -> Element<'static, Message> {
 /// A small colored "fits your machine" pill for a [`whspr_hf::Fit`] verdict:
 /// green (`success_container`), yellow (`tertiary_container`), red
 /// (`error_container`), reusing the scheme's tonal container roles.
-pub(super) fn fit_badge(fit: whspr_hf::Fit, scheme: &'static color::Scheme) -> Element<'static, Message> {
+pub(super) fn fit_badge(
+    fit: whspr_hf::Fit,
+    scheme: &'static color::Scheme,
+) -> Element<'static, Message> {
     let (bg, fg) = match fit {
         whspr_hf::Fit::Green => (scheme.success_container, scheme.on_success_container),
         whspr_hf::Fit::Yellow => (scheme.tertiary_container, scheme.on_tertiary_container),

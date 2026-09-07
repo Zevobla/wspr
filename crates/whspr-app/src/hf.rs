@@ -57,7 +57,10 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
         Message::HfDownloadModel(model_id) => match start_download(state, model_id) {
             Some(dir) => {
                 let token = state.config.huggingface.token.clone();
-                Task::perform(run_download(model_id, token, dir), Message::HfModelDownloaded)
+                Task::perform(
+                    run_download(model_id, token, dir),
+                    Message::HfModelDownloaded,
+                )
             }
             None => Task::none(),
         },
@@ -144,11 +147,7 @@ fn start_download(state: &mut State, model_id: &str) -> Option<PathBuf> {
 
 /// Shared "a download finished" arm: clears `hf_busy`, reports success (naming
 /// which selector to pick the model in) or the error, and rescans on success.
-fn downloaded(
-    state: &mut State,
-    result: Result<PathBuf, String>,
-    selector: &str,
-) -> Task<Message> {
+fn downloaded(state: &mut State, result: Result<PathBuf, String>, selector: &str) -> Task<Message> {
     state.hf_busy = false;
     match result {
         Ok(path) => {
@@ -304,7 +303,9 @@ mod tests {
 
         let dirs = effective_model_dirs(&config);
         assert_eq!(
-            dirs.iter().filter(|d| *d == &PathBuf::from("/models")).count(),
+            dirs.iter()
+                .filter(|d| *d == &PathBuf::from("/models"))
+                .count(),
             1
         );
     }

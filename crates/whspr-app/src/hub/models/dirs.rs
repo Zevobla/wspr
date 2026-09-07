@@ -78,8 +78,12 @@ fn dir_row<'a>(
             .into(),
     };
 
-    row![path, Space::new().width(Length::Fixed(spacing::SM)), trailing]
-        .spacing(spacing::SM)
-        .align_y(Alignment::Center)
-        .into()
+    row![
+        path,
+        Space::new().width(Length::Fixed(spacing::SM)),
+        trailing
+    ]
+    .spacing(spacing::SM)
+    .align_y(Alignment::Center)
+    .into()
 }

@@ -34,11 +34,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
             .find(|m| m.filename == model.filename);
         let action = match installed {
             Some(m) => delete_button(scheme, state.hf_busy, m.path.clone()),
-            None => download_button(
-                scheme,
-                state.hf_busy,
-                Message::HfDownloadModel(model.id),
-            ),
+            None => download_button(scheme, state.hf_busy, Message::HfDownloadModel(model.id)),
         };
         rows.push(manage_row(
             scheme,

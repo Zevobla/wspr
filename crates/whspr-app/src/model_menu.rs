@@ -20,7 +20,10 @@ use whspr_hf::ScanResult;
 /// A friendly display name for a local model file: the curated registry label
 /// if the filename is a known whisper or GGUF model, else the bare filename.
 fn local_label(path: &Path) -> String {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
     if let Some(model) = whspr_hf::model_by_filename(name) {
         model.label.to_string()
     } else if let Some(model) = whspr_hf::llm_model_by_filename(name) {
@@ -133,7 +136,12 @@ pub fn refine_options(models: &ScanResult, config: &Config) -> Vec<RefineOption>
         RefineOption::Cloud(RefineChoice::OpenAi),
         RefineOption::Cloud(RefineChoice::Anthropic),
     ];
-    options.extend(models.llm.iter().map(|m| RefineOption::Local(m.path.clone())));
+    options.extend(
+        models
+            .llm
+            .iter()
+            .map(|m| RefineOption::Local(m.path.clone())),
+    );
     if let Some(selected) = selected_refine(config) {
         if !options.contains(&selected) {
             options.push(selected);
@@ -232,16 +240,22 @@ mod tests {
     #[test]
     fn asr_options_lists_cloud_then_local_and_appends_offscan_selection() {
         let models = asr_scan(&["/models/ggml-base.bin"]);
-        let mut config = Config::default();
-        config.asr = AsrChoice::WhisperLocal;
-        config.whisper.model_path = Some(PathBuf::from("/elsewhere/ggml-small.bin"));
+        let config = Config {
+            asr: AsrChoice::WhisperLocal,
+            whisper: whspr_config::WhisperConfig {
+                model_path: Some(PathBuf::from("/elsewhere/ggml-small.bin")),
+            },
+            ..Default::default()
+        };
 
         let options = asr_options(&models, &config);
         assert_eq!(options[0], AsrOption::Cloud(AsrChoice::OpenAi));
         assert_eq!(options[1], AsrOption::Cloud(AsrChoice::Deepgram));
         assert!(options.contains(&AsrOption::Local(PathBuf::from("/models/ggml-base.bin"))));
         // The configured model lives outside the scan, so it's appended.
-        assert!(options.contains(&AsrOption::Local(PathBuf::from("/elsewhere/ggml-small.bin"))));
+        assert!(options.contains(&AsrOption::Local(PathBuf::from(
+            "/elsewhere/ggml-small.bin"
+        ))));
     }
 
     #[test]
