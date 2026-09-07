@@ -6,18 +6,38 @@ use whspr_config::Config;
 use crate::history::HistoryEntry;
 use crate::model_menu::{AsrOption, RefineOption};
 
-/// Which top-level screen the Hub's tab bar (`crate::hub`) is currently
-/// showing. `Dictate` is the default: whspr's core action (record/dictate)
-/// gets the screen a user lands on, rather than being buried among
-/// settings -- see `crate::hub`'s module doc for the redesign this drives.
+/// Which top-level screen the Hub's left numbered nav rail (`crate::hub`)
+/// is currently showing. `Dictate` is the default: whspr's core action
+/// (record/dictate) gets the screen a user lands on. The declaration order
+/// is the rail order (01 Dictate .. 05 Settings) -- see `crate::hub`'s
+/// module doc for the redesign this drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Screen {
     #[default]
     Dictate,
-    Speakers,
-    Models,
     History,
+    Models,
+    Speakers,
     Settings,
+}
+
+/// Which section of the Settings screen's middle sub-nav is selected (the
+/// Modernist rail -> sub-nav -> form three-column layout). Declaration
+/// order is the sub-nav order (mockup 1c).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsSection {
+    #[default]
+    Audio,
+    Hotkey,
+    Cleanup,
+    Language,
+    Capture,
+    Typing,
+    Privacy,
+    StartupSounds,
+    AccountsKeys,
+    Macros,
+    Dictionary,
 }
 
 /// Top-level state for the whspr GUI daemon (Hub window + Flow Bar window).
@@ -54,9 +74,15 @@ pub struct State {
     /// The active iced theme, toggled between `Theme::Light`/`Theme::Dark`
     /// by the Hub's theme button (see `crate::app`'s `.theme` wiring).
     pub theme: iced::Theme,
-    /// Which screen the Hub's tab bar is currently showing. Switched by
-    /// `Message::TabSelected` (see `crate::hub`'s tab bar).
+    /// Which screen the Hub's nav rail is currently showing. Switched by
+    /// `Message::TabSelected` (see `crate::hub`'s nav rail).
     pub screen: Screen,
+    /// Which Settings sub-nav section is selected (the three-column
+    /// Settings layout). Switched by `Message::SettingsSectionSelected`.
+    pub settings_section: SettingsSection,
+    /// Live contents of the History screen's search box; filters the
+    /// history table client-side. Empty means "show everything".
+    pub history_search: String,
     /// The dictation pipeline's current state, driven by
     /// `crate::worker::pipeline_worker`'s `WorkerEvent::StateChanged` and
     /// shown by the Flow Bar overlay.
@@ -169,6 +195,8 @@ impl State {
             history: Vec::new(),
             theme: iced::Theme::Light,
             screen: Screen::default(),
+            settings_section: SettingsSection::default(),
+            history_search: String::new(),
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
             speaker_db: whspr_config::SpeakerDb::default(),
@@ -283,9 +311,15 @@ pub enum Message {
     HotkeyCaptureKeyEvent(iced::keyboard::Event),
     /// The user toggled between light and dark theme in the Hub.
     ThemeToggled,
-    /// The user clicked a Hub tab bar entry: switches which screen renders
-    /// below the tab bar (see `Screen`).
+    /// The user clicked a nav-rail entry: switches which screen renders to
+    /// the right of the rail (see `Screen`).
     TabSelected(Screen),
+    /// The user clicked a Settings sub-nav entry: switches which section's
+    /// form renders (see `SettingsSection`).
+    SettingsSectionSelected(SettingsSection),
+    /// The user typed in the History screen's search box: filters the
+    /// history table (see `crate::hub::history`).
+    HistorySearchChanged(String),
     /// The user clicked "Copy" on the Dictate screen: copies the current
     /// recognized transcript to the system clipboard. A no-op if there's no
     /// transcript yet -- see `crate::hub::dictate`'s `copy_enabled`, which
