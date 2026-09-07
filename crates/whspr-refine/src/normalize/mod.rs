@@ -8,6 +8,10 @@
 //!     number/date word (e.g. "call five") is matched against the
 //!     refiner's literal output, not text the passes below have already
 //!     rewritten.
+//!   - `dictionary` (H-01) is the same trigger -> replacement substitution
+//!     as `macros` (it reuses `macros::expand_macros` directly), for
+//!     finer-grained verbatim term corrections. Runs right alongside
+//!     macros, before every other pass, for the same reason.
 //!   - `dates`  -> dates unified to `YYYY-MM-DD`
 //!   - `times`  -> times unified to 24-hour `HH:MM`
 //!   - `numbers` gates the number-word pass *and* the extended token passes
@@ -96,6 +100,13 @@ impl TextRefiner for NormalizingRefiner {
 /// its bare domain could be), and the duplicate-word collapse last.
 pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     let mut text = macros::expand_macros(text, &settings.macros);
+    // Dictionary term substitution (H-01) is the same "trigger phrase ->
+    // replacement" shape as macros, so it reuses that exact matching
+    // machinery (whole-word, case-insensitive, longest-trigger-first) and
+    // runs right alongside it -- before any other pass has a chance to
+    // rewrite a trigger term (e.g. one containing a number word) out from
+    // under it, for the same reason macros itself runs first.
+    text = macros::expand_macros(&text, &settings.dictionary);
     // Strip verbal fillers/disfluencies ("эээ", "ну", "короче", "um", "uh",
     // "как бы", ...) so they don't survive into the output even with the noop
     // refiner (rule-based, unlike the LLM prompt's English-only filler pass).
@@ -350,6 +361,56 @@ mod tests {
             .expect("refine should succeed");
 
         assert_eq!(result, "please 5551234 now");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_applies_dictionary_substitution() {
+        // Proves the dictionary table (H-01) runs through the real refiner
+        // path, reusing macros::expand_macros's word-boundary matching.
+        let mut settings = NormalizeSettings::default();
+        settings
+            .dictionary
+            .insert("wisper".to_string(), "Whspr".to_string());
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("I use wisper every day", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "I use Whspr every day");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_dictionary_runs_before_number_normalization() {
+        // Same proof as macros' own ordering test: a dictionary trigger
+        // containing a number word ("five") only matches the refiner's
+        // literal output, before the numbers pass would rewrite it to "5"
+        // out from under the trigger.
+        let mut settings = NormalizeSettings::default();
+        settings
+            .dictionary
+            .insert("cloud five".to_string(), "Cumulus Systems".to_string());
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings);
+
+        let result = refiner
+            .refine("we launched cloud five today", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "we launched Cumulus Systems today");
+    }
+
+    #[tokio::test]
+    async fn normalizing_refiner_empty_dictionary_is_a_noop() {
+        let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+
+        let result = refiner
+            .refine("hello world", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "hello world");
     }
 
     #[tokio::test]
