@@ -264,7 +264,13 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 match handle.stop() {
                     Ok(audio) => {
                         let duration_secs = audio.duration_secs();
-                        match pipeline.run(audio, &RefineContext::default()).await {
+                        let ctx = RefineContext {
+                            instructions: Some(whspr_refine::effective_instructions(
+                                config.refine_settings.instructions.as_deref(),
+                            )),
+                            ..Default::default()
+                        };
+                        match pipeline.run(audio, &ctx).await {
                             Ok(text) => {
                                 let _ = output
                                     .send(WorkerEvent::Completed {
