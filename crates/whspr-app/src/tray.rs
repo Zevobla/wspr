@@ -298,6 +298,51 @@ mod platform {
         let d = (p.0 - closest.0, p.1 - closest.1);
         (d.0 * d.0 + d.1 * d.1).sqrt()
     }
+
+    #[cfg(test)]
+    mod shape_tests {
+        use super::*;
+
+        #[test]
+        fn in_disc_includes_center_and_excludes_beyond_radius() {
+            assert!(in_disc(0.0, 0.0, 5.0));
+            assert!(!in_disc(6.0, 0.0, 5.0));
+        }
+
+        #[test]
+        fn in_ring_excludes_the_center_hole() {
+            assert!(!in_ring(0.0, 0.0, 10.0, 6.0));
+            assert!(in_ring(8.0, 0.0, 10.0, 6.0));
+            assert!(!in_ring(11.0, 0.0, 10.0, 6.0));
+        }
+
+        /// The whole reason Processing reads as a different shape than a
+        /// plain filled circle: at radius 10, (7, 7) is inside the disc
+        /// (distance ~9.9) but outside the diamond (|7| + |7| = 14 > 10).
+        #[test]
+        fn in_diamond_excludes_a_disc_corner_point_the_disc_would_include() {
+            assert!(in_disc(7.0, 7.0, 10.0));
+            assert!(!in_diamond(7.0, 7.0, 10.0));
+        }
+
+        #[test]
+        fn dist_to_segment_is_zero_on_the_segment() {
+            let d = dist_to_segment((0.0, 0.0), (-2.0, 0.0), (2.0, 0.0));
+            assert!(d < 1e-6);
+        }
+
+        #[test]
+        fn dist_to_segment_matches_perpendicular_distance_at_the_midpoint() {
+            let d = dist_to_segment((0.0, 3.0), (-2.0, 0.0), (2.0, 0.0));
+            assert!((d - 3.0).abs() < 1e-6);
+        }
+
+        #[test]
+        fn dist_to_segment_clamps_to_the_nearest_endpoint_beyond_the_segment() {
+            let d = dist_to_segment((5.0, 0.0), (-2.0, 0.0), (2.0, 0.0));
+            assert!((d - 3.0).abs() < 1e-6);
+        }
+    }
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
