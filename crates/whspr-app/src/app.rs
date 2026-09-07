@@ -62,9 +62,9 @@ fn boot() -> (State, Task<Message>) {
     state.speaker_db = crate::speakers::speaker_db_path()
         .map(|path| whspr_config::SpeakerDb::load(&path))
         .unwrap_or_default();
-    // Scan for already-downloaded whisper models so the Models tab can offer
-    // "Use this model" for them right away (see `crate::hf`).
-    state.hf_installed = crate::hf::scan_installed(&state.config);
+    // Scan every model directory so the Models tab's ASR + refiner selectors
+    // are populated with already-installed models right away (see `crate::hf`).
+    state.hf_models = crate::hf::scan(&state.config);
 
     let (_id, open_hub) = window::open(window::Settings::default());
     let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());

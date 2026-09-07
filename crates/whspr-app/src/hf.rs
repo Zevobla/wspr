@@ -1,19 +1,19 @@
-//! HuggingFace Models-tab glue: resolve the models directory, scan installed
-//! models, the async login/download tasks the Hub drives via `Task::perform`,
-//! and the `update` handler for the six Models-tab messages. Mirrors
-//! `crate::speakers`'s "data-dir helper + background task" shape, but for
-//! `whspr-hf` instead of diarization. The `update` handler lives here (rather
-//! than in `crate::app`) to keep app.rs under the 600-line cap (AA-06).
+//! HuggingFace Models-tab glue: resolve the model directories, scan them for
+//! installed models, the async login/download/delete tasks the Hub drives via
+//! `Task::perform`, and the `update` handler for the Models-tab messages.
+//! Mirrors `crate::speakers`'s "data-dir helper + background task" shape, but
+//! for `whspr-hf` instead of diarization. The `update` handler lives here
+//! (rather than in `crate::app`) to keep app.rs under the 600-line cap (AA-06).
 
 use std::path::PathBuf;
 
 use iced::Task;
 use whspr_config::Config;
-use whspr_hf::{HfIdentity, InstalledModel, OauthConfig};
+use whspr_hf::{HfIdentity, OauthConfig, ScanResult};
 
 use crate::state::{Message, State};
 
-/// Handles the six Models-tab (HuggingFace) messages, mutating `state` and
+/// Handles the Models-tab (HuggingFace) messages, mutating `state` and
 /// returning `Ok(task)`. Any other message is handed straight back as
 /// `Err(message)` so `crate::app::update`'s catch-all can forward it to the
 /// Settings handler -- keeping app.rs off a second exhaustive match of every
@@ -39,7 +39,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
             state.hf_status = Some(format!("Signed in as {username}."));
             crate::app::persist_config(state);
             // A fresh token may unlock gated models -- rescan.
-            state.hf_installed = scan_installed(&state.config);
+            state.hf_models = scan(&state.config);
             Task::none()
         }
         Message::HfSignedIn(Err(error)) => {
@@ -54,46 +54,113 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
             crate::app::persist_config(state);
             Task::none()
         }
-        Message::HfDownloadModel(model_id) => match models_dir(&state.config) {
+        Message::HfDownloadModel(model_id) => match start_download(state, model_id) {
             Some(dir) => {
-                state.hf_busy = true;
-                state.hf_status = Some(format!("Downloading {model_id}... this can take a while."));
+                let token = state.config.huggingface.token.clone();
+                Task::perform(run_download(model_id, token, dir), Message::HfModelDownloaded)
+            }
+            None => Task::none(),
+        },
+        Message::HfDownloadLlm(model_id) => match start_download(state, model_id) {
+            Some(dir) => {
                 let token = state.config.huggingface.token.clone();
                 Task::perform(
-                    run_download(model_id, token, dir),
-                    Message::HfModelDownloaded,
+                    run_download_llm(model_id, token, dir),
+                    Message::HfLlmDownloaded,
                 )
             }
-            None => {
-                state.hf_status =
-                    Some("Could not determine a models directory to download into.".to_string());
-                Task::none()
-            }
+            None => Task::none(),
         },
-        Message::HfModelDownloaded(Ok(path)) => {
-            state.hf_busy = false;
-            let name = model_file_name(&path);
-            state.hf_status = Some(format!(
-                "Downloaded {name}. Click \"Use this model\" to apply."
-            ));
-            state.hf_installed = scan_installed(&state.config);
-            Task::none()
-        }
-        Message::HfModelDownloaded(Err(error)) => {
-            state.hf_busy = false;
-            state.hf_status = Some(format!("Download failed: {error}"));
-            Task::none()
-        }
-        Message::HfUseModel(path) => {
-            let name = model_file_name(&path);
-            state.config.whisper.model_path = Some(path);
-            state.hf_status = Some(format!("Now dictating with {name}."));
+        Message::HfModelDownloaded(result) => downloaded(state, result, "the ASR list"),
+        Message::HfLlmDownloaded(result) => downloaded(state, result, "the Refiner list"),
+        Message::HfAsrSelected(option) => {
+            crate::model_menu::apply_asr(&mut state.config, &option);
+            state.hf_status = Some(format!("Now transcribing with {option}."));
             crate::app::persist_config(state);
+            Task::none()
+        }
+        Message::HfRefineSelected(option) => {
+            crate::model_menu::apply_refine(&mut state.config, &option);
+            state.hf_status = Some(format!("Refiner set to {option}."));
+            crate::app::persist_config(state);
+            Task::none()
+        }
+        Message::HfDeleteModel(path) => {
+            state.hf_busy = true;
+            state.hf_status = Some(format!("Deleting {}...", model_file_name(&path)));
+            Task::perform(run_delete(path), Message::HfModelDeleted)
+        }
+        Message::HfModelDeleted(Ok(path)) => {
+            state.hf_busy = false;
+            state.hf_status = Some(format!("Deleted {}.", model_file_name(&path)));
+            state.hf_models = scan(&state.config);
+            Task::none()
+        }
+        Message::HfModelDeleted(Err(error)) => {
+            state.hf_busy = false;
+            state.hf_status = Some(format!("Delete failed: {error}"));
+            Task::none()
+        }
+        Message::HfAddModelDir => Task::perform(pick_model_dir(), Message::HfModelDirPicked),
+        Message::HfModelDirPicked(None) => Task::none(),
+        Message::HfModelDirPicked(Some(dir)) => {
+            if !state.config.huggingface.model_dirs.contains(&dir) {
+                state.hf_status = Some(format!("Scanning {}...", dir.display()));
+                state.config.huggingface.model_dirs.push(dir);
+                crate::app::persist_config(state);
+                state.hf_models = scan(&state.config);
+            }
+            Task::none()
+        }
+        Message::HfRemoveModelDir(dir) => {
+            state.config.huggingface.model_dirs.retain(|d| d != &dir);
+            crate::app::persist_config(state);
+            state.hf_models = scan(&state.config);
             Task::none()
         }
         other => return Err(other),
     };
     Ok(task)
+}
+
+/// Shared "start a download" bookkeeping for both whisper and LLM: resolves
+/// the target [`download_dir`], and on success flips `hf_busy` + sets the
+/// status line and returns the dir to download into. `None` (with an error
+/// status set) when no models directory can be determined.
+fn start_download(state: &mut State, model_id: &str) -> Option<PathBuf> {
+    match download_dir(&state.config) {
+        Some(dir) => {
+            state.hf_busy = true;
+            state.hf_status = Some(format!("Downloading {model_id}... this can take a while."));
+            Some(dir)
+        }
+        None => {
+            state.hf_status =
+                Some("Could not determine a models directory to download into.".to_string());
+            None
+        }
+    }
+}
+
+/// Shared "a download finished" arm: clears `hf_busy`, reports success (naming
+/// which selector to pick the model in) or the error, and rescans on success.
+fn downloaded(
+    state: &mut State,
+    result: Result<PathBuf, String>,
+    selector: &str,
+) -> Task<Message> {
+    state.hf_busy = false;
+    match result {
+        Ok(path) => {
+            state.hf_status = Some(format!(
+                "Downloaded {}. Select it in {selector} to use it.",
+                model_file_name(&path)
+            ));
+            state.hf_models = scan(&state.config);
+        }
+        Err(error) => state.hf_status = Some(format!("Download failed: {error}")),
+    }
+    Task::none()
 }
 
 /// The file name of a model path for a status message, falling back to the
@@ -119,13 +186,36 @@ pub fn models_dir(config: &Config) -> Option<PathBuf> {
     whspr_hf::resolve_models_dir(config.huggingface.models_dir.clone()).or_else(default_models_dir)
 }
 
-/// Scans the effective models directory for installed whisper models. Empty
-/// if the directory can't be determined or doesn't exist yet.
-pub fn scan_installed(config: &Config) -> Vec<InstalledModel> {
-    match models_dir(config) {
-        Some(dir) => whspr_hf::installed(&dir),
-        None => Vec::new(),
+/// The directory a fresh download is placed in: the first user-added model
+/// directory if any, else the default [`models_dir`]. Both are always part of
+/// [`effective_model_dirs`], so a downloaded model always appears in a scan.
+fn download_dir(config: &Config) -> Option<PathBuf> {
+    config
+        .huggingface
+        .model_dirs
+        .first()
+        .cloned()
+        .or_else(|| models_dir(config))
+}
+
+/// Every directory the Models tab scans: the user-managed
+/// `[huggingface].model_dirs` plus the default [`models_dir`] (deduplicated),
+/// so the default download location is always included even when the user has
+/// added extra directories.
+pub fn effective_model_dirs(config: &Config) -> Vec<PathBuf> {
+    let mut dirs = config.huggingface.model_dirs.clone();
+    if let Some(default) = models_dir(config) {
+        if !dirs.contains(&default) {
+            dirs.push(default);
+        }
     }
+    dirs
+}
+
+/// Scans every [`effective_model_dirs`] entry for installed models, split into
+/// ASR + LLM buckets. Empty if no directory exists yet.
+pub fn scan(config: &Config) -> ScanResult {
+    whspr_hf::scan(&effective_model_dirs(config))
 }
 
 /// Runs the HuggingFace browser OAuth login, returning `(username, token)`.
@@ -139,9 +229,9 @@ pub async fn run_login(client_id: String) -> Result<(String, String), String> {
     Ok((username, token))
 }
 
-/// Downloads the curated model `model_id` into `dir`, using `token` (from a
-/// completed login or a saved config token) as the bearer if present. Returns
-/// the flat on-disk path the model landed at.
+/// Downloads the curated whisper model `model_id` into `dir`, using `token`
+/// (from a completed login or a saved config token) as the bearer if present.
+/// Returns the flat on-disk path the model landed at.
 pub async fn run_download(
     model_id: &'static str,
     token: Option<String>,
@@ -152,6 +242,36 @@ pub async fn run_download(
     whspr_hf::download(model, token, &dir, None)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Downloads the curated GGUF refiner LLM `model_id` into `dir`. Same
+/// token/return semantics as [`run_download`].
+pub async fn run_download_llm(
+    model_id: &'static str,
+    token: Option<String>,
+    dir: PathBuf,
+) -> Result<PathBuf, String> {
+    let model = whspr_hf::llm_model_by_id(model_id)
+        .ok_or_else(|| format!("unknown llm model id: {model_id}"))?;
+    whspr_hf::download_llm(model, token, &dir, None)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Deletes the model file at `path`, returning the path on success so the
+/// caller can name it in a status message before rescanning.
+pub async fn run_delete(path: PathBuf) -> Result<PathBuf, String> {
+    whspr_hf::delete(&path).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+/// Opens a native folder picker for "Add directory". Resolves to `None` if the
+/// user cancels.
+pub async fn pick_model_dir() -> Option<PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .pick_folder()
+        .await
+        .map(|handle| handle.path().to_path_buf())
 }
 
 #[cfg(test)]
@@ -166,11 +286,44 @@ mod tests {
     }
 
     #[test]
-    fn scan_installed_of_a_configured_empty_dir_is_empty() {
+    fn effective_model_dirs_includes_the_default_and_user_dirs() {
+        let mut config = Config::default();
+        config.huggingface.models_dir = Some(PathBuf::from("/default/models"));
+        config.huggingface.model_dirs = vec![PathBuf::from("/user/ggufs")];
+
+        let dirs = effective_model_dirs(&config);
+        assert!(dirs.contains(&PathBuf::from("/user/ggufs")));
+        assert!(dirs.contains(&PathBuf::from("/default/models")));
+    }
+
+    #[test]
+    fn effective_model_dirs_does_not_duplicate_the_default() {
+        let mut config = Config::default();
+        config.huggingface.models_dir = Some(PathBuf::from("/models"));
+        config.huggingface.model_dirs = vec![PathBuf::from("/models")];
+
+        let dirs = effective_model_dirs(&config);
+        assert_eq!(
+            dirs.iter().filter(|d| *d == &PathBuf::from("/models")).count(),
+            1
+        );
+    }
+
+    #[test]
+    fn download_dir_prefers_first_user_dir() {
+        let mut config = Config::default();
+        config.huggingface.models_dir = Some(PathBuf::from("/default"));
+        config.huggingface.model_dirs = vec![PathBuf::from("/first"), PathBuf::from("/second")];
+        assert_eq!(download_dir(&config), Some(PathBuf::from("/first")));
+    }
+
+    #[test]
+    fn scan_of_a_configured_empty_dir_is_empty() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let mut config = Config::default();
         config.huggingface.models_dir = Some(dir.path().to_path_buf());
-        assert!(scan_installed(&config).is_empty());
+        let result = scan(&config);
+        assert!(result.asr.is_empty() && result.llm.is_empty());
     }
 
     #[tokio::test]
@@ -179,5 +332,13 @@ mod tests {
             .await
             .expect_err("unknown id should error before any network call");
         assert!(err.contains("unknown model id"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn run_download_llm_rejects_an_unknown_model_id() {
+        let err = run_download_llm("not-a-model", None, PathBuf::from("/tmp"))
+            .await
+            .expect_err("unknown id should error before any network call");
+        assert!(err.contains("unknown llm model id"), "got: {err}");
     }
 }
