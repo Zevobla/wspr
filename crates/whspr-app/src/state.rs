@@ -340,4 +340,18 @@ pub enum Message {
     VirtualSourceToggled(bool),
     /// The user toggled "Keep the tray icon static" in the Devices section.
     TrayStaticToggled(bool),
+    /// The user toggled "Normalize spoken numbers to digits" in the
+    /// Normalize section.
+    NormalizeNumbersToggled(bool),
+    /// The user toggled "Normalize dates to YYYY-MM-DD" in the Normalize
+    /// section.
+    NormalizeDatesToggled(bool),
+    /// The user toggled "Normalize times to 24-hour HH:MM" in the
+    /// Normalize section.
+    NormalizeTimesToggled(bool),
+    /// The user toggled "Insert paragraph breaks on long pauses" in the
+    /// Normalize section.
+    ParagraphBreakToggled(bool),
+    /// The user toggled "Auto-punctuate" in the Normalize section.
+    PunctuationToggleToggled(bool),
 }

@@ -430,6 +430,31 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
             Task::none()
         }
+        Message::NormalizeNumbersToggled(enabled) => {
+            state.config.normalize.numbers = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::NormalizeDatesToggled(enabled) => {
+            state.config.normalize.dates = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::NormalizeTimesToggled(enabled) => {
+            state.config.normalize.times = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::ParagraphBreakToggled(enabled) => {
+            state.config.normalize.paragraph_break = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::PunctuationToggleToggled(enabled) => {
+            state.config.normalize.punctuation_toggle = enabled;
+            persist_config(state);
+            Task::none()
+        }
     }
 }
 
