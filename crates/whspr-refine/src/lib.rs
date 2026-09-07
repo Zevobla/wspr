@@ -19,6 +19,30 @@ pub use normalize::NormalizingRefiner;
 use tokens::strip_special_tokens;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
+/// Default instructions handed to the LLM refiners when the user hasn't
+/// configured their own via config's `[refine_settings].instructions`
+/// (`whspr_config::RefineSettings`, read by callers in `whspr-app`/
+/// `whspr-cli` -- this crate deliberately doesn't depend on that type, to
+/// keep `RefineContext.instructions` a plain string all three backends
+/// already know how to render). Numbers/formulas guidance lives here (in
+/// addition to `build_cleanup_prompt`'s always-on bullet below) so it also
+/// shows up verbatim in the "Additional formatting instructions" section
+/// every backend renders from `RefineContext.instructions`.
+pub const DEFAULT_REFINE_INSTRUCTIONS: &str =
+    "Render spoken numbers as digits and simple formulas with standard symbols where unambiguous.";
+
+/// Combines the built-in default instructions with an optional user-supplied
+/// value from config. `configured`, when non-empty, is appended after the
+/// default rather than replacing it outright, so a user adding house-style
+/// guidance (e.g. "always sign off with my name") doesn't silently lose the
+/// numbers/formulas guidance too.
+pub fn effective_instructions(configured: Option<&str>) -> String {
+    match configured.map(str::trim) {
+        Some(extra) if !extra.is_empty() => format!("{DEFAULT_REFINE_INSTRUCTIONS} {extra}"),
+        _ => DEFAULT_REFINE_INSTRUCTIONS.to_string(),
+    }
+}
+
 /// Builds the shared "clean up speech-to-text" instructions used as the
 /// prompt body for every refiner backend (cloud or local), so the same
 /// cleanup rules apply regardless of which LLM ends up executing them.
