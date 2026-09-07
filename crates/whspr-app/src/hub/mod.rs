@@ -17,6 +17,7 @@ use iced::{Alignment, Element, Length};
 mod common;
 mod dictate;
 mod history;
+mod models;
 mod settings;
 mod speakers;
 
@@ -24,9 +25,10 @@ use crate::state::{Message, Screen, State};
 use crate::theme::{self, color, spacing, styles, type_scale};
 
 /// Every tab, in the order the tab bar shows them.
-const SCREENS: [Screen; 4] = [
+const SCREENS: [Screen; 5] = [
     Screen::Dictate,
     Screen::Speakers,
+    Screen::Models,
     Screen::History,
     Screen::Settings,
 ];
@@ -38,6 +40,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let screen_content = match state.screen {
         Screen::Dictate => dictate::view(state, scheme),
         Screen::Speakers => speakers::view(state, scheme),
+        Screen::Models => models::view(state, scheme),
         Screen::History => history::view(state, scheme),
         Screen::Settings => settings::view(state, scheme),
     };
@@ -69,6 +72,7 @@ fn tab_label(screen: Screen) -> &'static str {
     match screen {
         Screen::Dictate => "Dictate",
         Screen::Speakers => "Speakers",
+        Screen::Models => "Models",
         Screen::History => "History",
         Screen::Settings => "Settings",
     }
