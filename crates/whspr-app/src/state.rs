@@ -165,6 +165,13 @@ pub struct State {
     /// This machine's RAM snapshot, probed once at boot, used for the
     /// per-model "fits your machine" badge (see `whspr_hf::HardwareSpecs`).
     pub hf_specs: whspr_hf::HardwareSpecs,
+    /// When set (from the `WHSPR_SCREENSHOT` env var at boot), the Hub
+    /// window is captured to this PNG path shortly after it first renders,
+    /// then the app exits -- a permission-free headless UI-verification path
+    /// (see `crate::screenshot`). `None` in normal runs.
+    pub screenshot_path: Option<std::path::PathBuf>,
+    /// Guards the one-shot screenshot so the capture fires exactly once.
+    pub screenshot_taken: bool,
 }
 
 impl State {
@@ -213,6 +220,8 @@ impl State {
             hf_busy: false,
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
+            screenshot_path: None,
+            screenshot_taken: false,
         }
     }
 }
@@ -477,4 +486,15 @@ pub enum Message {
     /// The user clicked "Remove" on a model directory: drops it from
     /// `config.huggingface.model_dirs` and rescans.
     HfRemoveModelDir(std::path::PathBuf),
+    /// A press began anywhere on the Hub's custom top chrome (brand row +
+    /// screen header): starts an OS window-drag so the whole header acts as
+    /// the title bar (the window has no system title bar -- see
+    /// `crate::hub::window_settings`).
+    DragHubWindow,
+    /// Fired shortly after the Hub first renders when `WHSPR_SCREENSHOT` is
+    /// set: triggers the one-shot window capture (see `crate::screenshot`).
+    TakeScreenshot,
+    /// The Hub window screenshot resolved: encode it to the requested PNG
+    /// path and exit.
+    ScreenshotTaken(iced::window::Screenshot),
 }
