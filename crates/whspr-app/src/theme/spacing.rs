@@ -52,6 +52,9 @@ mod tests {
 
     #[test]
     fn spacing_values_follow_the_modernist_scale() {
-        assert_eq!([XS, SM, MD, LG, XL, XXL], [4.0, 8.0, 12.0, 16.0, 24.0, 32.0]);
+        assert_eq!(
+            [XS, SM, MD, LG, XL, XXL],
+            [4.0, 8.0, 12.0, 16.0, 24.0, 32.0]
+        );
     }
 }

@@ -67,10 +67,8 @@ mod tests {
     #[test]
     fn table_builds_with_rows() {
         let cols = vec![("When", Length::Fixed(80.0)), ("What", Length::Fill)];
-        let rows: Vec<Vec<Element<'_, ()>>> = vec![vec![
-            text("09:12").into(),
-            text("hello there").into(),
-        ]];
+        let rows: Vec<Vec<Element<'_, ()>>> =
+            vec![vec![text("09:12").into(), text("hello there").into()]];
         let _: Element<'_, ()> = table(cols, rows, &color::LIGHT);
     }
 }

@@ -55,7 +55,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .style(move |_theme, status| styles::scrollable::rail(scheme, status));
 
     let main = column![
-        screen_header(screen_title(state.screen), header_trailing(state, scheme), scheme),
+        screen_header(
+            screen_title(state.screen),
+            header_trailing(state, scheme),
+            scheme
+        ),
         error_banner(state, scheme),
         body,
     ]
@@ -63,9 +67,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .height(Length::Fill);
 
     container(
-        row![nav_rail(state, scheme), widgets::vrule(spacing::layout::RULE, scheme), main]
-            .width(Length::Fill)
-            .height(Length::Fill),
+        row![
+            nav_rail(state, scheme),
+            widgets::vrule(spacing::layout::RULE, scheme),
+            main
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill),
     )
     .style(move |_theme| styles::container::surface(scheme))
     .into()

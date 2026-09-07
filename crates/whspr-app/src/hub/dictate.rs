@@ -73,10 +73,10 @@ fn hero<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Mes
     };
 
     row![left, record_button(state.is_recording, scheme)]
-    .spacing(spacing::XL)
-    .align_y(Alignment::Center)
-    .width(Length::Fill)
-    .into()
+        .spacing(spacing::XL)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .into()
 }
 
 /// The primary Record/Stop button (accent fill, icon + label).
@@ -104,10 +104,7 @@ fn record_button<'a>(recording: bool, scheme: &'static color::Scheme) -> Element
 
 /// The transcript block: a kicker + word count, the transcript body, and
 /// the Copy / Transcribe-a-file actions.
-fn transcript_block<'a>(
-    state: &'a State,
-    scheme: &'static color::Scheme,
-) -> Element<'a, Message> {
+fn transcript_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     let words = state
         .transcribed_text
         .as_deref()
@@ -241,7 +238,10 @@ fn recent_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element
         )
     };
 
-    column![header, body].spacing(spacing::MD).width(Length::Fill).into()
+    column![header, body]
+        .spacing(spacing::MD)
+        .width(Length::Fill)
+        .into()
 }
 
 fn truncate(s: &str, max: usize) -> String {

@@ -83,9 +83,19 @@ const SURFACE_DARK: Color = Color::from_rgb8(0x26, 0x24, 0x23);
 const ACCENT: Color = Color::from_rgb8(0xEC, 0x30, 0x13);
 
 /// The divider: ink at 40% on the light ground.
-const DIVIDER_LIGHT: Color = Color::from_rgba(0x20 as f32 / 255.0, 0x1E as f32 / 255.0, 0x1D as f32 / 255.0, 0.40);
+const DIVIDER_LIGHT: Color = Color::from_rgba(
+    0x20 as f32 / 255.0,
+    0x1E as f32 / 255.0,
+    0x1D as f32 / 255.0,
+    0.40,
+);
 /// The divider: paper at 40% on the dark ground.
-const DIVIDER_DARK: Color = Color::from_rgba(0xF3 as f32 / 255.0, 0xF2 as f32 / 255.0, 0xF2 as f32 / 255.0, 0.40);
+const DIVIDER_DARK: Color = Color::from_rgba(
+    0xF3 as f32 / 255.0,
+    0xF2 as f32 / 255.0,
+    0xF2 as f32 / 255.0,
+    0.40,
+);
 
 const NEUTRAL_LIGHT: [Color; 9] = [
     Color::from_rgb8(0xF8, 0xF4, 0xF4),
