@@ -90,14 +90,16 @@ fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     section(scheme, "HuggingFace account", body.into())
 }
 
-/// A one-line note reporting available RAM, so the per-model "fits your
-/// machine" badges below have context.
+/// A one-line note reporting total RAM and the usable GPU/unified-memory
+/// budget models are actually judged against (see `whspr_hf::hardware`), so
+/// the per-model "fits your machine" badges below have context.
 fn ram_note<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     body_text(
         format!(
-            "Your machine reports {} of RAM available. Badges estimate how comfortably each model \
-             fits.",
-            whspr_hf::human_size(state.hf_specs.available_ram)
+            "Your machine: {} RAM, ~{} usable for models. Badges estimate how comfortably each \
+             model fits that budget.",
+            whspr_hf::human_size(state.hf_specs.total_ram),
+            whspr_hf::human_size(state.hf_specs.usable_ram)
         ),
         scheme,
     )
