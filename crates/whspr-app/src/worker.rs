@@ -193,6 +193,9 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
 
     let pipeline = Pipeline::new(asr_backend, refiner)
         .with_language(language)
+        // J-10: translate the transcription to English, if the user turned
+        // that on in Settings.
+        .with_translate(config.capture.translate)
         .with_state_callback(Box::new(move |state| {
             let _ = state_tx.send(state);
         }));
