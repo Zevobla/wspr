@@ -1,0 +1,15 @@
+[package]
+name = "whspr-hf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+whspr-core.workspace = true
+# Only the `system` feature (total/available RAM for the fit badge);
+# disk/network/component/user are dropped to keep the build light.
+sysinfo.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
