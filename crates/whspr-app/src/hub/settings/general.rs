@@ -1,33 +1,18 @@
-//! The "General" section: ASR/refiner backend pickers, the language
-//! override, and the launch-at-login/sound-feedback toggles -- the handful
-//! of settings that were editable before the Settings screen was split
-//! into per-topic groups (see `super`'s module doc comment).
+//! The "General" section: the language override and the launch-at-login /
+//! sound-feedback toggles. The ASR and refiner backend pickers live in the
+//! Models tab now -- one unified selector each, listing local files and cloud
+//! backends together (see `crate::hub::models`) -- so they're intentionally
+//! not duplicated here.
 
 use iced::widget::{checkbox, column, pick_list};
 use iced::Element;
 
-use crate::config_ui::{self, ASR_LABELS, REFINE_LABELS};
+use crate::config_ui;
 use crate::hub::common::{field, section};
 use crate::state::{Message, State};
 use crate::theme::{color, spacing, styles};
 
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let asr_picker = pick_list(
-        ASR_LABELS,
-        Some(config_ui::asr_label(state.config.asr)),
-        Message::AsrSelected,
-    )
-    .style(move |_theme, status| styles::pick_list::field(scheme, status))
-    .menu_style(move |_theme| styles::pick_list::menu(scheme));
-
-    let refine_picker = pick_list(
-        REFINE_LABELS,
-        Some(config_ui::refine_label(state.config.refine)),
-        Message::RefineSelected,
-    )
-    .style(move |_theme, status| styles::pick_list::field(scheme, status))
-    .menu_style(move |_theme| styles::pick_list::menu(scheme));
-
     let language_picker = pick_list(
         config_ui::LANGUAGE_LABELS,
         Some(config_ui::language_label(&state.config.language)),
@@ -52,8 +37,6 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         scheme,
         "General",
         column![
-            field(scheme, "ASR backend", asr_picker.into()),
-            field(scheme, "Refiner", refine_picker.into()),
             field(
                 scheme,
                 "Language ('auto' = no override)",

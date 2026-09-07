@@ -259,10 +259,6 @@ pub enum Message {
     /// The Flow Bar overlay finished opening; `window::open` resolves with
     /// its id.
     FlowBarOpened(window::Id),
-    /// The user picked a new ASR backend label in the Hub.
-    AsrSelected(&'static str),
-    /// The user picked a new refiner backend label in the Hub.
-    RefineSelected(&'static str),
     /// The user picked a language override label in the Hub's `pick_list`
     /// ("auto" means no override, i.e. `config.language = None`). Persisted
     /// immediately -- see `crate::app::persist_config`.

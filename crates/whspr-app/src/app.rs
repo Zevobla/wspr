@@ -94,16 +94,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.flow_bar_window = Some(id);
             Task::none()
         }
-        Message::AsrSelected(label) => {
-            state.config.asr = config_ui::asr_from_label(label);
-            persist_config(state);
-            Task::none()
-        }
-        Message::RefineSelected(label) => {
-            state.config.refine = config_ui::refine_from_label(label);
-            persist_config(state);
-            Task::none()
-        }
         Message::LanguageChanged(label) => {
             state.config.language = config_ui::language_from_label(&label);
             persist_config(state);
