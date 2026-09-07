@@ -171,48 +171,132 @@ mod platform {
         icon_for_visual(super::visual_for(state))
     }
 
-    /// Renders the icon for a `TrayVisual` bucket, reusing the Flow Bar's
-    /// semantic colors (`crate::theme::color`) so the tray icon and the
-    /// overlay agree on what each color means.
+    /// Renders the icon for a `TrayVisual` bucket -- a distinct shape
+    /// *and* color per bucket (see `TrayVisual`'s doc comment), reusing
+    /// the Flow Bar's semantic colors (`crate::theme::color`) so the tray
+    /// icon and the overlay agree on what each color means.
     fn icon_for_visual(visual: TrayVisual) -> Icon {
         let scheme = &crate::theme::color::LIGHT;
-        let color = match visual {
-            TrayVisual::Idle => scheme.on_surface_variant,
-            TrayVisual::Recording => scheme.error,
-            TrayVisual::Processing => scheme.tertiary,
-            TrayVisual::Done => scheme.success_container,
-        };
-
-        render_circle(color)
+        match visual {
+            TrayVisual::Idle => render_ring(scheme.on_surface_variant),
+            TrayVisual::Recording => render_dot(scheme.error),
+            TrayVisual::Processing => render_diamond(scheme.tertiary),
+            TrayVisual::Done => render_check(scheme.success_container, scheme.on_success_container),
+        }
     }
 
-    /// Renders a filled circle on a transparent square as raw RGBA --
-    /// there's no bundled icon asset (see `Cargo.toml`'s dependency
-    /// notes), so the tray icon is drawn in code instead.
-    fn render_circle(color: iced::Color) -> Icon {
-        const SIZE: u32 = 22;
-        let radius = SIZE as f32 / 2.0;
-        let (r, g, b) = (
-            (color.r * 255.0) as u8,
-            (color.g * 255.0) as u8,
-            (color.b * 255.0) as u8,
-        );
+    /// Side length of the square icon canvas, in pixels.
+    const SIZE: u32 = 22;
+    /// Outer radius every shape below is inscribed within, inset 1px from
+    /// the canvas edge so nothing gets clipped.
+    const RADIUS: f32 = SIZE as f32 / 2.0 - 1.0;
 
+    /// Rasterizes a `SIZE`x`SIZE` tray icon by evaluating `paint` at the
+    /// center of every pixel, in coordinates relative to the icon's
+    /// center (so the shape math in each `render_*` helper below reads
+    /// naturally) -- shared so the RGBA pixel-buffer bookkeeping lives in
+    /// one place instead of once per shape.
+    fn render_icon(paint: impl Fn(f32, f32) -> Option<iced::Color>) -> Icon {
+        let center = SIZE as f32 / 2.0;
         let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
         for y in 0..SIZE {
             for x in 0..SIZE {
-                let dx = x as f32 + 0.5 - radius;
-                let dy = y as f32 + 0.5 - radius;
-                let inside = (dx * dx + dy * dy).sqrt() <= radius - 1.0;
-                if inside {
-                    rgba.extend_from_slice(&[r, g, b, 255]);
-                } else {
-                    rgba.extend_from_slice(&[0, 0, 0, 0]);
+                let dx = x as f32 + 0.5 - center;
+                let dy = y as f32 + 0.5 - center;
+                match paint(dx, dy) {
+                    Some(color) => rgba.extend_from_slice(&to_rgba8(color)),
+                    None => rgba.extend_from_slice(&[0, 0, 0, 0]),
                 }
             }
         }
+        Icon::from_rgba(rgba, SIZE, SIZE).expect("a fixed-size icon is always valid")
+    }
 
-        Icon::from_rgba(rgba, SIZE, SIZE).expect("a fixed-size circle is always a valid icon")
+    fn to_rgba8(color: iced::Color) -> [u8; 4] {
+        [
+            (color.r * 255.0) as u8,
+            (color.g * 255.0) as u8,
+            (color.b * 255.0) as u8,
+            255,
+        ]
+    }
+
+    /// Recording: a solid filled dot.
+    fn render_dot(color: iced::Color) -> Icon {
+        render_icon(move |dx, dy| in_disc(dx, dy, RADIUS).then_some(color))
+    }
+
+    /// Idle: a hollow ring -- visually the opposite of Recording's filled
+    /// dot (empty vs. full) rather than just a dimmer color.
+    fn render_ring(color: iced::Color) -> Icon {
+        const THICKNESS: f32 = 4.0;
+        render_icon(move |dx, dy| in_ring(dx, dy, RADIUS, RADIUS - THICKNESS).then_some(color))
+    }
+
+    /// Processing (Transcribing|Refining): a filled diamond -- a
+    /// corner-having silhouette a dot/ring never produces, so it reads as
+    /// a different shape even at tray-icon size, not just a different
+    /// color.
+    fn render_diamond(color: iced::Color) -> Icon {
+        render_icon(move |dx, dy| in_diamond(dx, dy, RADIUS).then_some(color))
+    }
+
+    /// Done: a filled circle (`fill`) with a checkmark stroke (`mark`)
+    /// drawn over it.
+    fn render_check(fill: iced::Color, mark: iced::Color) -> Icon {
+        const HALF_WIDTH: f32 = 1.6;
+        // Checkmark path, in the same center-relative coordinates as
+        // `paint` below: a short leg down-right, then a longer leg
+        // up-right, sized to sit inside the circle with margin.
+        let p0 = (-5.0, 0.5);
+        let p1 = (-1.5, 4.5);
+        let p2 = (5.5, -4.5);
+        render_icon(move |dx, dy| {
+            if !in_disc(dx, dy, RADIUS) {
+                return None;
+            }
+            let on_stroke = dist_to_segment((dx, dy), p0, p1) <= HALF_WIDTH
+                || dist_to_segment((dx, dy), p1, p2) <= HALF_WIDTH;
+            Some(if on_stroke { mark } else { fill })
+        })
+    }
+
+    /// Whether `(dx, dy)` (relative to the icon's center) falls inside a
+    /// disc of `radius`.
+    fn in_disc(dx: f32, dy: f32, radius: f32) -> bool {
+        (dx * dx + dy * dy).sqrt() <= radius
+    }
+
+    /// Whether `(dx, dy)` falls in the annulus between `inner` and
+    /// `outer` -- `in_disc` with a hole cut out of the middle.
+    fn in_ring(dx: f32, dy: f32, outer: f32, inner: f32) -> bool {
+        let dist = (dx * dx + dy * dy).sqrt();
+        dist <= outer && dist >= inner
+    }
+
+    /// Whether `(dx, dy)` falls inside a diamond (a square rotated 45
+    /// degrees) of `radius` -- taxicab distance instead of Euclidean, so
+    /// its silhouette has corners a disc never has.
+    fn in_diamond(dx: f32, dy: f32, radius: f32) -> bool {
+        dx.abs() + dy.abs() <= radius
+    }
+
+    /// Euclidean distance from point `p` to the segment `a`-`b`, clamping
+    /// the projection onto the segment (rather than the infinite line) so
+    /// a point past either endpoint measures to that endpoint. Used by
+    /// `render_check` to rasterize the checkmark's two strokes without a
+    /// vector-graphics dependency.
+    fn dist_to_segment(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+        let ab = (b.0 - a.0, b.1 - a.1);
+        let len_sq = ab.0 * ab.0 + ab.1 * ab.1;
+        let t = if len_sq > 0.0 {
+            (((p.0 - a.0) * ab.0 + (p.1 - a.1) * ab.1) / len_sq).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let closest = (a.0 + t * ab.0, a.1 + t * ab.1);
+        let d = (p.0 - closest.0, p.1 - closest.1);
+        (d.0 * d.0 + d.1 * d.1).sqrt()
     }
 }
 
