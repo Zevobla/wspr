@@ -24,6 +24,9 @@ mod general;
 mod injection;
 mod normalize;
 mod privacy;
+mod update;
+
+pub(crate) use update::update;
 
 /// Renders the Settings screen: one `common::section` card per group,
 /// stacked in the order they appear in the tab.

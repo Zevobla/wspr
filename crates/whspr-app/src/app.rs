@@ -389,127 +389,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-        Message::NoiseSuppressionToggled(enabled) => {
-            state.config.capture.noise_suppression = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::InputGainChanged(value) => {
-            state.config.capture.input_gain = value.clamp(0.0, 3.0);
-            persist_config(state);
-            Task::none()
-        }
-        Message::VadThresholdChanged(value) => {
-            state.config.capture.vad_threshold = value.clamp(0.0, 1.0);
-            persist_config(state);
-            Task::none()
-        }
-        Message::TranslateToggled(enabled) => {
-            state.config.capture.translate = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::ShortenToggled(enabled) => {
-            state.config.capture.shorten = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::AutoSendToggled(enabled) => {
-            state.config.capture.auto_send = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::InputFieldDetectionToggled(enabled) => {
-            state.config.capture.input_field_detection = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::RefineTimeoutMsChanged(text) => {
-            state.refine_timeout_draft = text.clone();
-            if let Ok(value) = text.trim().parse::<u64>() {
-                state.config.capture.refine_timeout_ms = value.clamp(0, 600_000);
-                persist_config(state);
-            }
-            Task::none()
-        }
-        Message::PrePasteDelayMsChanged(text) => {
-            state.pre_paste_delay_draft = text.clone();
-            if let Ok(value) = text.trim().parse::<u64>() {
-                state.config.injection.pre_paste_delay_ms = value.clamp(0, 10_000);
-                persist_config(state);
-            }
-            Task::none()
-        }
-        Message::MicPrivacyToggled(enabled) => {
-            state.config.privacy.mic_privacy = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::HistoryEncryptionToggled(enabled) => {
-            state.config.privacy.history_encryption = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::DeviceHotplugToggled(enabled) => {
-            state.config.device.device_hotplug = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::ActiveWindowToggled(enabled) => {
-            state.config.device.active_window = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::BluetoothSourceToggled(enabled) => {
-            state.config.device.bluetooth_source = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::VirtualSourceToggled(enabled) => {
-            state.config.device.virtual_source = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::TrayStaticToggled(enabled) => {
-            state.config.device.tray_static = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::NormalizeNumbersToggled(enabled) => {
-            state.config.normalize.numbers = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::NormalizeDatesToggled(enabled) => {
-            state.config.normalize.dates = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::NormalizeTimesToggled(enabled) => {
-            state.config.normalize.times = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::NumberFormatSelected(label) => {
-            state.config.normalize.numbers_format = config_ui::number_format_from_label(label);
-            persist_config(state);
-            Task::none()
-        }
-        Message::ParagraphBreakToggled(enabled) => {
-            state.config.normalize.paragraph_break = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::PunctuationToggleToggled(enabled) => {
-            state.config.normalize.punctuation_toggle = enabled;
-            persist_config(state);
-            Task::none()
-        }
-        Message::ApiKeyChanged(id, value) => {
-            state.config.api_keys.insert(id.to_string(), value);
-            persist_config(state);
-            Task::none()
-        }
+        // Every Settings-tab control just mutates one `state.config` field
+        // and persists; those arms live in `crate::hub::settings::update`
+        // so this file stays under the 600-line cap (AA-06). Forward any
+        // message not handled above to it.
+        other => crate::hub::settings::update(state, other),
     }
 }
 
@@ -526,7 +410,7 @@ fn tray_done_active(tray_done_until: Option<std::time::Instant>, now: std::time:
 /// worker uses) rather than silently dropping it -- a `pick_list` selection
 /// that doesn't actually persist should be visible to the user, not just a
 /// log line nobody's watching.
-fn persist_config(state: &mut State) {
+pub(crate) fn persist_config(state: &mut State) {
     let Some(dirs) = directories::ProjectDirs::from("", "", "whspr") else {
         state.last_error = Some("could not determine the app config directory".to_string());
         return;
