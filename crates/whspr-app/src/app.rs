@@ -387,6 +387,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::PrePasteDelayMsChanged(text) => {
+            state.pre_paste_delay_draft = text.clone();
+            if let Ok(value) = text.trim().parse::<u64>() {
+                state.config.injection.pre_paste_delay_ms = value.clamp(0, 10_000);
+                persist_config(state);
+            }
+            Task::none()
+        }
     }
 }
 

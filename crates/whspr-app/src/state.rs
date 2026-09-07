@@ -111,6 +111,9 @@ pub struct State {
     /// successful parse writes through to `config` (see
     /// `crate::app::update`'s `RefineTimeoutMsChanged` arm).
     pub refine_timeout_draft: String,
+    /// Live contents of the Injection section's "Pre-paste delay (ms)"
+    /// `text_input`. Same reasoning as `refine_timeout_draft`.
+    pub pre_paste_delay_draft: String,
 }
 
 impl State {
@@ -119,6 +122,7 @@ impl State {
     /// enumerating devices is its own concern from loading config.
     pub fn new(config: Config) -> Self {
         let refine_timeout_draft = config.capture.refine_timeout_ms.to_string();
+        let pre_paste_delay_draft = config.injection.pre_paste_delay_ms.to_string();
         Self {
             hub_window: None,
             flow_bar_window: None,
@@ -142,6 +146,7 @@ impl State {
             pipeline_state_since: std::time::Instant::now(),
             tray: None,
             refine_timeout_draft,
+            pre_paste_delay_draft,
         }
     }
 }
@@ -178,6 +183,15 @@ mod tests {
         let state = State::new(config);
 
         assert_eq!(state.refine_timeout_draft, "12345");
+    }
+
+    #[test]
+    fn state_new_seeds_pre_paste_delay_draft_from_config() {
+        let mut config = whspr_config::Config::default();
+        config.injection.pre_paste_delay_ms = 250;
+        let state = State::new(config);
+
+        assert_eq!(state.pre_paste_delay_draft, "250");
     }
 
     #[test]
@@ -303,4 +317,8 @@ pub enum Message {
     /// writes through to `config.capture.refine_timeout_ms` (clamped) and
     /// persists when the text parses as a `u64` -- see `crate::app::update`.
     RefineTimeoutMsChanged(String),
+    /// The user edited the Injection section's "Pre-paste delay (ms)"
+    /// `text_input`. Same draft-then-parse handling as
+    /// `RefineTimeoutMsChanged`.
+    PrePasteDelayMsChanged(String),
 }

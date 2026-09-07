@@ -1,9 +1,9 @@
 //! The Settings screen: the `Config` struct's editable fields, grouped into
 //! one `common::section` "card" (or small cluster of cards) per sub-module
-//! -- `general` (backend pickers, launch-at-login, sound), `capture`, and
-//! `devices` (microphone/hotkey preview) today, with further groups added
-//! alongside this doc comment as more of `Config` gets exposed here instead
-//! of requiring a hand-edited `config.toml`.
+//! -- `general` (backend pickers, launch-at-login, sound), `capture`,
+//! `injection`, and `devices` (microphone/hotkey preview) today, with
+//! further groups added alongside this doc comment as more of `Config`
+//! gets exposed here instead of requiring a hand-edited `config.toml`.
 //!
 //! Split out of a single flat `settings.rs` once the file grew past this
 //! project's 600-line-per-file guideline (AA-06); each group's controls,
@@ -19,6 +19,7 @@ use crate::theme::{color, spacing};
 mod capture;
 mod devices;
 mod general;
+mod injection;
 
 /// Renders the Settings screen: one `common::section` card per group,
 /// stacked in the order they appear in the tab.
@@ -26,6 +27,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     column![
         general::view(state, scheme),
         capture::view(state, scheme),
+        injection::view(state, scheme),
         devices::view(state, scheme),
     ]
     .spacing(spacing::XL)
