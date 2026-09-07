@@ -26,6 +26,37 @@ impl Default for LanguageSettings {
     }
 }
 
+/// Resolves the `Option<String>` language hint that should actually reach
+/// `Pipeline::with_language`/`AsrOptions.language`, from `language_settings`
+/// plus the top-level manual override `language` (what the Hub's language
+/// `pick_list` edits).
+///
+/// - `language_settings.language_switch == true` (the default): `None` --
+///   whisper auto-detects per utterance, which is what makes bilingual
+///   RU+EN dictation work out of the box without the user picking anything.
+/// - `language_switch == false`: `language_settings.fixed_language` if set,
+///   otherwise the manual override `language` -- so turning auto-switch off
+///   without also setting a fixed language just falls back to whatever the
+///   pick_list already had selected, rather than silently going back to
+///   auto-detect.
+///
+/// Pure and side-effect-free so every caller that builds a `Pipeline`
+/// (live dictation in `whspr-app`'s worker, the file-transcribe path, and
+/// eventually the CLI) resolves the same value the same way.
+pub fn effective_language(
+    language_settings: &LanguageSettings,
+    language: &Option<String>,
+) -> Option<String> {
+    if language_settings.language_switch {
+        None
+    } else {
+        language_settings
+            .fixed_language
+            .clone()
+            .or_else(|| language.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
