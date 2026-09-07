@@ -32,8 +32,12 @@ impl Default for LanguageSettings {
 /// `pick_list` edits).
 ///
 /// - `language_settings.language_switch == true` (the default): `None` --
-///   whisper auto-detects per utterance, which is what makes bilingual
-///   RU+EN dictation work out of the box without the user picking anything.
+///   whisper's own per-utterance auto-detect across every language it
+///   supports (~99 languages), not limited to any particular pair. Whisper
+///   has no "constrain detection to a subset" mode -- the language hint is
+///   either a single fixed language or full auto-detect -- so this is the
+///   only way to get multilingual dictation working out of the box without
+///   the user picking anything.
 /// - `language_switch == false`: `language_settings.fixed_language` if set,
 ///   otherwise the manual override `language` -- so turning auto-switch off
 ///   without also setting a fixed language just falls back to whatever the
@@ -70,8 +74,8 @@ mod tests {
             fixed_language: Some("es".to_string()),
         };
 
-        // Auto-switch wins even if a fixed language is also set -- bilingual
-        // auto-detect is the default and takes priority.
+        // Auto-switch wins even if a fixed language is also set -- full
+        // multilingual auto-detect is the default and takes priority.
         assert_eq!(effective_language(&settings, &Some("fr".to_string())), None);
     }
 

@@ -182,8 +182,9 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     // focused app. Synthetic text injection needs macOS Accessibility
     // permission the dev binary isn't granted, and calling it without that
     // hard-traps the process, so the on-screen path is the reliable default.
-    // Resolves to `None` (whisper auto-detect, bilingual RU+EN by default)
-    // unless the user turned auto-switch off in Settings -- see
+    // Resolves to `None` (whisper's full multilingual auto-detect across
+    // every language it supports, not limited to any particular pair) by
+    // default, unless the user turned auto-switch off in Settings -- see
     // `whspr_config::effective_language` for the full resolution order.
     // Without this, live dictation silently ignored the configured language
     // entirely (the file-transcribe path already applied it via
