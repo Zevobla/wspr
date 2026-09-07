@@ -10,7 +10,7 @@
 //! `history`, `models`, `speakers`, `settings`) renders its own body from
 //! the shared widgets in `crate::theme::widgets`.
 
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
 use iced::{Alignment, Background, Border, Element, Length};
 
 mod common;
@@ -33,6 +33,49 @@ const SCREENS: [Screen; 5] = [
     Screen::Settings,
 ];
 
+/// The brand block's padding. On macOS the window has no system title bar
+/// (`window_settings`), so the traffic lights float top-left over the rail;
+/// the wider left inset keeps the "whspr" wordmark clear of them. Other
+/// platforms keep the normal inset.
+#[cfg(target_os = "macos")]
+const BRAND_PAD: iced::Padding = iced::Padding {
+    top: 16.0,
+    right: 20.0,
+    bottom: 0.0,
+    left: 82.0,
+};
+#[cfg(not(target_os = "macos"))]
+const BRAND_PAD: iced::Padding = iced::Padding {
+    top: 38.0,
+    right: 20.0,
+    bottom: 0.0,
+    left: 20.0,
+};
+
+/// The Hub window's settings. On macOS the system title bar is hidden and
+/// made transparent with a full-size content view, so the app's own paper
+/// ground and rounded corners reach the top edge and the traffic lights
+/// float directly over the custom header (the Claude-desktop pattern).
+/// `decorations` stays `true` -- that keeps the traffic lights and rounded
+/// corners; only the title bar chrome is removed. The whole custom header
+/// is the drag handle (see `Message::DragHubWindow`).
+#[cfg(target_os = "macos")]
+pub fn window_settings() -> iced::window::Settings {
+    iced::window::Settings {
+        platform_specific: iced::window::settings::PlatformSpecific {
+            title_hidden: true,
+            titlebar_transparent: true,
+            fullsize_content_view: true,
+        },
+        ..iced::window::Settings::default()
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn window_settings() -> iced::window::Settings {
+    iced::window::Settings::default()
+}
+
 /// Renders the Hub window's content for the current state.
 pub fn view(state: &State) -> Element<'_, Message> {
     let scheme = crate::theme::scheme(&state.theme);
@@ -54,17 +97,19 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .height(Length::Fill)
     .style(move |_theme, status| styles::scrollable::rail(scheme, status));
 
-    let main = column![
-        screen_header(
-            screen_title(state.screen),
-            header_trailing(state, scheme),
-            scheme
-        ),
-        error_banner(state, scheme),
-        body,
-    ]
-    .width(Length::Fill)
-    .height(Length::Fill);
+    // The whole header band is the window's drag handle (there is no system
+    // title bar on macOS). Interactive children (the theme toggle) capture
+    // their own presses first, so dragging only starts on the empty header.
+    let header = mouse_area(screen_header(
+        screen_title(state.screen),
+        header_trailing(state, scheme),
+        scheme,
+    ))
+    .on_press(Message::DragHubWindow);
+
+    let main = column![header, error_banner(state, scheme), body,]
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     container(
         row![
@@ -107,9 +152,13 @@ fn nav_rail<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a,
     )
     .spacing(spacing::XS);
 
+    // The brand block is part of the draggable header (it sits under the
+    // floating traffic lights on macOS).
+    let brand = mouse_area(brand(scheme)).on_press(Message::DragHubWindow);
+
     container(
         column![
-            brand(scheme),
+            brand,
             widgets::hr(scheme),
             container(items).padding([spacing::MD, 0.0]),
             Space::new().height(Length::Fill),
@@ -139,12 +188,7 @@ fn brand<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
         .align_y(Alignment::Center),
     )
     .height(Length::Fixed(spacing::layout::RAIL_HEADER_H))
-    .padding(iced::Padding {
-        top: 38.0,
-        right: 20.0,
-        bottom: 0.0,
-        left: 20.0,
-    })
+    .padding(BRAND_PAD)
     .into()
 }
 
