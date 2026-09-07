@@ -28,8 +28,11 @@ pub async fn run_transcribe_audio(audio: AudioBuffer, config: Config) -> Result<
     let refiner = build_refiner(&config)?;
 
     let pipeline = Pipeline::new(asr, refiner).with_language(config.language.clone());
-    pipeline
-        .run(audio, &RefineContext::default())
-        .await
-        .map_err(|e| e.to_string())
+    let ctx = RefineContext {
+        instructions: Some(whspr_refine::effective_instructions(
+            config.refine_settings.instructions.as_deref(),
+        )),
+        ..Default::default()
+    };
+    pipeline.run(audio, &ctx).await.map_err(|e| e.to_string())
 }

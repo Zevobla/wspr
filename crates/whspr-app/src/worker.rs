@@ -106,7 +106,9 @@ pub(crate) fn build_asr_backend(
 /// Builds a text refiner from `config.refine`, always wrapped in
 /// `NormalizingRefiner` so rule-based number/date/time normalization runs
 /// regardless of which backend produced the raw text. Mirrors whspr-cli's
-/// `build_refiner` (`crates/whspr-cli/src/main.rs`).
+/// `build_refiner` (`crates/whspr-cli/src/main.rs`). Model IDs/paths come
+/// from `config.refine_settings` rather than being hardcoded, so switching
+/// models never requires a rebuild.
 pub(crate) fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn TextRefiner>, String> {
     let inner: Box<dyn TextRefiner> = match config.refine {
         RefineChoice::Noop => Box::new(NoopRefiner),
@@ -114,15 +116,28 @@ pub(crate) fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn Tex
             let api_key = api_key_for(config, "openai").ok_or_else(|| {
                 "OpenAI API key not configured (set [api_keys].openai in config)".to_string()
             })?;
-            Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini"))
+            Box::new(OpenAiRefiner::new(
+                api_key,
+                config.refine_settings.openai_model.clone(),
+            ))
         }
         RefineChoice::Anthropic => {
             let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
                 "Anthropic API key not configured (set [api_keys].anthropic in config)".to_string()
             })?;
-            Box::new(AnthropicRefiner::new(api_key, "claude-3-5-sonnet-20241022"))
+            Box::new(AnthropicRefiner::new(
+                api_key,
+                config.refine_settings.anthropic_model.clone(),
+            ))
         }
-        RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
+        RefineChoice::LlamaLocal => {
+            let model_path = config.refine_settings.llama_model_path.clone().ok_or_else(|| {
+                "no llama-local model configured: set [refine_settings].llama_model_path in the \
+                 config file, or pick a different refine backend in Settings"
+                    .to_string()
+            })?;
+            Box::new(LlamaLocal::new(model_path))
+        }
     };
 
     Ok(Box::new(NormalizingRefiner::new(
@@ -249,7 +264,13 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 match handle.stop() {
                     Ok(audio) => {
                         let duration_secs = audio.duration_secs();
-                        match pipeline.run(audio, &RefineContext::default()).await {
+                        let ctx = RefineContext {
+                            instructions: Some(whspr_refine::effective_instructions(
+                                config.refine_settings.instructions.as_deref(),
+                            )),
+                            ..Default::default()
+                        };
+                        match pipeline.run(audio, &ctx).await {
                             Ok(text) => {
                                 let _ = output
                                     .send(WorkerEvent::Completed {
@@ -347,6 +368,37 @@ mod tests {
             Ok(_) => panic!("no [api_keys].anthropic entry should fail, not build a refiner"),
             Err(error) => assert!(error.contains("Anthropic API key")),
         }
+    }
+
+    #[test]
+    fn build_refiner_llama_local_requires_a_configured_model_path() {
+        let config = Config {
+            refine: RefineChoice::LlamaLocal,
+            ..Default::default()
+        };
+
+        // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
+        // available -- match directly instead.
+        match build_refiner(&config) {
+            Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
+            Err(error) => assert!(error.contains("llama_model_path")),
+        }
+    }
+
+    #[test]
+    fn build_refiner_llama_local_uses_configured_model_path() {
+        let config = Config {
+            refine: RefineChoice::LlamaLocal,
+            refine_settings: whspr_config::RefineSettings {
+                llama_model_path: Some(PathBuf::from("/explicit/model.gguf")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let refiner =
+            build_refiner(&config).expect("an explicit llama_model_path should be enough to build");
+        assert_eq!(refiner.id(), "llama-local");
     }
 
     #[test]
