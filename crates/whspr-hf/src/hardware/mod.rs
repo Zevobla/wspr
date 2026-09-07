@@ -413,4 +413,105 @@ mod tests {
         };
         assert_eq!(specs.fit(GB, ModelKind::Asr), Fit::Red);
     }
+
+    // -- Exact, GGUF-metadata-based LLM footprint (`kv_cache_bytes` /
+    // `estimated_llm_footprint` / `fits_llm`) --------------------------
+
+    /// Qwen2.5-3B-Instruct's real GQA shape (36 layers, hidden 2048, 16
+    /// heads, 2 KV heads, 32768 trained context).
+    const QWEN25_3B: LlmShape = LlmShape {
+        n_layers: 36,
+        n_embd: 2048,
+        n_head: 16,
+        n_head_kv: 2,
+        context_length: 32768,
+    };
+
+    /// Llama-3.2-3B-Instruct's real GQA shape (28 layers, hidden 3072, 24
+    /// heads, 8 KV heads, 131072 trained context).
+    const LLAMA_3_2_3B: LlmShape = LlmShape {
+        n_layers: 28,
+        n_embd: 3072,
+        n_head: 24,
+        n_head_kv: 8,
+        context_length: 131_072,
+    };
+
+    /// Phi-3.5-mini-instruct's real shape: ordinary (non-GQA) multi-head
+    /// attention, so `n_head_kv == n_head` (32 layers, hidden 3072, 32
+    /// heads, 131072 trained context).
+    const PHI_3_5_MINI: LlmShape = LlmShape {
+        n_layers: 32,
+        n_embd: 3072,
+        n_head: 32,
+        n_head_kv: 32,
+        context_length: 131_072,
+    };
+
+    #[test]
+    fn kv_cache_bytes_matches_hand_computed_value_for_qwen25_3b() {
+        // head_dim = 2048/16 = 128; n_embd_kv = 128*2 = 256 (GQA).
+        // kv = 2 * 36 layers * 4096 ctx * 256 * 2 bytes = 150,994,944 (144 MiB).
+        assert_eq!(kv_cache_bytes(QWEN25_3B), 144 * MB);
+    }
+
+    #[test]
+    fn kv_cache_bytes_matches_hand_computed_value_for_llama_3_2_3b() {
+        // head_dim = 3072/24 = 128; n_embd_kv = 128*8 = 1024 (GQA).
+        // kv = 2 * 28 layers * 4096 ctx * 1024 * 2 bytes = 469,762,048 (448 MiB).
+        assert_eq!(kv_cache_bytes(LLAMA_3_2_3B), 448 * MB);
+    }
+
+    #[test]
+    fn kv_cache_bytes_caps_context_at_the_default_working_context() {
+        // Both Llama-3.2-3B and Phi-3.5-mini train at 131072 tokens; the
+        // formula must clamp to DEFAULT_WORKING_CONTEXT (4096), not use the
+        // full trained context, or this would be ~32x larger.
+        let uncapped = 2 * LLAMA_3_2_3B.n_layers * 131_072 * 1024 * KV_BYTES_PER_ELEM;
+        assert!(kv_cache_bytes(LLAMA_3_2_3B) < uncapped);
+        assert_eq!(kv_cache_bytes(LLAMA_3_2_3B), 448 * MB);
+    }
+
+    #[test]
+    fn kv_cache_bytes_is_larger_for_ordinary_attention_than_gqa() {
+        // Phi-3.5-mini (no GQA, n_head_kv == n_head == 32) has a much
+        // heavier KV cache than a same-layer-count GQA model would, because
+        // n_embd_kv isn't shrunk by a small KV head count.
+        // kv = 2 * 32 layers * 4096 ctx * 3072 n_embd_kv * 2 bytes = 1,610,612,736 (1536 MiB).
+        assert_eq!(kv_cache_bytes(PHI_3_5_MINI), 1536 * MB);
+        assert!(kv_cache_bytes(PHI_3_5_MINI) > kv_cache_bytes(LLAMA_3_2_3B));
+    }
+
+    #[test]
+    fn kv_cache_bytes_handles_a_zero_head_count_without_panicking() {
+        let degenerate = LlmShape {
+            n_layers: 1,
+            n_embd: 1,
+            n_head: 0,
+            n_head_kv: 0,
+            context_length: 4096,
+        };
+        assert_eq!(kv_cache_bytes(degenerate), 0);
+    }
+
+    #[test]
+    fn estimated_llm_footprint_adds_weights_kv_and_exact_overhead() {
+        // Qwen2.5-3B: 2100 MiB weights + 144 MiB KV + 512 MiB (0.5 GiB)
+        // overhead = 2756 MiB.
+        assert_eq!(estimated_llm_footprint(2100 * MB, QWEN25_3B), 2756 * MB);
+    }
+
+    #[test]
+    fn fits_llm_reads_the_same_thresholds_as_fits() {
+        // Qwen2.5-3B's ~2756 MiB exact footprint on an 8 GiB usable budget:
+        // comfortably under 60% (4.8 GiB) -> Green.
+        assert_eq!(fits_llm(2100 * MB, QWEN25_3B, 8 * GB), Fit::Green);
+
+        // On a 4 GiB usable budget, 2756 MiB is over 60% (2.4 GiB) but
+        // under 90% (3.6 GiB) -> Yellow.
+        assert_eq!(fits_llm(2100 * MB, QWEN25_3B, 4 * GB), Fit::Yellow);
+
+        // A 1 GiB budget can't fit it at all -> Red.
+        assert_eq!(fits_llm(2100 * MB, QWEN25_3B, GB), Fit::Red);
+    }
 }
