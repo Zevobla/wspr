@@ -72,10 +72,7 @@ mod tests {
 
         // Auto-switch wins even if a fixed language is also set -- bilingual
         // auto-detect is the default and takes priority.
-        assert_eq!(
-            effective_language(&settings, &Some("fr".to_string())),
-            None
-        );
+        assert_eq!(effective_language(&settings, &Some("fr".to_string())), None);
     }
 
     #[test]
