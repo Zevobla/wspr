@@ -26,7 +26,7 @@ use hf_hub::api::tokio::{ApiBuilder, Progress};
 use tokio::sync::mpsc::UnboundedSender;
 use whspr_core::{Result, WhsprError};
 
-pub use scan::{installed, InstalledModel};
+pub use scan::{classify, installed, InstalledModel, ModelKind};
 pub use whisper::{download, model_by_filename, model_by_id, WhisperModel, MODELS, REPO};
 
 /// `n` mebibytes as a byte count, evaluated at compile time so the registries
