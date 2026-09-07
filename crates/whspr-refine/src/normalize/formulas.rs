@@ -144,7 +144,7 @@ fn root_operand(cores: &[&str], i: usize) -> Option<(u64, usize)> {
     if let Some(hit) = parse_number_at(cores, i) {
         return Some(hit);
     }
-    genitive_number(*cores.get(i)?).map(|v| (v, 1))
+    genitive_number(cores.get(i)?).map(|v| (v, 1))
 }
 
 /// Replaces every recognized formula shape in `text` with its symbolic
