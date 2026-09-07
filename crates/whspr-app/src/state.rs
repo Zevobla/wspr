@@ -103,6 +103,14 @@ pub struct State {
     /// `tray::Handle::create` needs iced's winit event loop to already be
     /// running on the calling thread.
     pub tray: Option<crate::tray::Handle>,
+    /// When set, the tray icon is showing a lingering "Done" display (see
+    /// `crate::tray::TrayVisual::Done`) that should revert once
+    /// `std::time::Instant::now()` passes this deadline. Set by
+    /// `Message::Worker`'s `Completed` arm, cleared by
+    /// `Message::TrayDoneTick` (see `crate::app::tray_done_subscription`)
+    /// -- `None` whenever no dictation has completed recently enough to
+    /// still be lingering.
+    pub tray_done_until: Option<std::time::Instant>,
     /// Live contents of the Capture section's "Refine timeout (ms)"
     /// `text_input`, decoupled from `config.capture.refine_timeout_ms`
     /// itself (a `u64`) so a keystroke that doesn't yet parse -- e.g. the
@@ -145,6 +153,7 @@ impl State {
             mic_level: 0.0,
             pipeline_state_since: std::time::Instant::now(),
             tray: None,
+            tray_done_until: None,
             refine_timeout_draft,
             pre_paste_delay_draft,
         }
@@ -174,6 +183,7 @@ mod tests {
         assert!(state.speaker_rename_drafts.is_empty());
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
+        assert!(state.tray_done_until.is_none());
     }
 
     #[test]
@@ -292,6 +302,12 @@ pub enum Message {
     /// menu clicks (`crate::tray::Handle::poll_action`) and acts on the
     /// last one. Only ever fires once `state.tray` exists.
     TrayPoll,
+    /// A tick of the tray's lingering-"Done" clock (see
+    /// `crate::app::tray_done_subscription`): once
+    /// `State::tray_done_until` has passed, reverts the tray icon back to
+    /// whatever `state.pipeline_state` actually is. Only ever fires while
+    /// a "Done" display is pending.
+    TrayDoneTick,
     /// The user toggled "Suppress background noise" in the Capture section.
     /// Persisted immediately -- see `crate::app::persist_config`.
     NoiseSuppressionToggled(bool),

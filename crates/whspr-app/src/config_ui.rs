@@ -19,11 +19,15 @@ pub const REFINE_LABELS: [&str; 4] = ["noop", "openai", "anthropic", "llama-loca
 pub const EMBEDDING_LABELS: [&str; 2] = ["cam-plus-plus", "eres2net"];
 
 /// Labels shown in the language-override `pick_list`, in display order.
-/// "auto" means no override (`Config.language == None`); every other entry
-/// is a BCP47 code passed straight through. A curated subset of whisper's
-/// supported languages, not an exhaustive list -- easy to extend later.
-pub const LANGUAGE_LABELS: [&str; 11] = [
-    "auto", "en", "ru", "es", "fr", "de", "it", "pt", "ja", "ko", "zh",
+/// "auto" means full multilingual auto-detect across every language whisper
+/// supports (`Config.language == None`, via `whspr_config::effective_language`
+/// -- not limited to any particular pair); every other entry is a BCP47 code
+/// passed straight through as a *fixed* language. A broader, curated subset
+/// of whisper's ~99 supported languages, not an exhaustive list -- easy to
+/// extend later.
+pub const LANGUAGE_LABELS: [&str; 29] = [
+    "auto", "en", "ru", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "nl", "pl", "tr", "uk",
+    "ar", "hi", "sv", "cs", "fi", "da", "no", "el", "he", "ro", "hu", "vi", "th", "id",
 ];
 
 /// The label a `pick_list` should show as selected for the given choice.

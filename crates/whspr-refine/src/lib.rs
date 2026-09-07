@@ -19,6 +19,30 @@ pub use normalize::NormalizingRefiner;
 use tokens::strip_special_tokens;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
+/// Default instructions handed to the LLM refiners when the user hasn't
+/// configured their own via config's `[refine_settings].instructions`
+/// (`whspr_config::RefineSettings`, read by callers in `whspr-app`/
+/// `whspr-cli` -- this crate deliberately doesn't depend on that type, to
+/// keep `RefineContext.instructions` a plain string all three backends
+/// already know how to render). Numbers/formulas guidance lives here (in
+/// addition to `build_cleanup_prompt`'s always-on bullet below) so it also
+/// shows up verbatim in the "Additional formatting instructions" section
+/// every backend renders from `RefineContext.instructions`.
+pub const DEFAULT_REFINE_INSTRUCTIONS: &str =
+    "Render spoken numbers as digits and simple formulas with standard symbols where unambiguous.";
+
+/// Combines the built-in default instructions with an optional user-supplied
+/// value from config. `configured`, when non-empty, is appended after the
+/// default rather than replacing it outright, so a user adding house-style
+/// guidance (e.g. "always sign off with my name") doesn't silently lose the
+/// numbers/formulas guidance too.
+pub fn effective_instructions(configured: Option<&str>) -> String {
+    match configured.map(str::trim) {
+        Some(extra) if !extra.is_empty() => format!("{DEFAULT_REFINE_INSTRUCTIONS} {extra}"),
+        _ => DEFAULT_REFINE_INSTRUCTIONS.to_string(),
+    }
+}
+
 /// Builds the shared "clean up speech-to-text" instructions used as the
 /// prompt body for every refiner backend (cloud or local), so the same
 /// cleanup rules apply regardless of which LLM ends up executing them.
@@ -29,6 +53,9 @@ pub(crate) fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
         - Remove filler words and disfluencies (um, uh, like, you know, etc.)\n\
         - Resolve spoken self-corrections by keeping only the corrected version (e.g., 'call John, I mean Jane' -> 'call Jane')\n\
         - Add proper punctuation and capitalization\n\
+        - Format numbers and simple formulas cleanly: render spoken numbers as digits and simple \
+        math expressions with standard symbols (+, -, *, /, =, %) where unambiguous, whether the \
+        speaker used English or Russian words for them\n\
         - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
         - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
     );
@@ -232,8 +259,9 @@ impl TextRefiner for AnthropicRefiner {
         let cleanup_prompt = build_cleanup_prompt(raw, ctx);
 
         let system_message = "You are a text cleanup assistant for speech-to-text output. \
-            Remove filler words, resolve self-corrections, add punctuation and capitalization. \
-            Output ONLY the cleaned text, nothing else.";
+            Remove filler words, resolve self-corrections, add punctuation and capitalization, \
+            and render numbers/simple formulas cleanly using digits and standard symbols where \
+            unambiguous. Output ONLY the cleaned text, nothing else.";
 
         let request = AnthropicRequest {
             model: self.model.clone(),
@@ -431,5 +459,32 @@ mod tests {
     fn test_anthropic_refiner_id() {
         let refiner = AnthropicRefiner::new("key", "claude-3");
         assert_eq!(refiner.id(), "anthropic");
+    }
+
+    #[test]
+    fn build_cleanup_prompt_mentions_numbers_and_formulas() {
+        let prompt = build_cleanup_prompt("two plus two", &RefineContext::default());
+        assert!(prompt.contains("numbers"));
+        assert!(prompt.contains("formulas"));
+    }
+
+    #[test]
+    fn effective_instructions_with_no_config_value_is_just_the_default() {
+        assert_eq!(effective_instructions(None), DEFAULT_REFINE_INSTRUCTIONS);
+        assert_eq!(
+            effective_instructions(Some("")),
+            DEFAULT_REFINE_INSTRUCTIONS
+        );
+        assert_eq!(
+            effective_instructions(Some("   ")),
+            DEFAULT_REFINE_INSTRUCTIONS
+        );
+    }
+
+    #[test]
+    fn effective_instructions_extends_default_with_configured_value() {
+        let combined = effective_instructions(Some("Always sign off with my name"));
+        assert!(combined.starts_with(DEFAULT_REFINE_INSTRUCTIONS));
+        assert!(combined.contains("Always sign off with my name"));
     }
 }
