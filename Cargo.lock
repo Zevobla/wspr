@@ -7193,6 +7193,7 @@ dependencies = [
  "file-rotate",
  "hound",
  "iced",
+ "png 0.17.16",
  "rfd",
  "rodio",
  "serde_json",
