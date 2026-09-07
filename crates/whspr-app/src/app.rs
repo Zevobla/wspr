@@ -57,6 +57,9 @@ fn boot() -> (State, Task<Message>) {
     state.speaker_db = crate::speakers::speaker_db_path()
         .map(|path| whspr_config::SpeakerDb::load(&path))
         .unwrap_or_default();
+    // Scan for already-downloaded whisper models so the Models tab can offer
+    // "Use this model" for them right away (see `crate::hf`).
+    state.hf_installed = crate::hf::scan_installed(&state.config);
 
     let (_id, open_hub) = window::open(window::Settings::default());
     let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
@@ -344,6 +347,83 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(crate::tray::Action::Quit) => iced::exit(),
             None => Task::none(),
         },
+        Message::HfSignIn => match state.config.huggingface.oauth_client_id.clone() {
+            Some(client_id) if !client_id.trim().is_empty() => {
+                state.hf_busy = true;
+                state.hf_status = Some("Opening your browser to sign in...".to_string());
+                Task::perform(crate::hf::run_login(client_id), Message::HfSignedIn)
+            }
+            _ => {
+                state.hf_status =
+                    Some("Set [huggingface].oauth-client-id in your config first.".to_string());
+                Task::none()
+            }
+        },
+        Message::HfSignedIn(Ok((username, token))) => {
+            state.hf_busy = false;
+            state.config.huggingface.token = Some(token);
+            state.hf_username = Some(username.clone());
+            state.hf_status = Some(format!("Signed in as {username}."));
+            persist_config(state);
+            // A fresh token may unlock gated models -- rescan.
+            state.hf_installed = crate::hf::scan_installed(&state.config);
+            Task::none()
+        }
+        Message::HfSignedIn(Err(error)) => {
+            state.hf_busy = false;
+            state.hf_status = Some(format!("Sign-in failed: {error}"));
+            Task::none()
+        }
+        Message::HfSignOut => {
+            state.config.huggingface.token = None;
+            state.hf_username = None;
+            state.hf_status = Some("Signed out.".to_string());
+            persist_config(state);
+            Task::none()
+        }
+        Message::HfDownloadModel(model_id) => match crate::hf::models_dir(&state.config) {
+            Some(dir) => {
+                state.hf_busy = true;
+                state.hf_status = Some(format!("Downloading {model_id}... this can take a while."));
+                let token = state.config.huggingface.token.clone();
+                Task::perform(
+                    crate::hf::run_download(model_id, token, dir),
+                    Message::HfModelDownloaded,
+                )
+            }
+            None => {
+                state.hf_status =
+                    Some("Could not determine a models directory to download into.".to_string());
+                Task::none()
+            }
+        },
+        Message::HfModelDownloaded(Ok(path)) => {
+            state.hf_busy = false;
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            state.hf_status = Some(format!(
+                "Downloaded {name}. Click \"Use this model\" to apply."
+            ));
+            state.hf_installed = crate::hf::scan_installed(&state.config);
+            Task::none()
+        }
+        Message::HfModelDownloaded(Err(error)) => {
+            state.hf_busy = false;
+            state.hf_status = Some(format!("Download failed: {error}"));
+            Task::none()
+        }
+        Message::HfUseModel(path) => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            state.config.whisper.model_path = Some(path);
+            state.hf_status = Some(format!("Now dictating with {name}."));
+            persist_config(state);
+            Task::none()
+        }
     }
 }
 
