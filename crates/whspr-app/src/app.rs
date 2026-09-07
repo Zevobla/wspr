@@ -220,8 +220,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     if let Some(tray) = &state.tray {
                         tray.set_visual(crate::tray::TrayVisual::Done);
                     }
-                    state.tray_done_until =
-                        Some(std::time::Instant::now() + TRAY_DONE_LINGER);
+                    state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);

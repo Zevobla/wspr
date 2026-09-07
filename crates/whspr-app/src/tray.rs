@@ -424,10 +424,7 @@ mod tests {
             visual_for(PipelineState::Transcribing),
             TrayVisual::Processing
         );
-        assert_eq!(
-            visual_for(PipelineState::Refining),
-            TrayVisual::Processing
-        );
+        assert_eq!(visual_for(PipelineState::Refining), TrayVisual::Processing);
     }
 
     #[test]
