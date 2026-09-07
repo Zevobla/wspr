@@ -56,6 +56,14 @@ pub struct NormalizeSettings {
     /// substitution. Keyed exactly as recognized, read from the config file's
     /// `[normalize.dictionary]` table. Empty by default.
     pub dictionary: BTreeMap<String, String>,
+    /// Recognize spoken arithmetic and rewrite it as symbolic notation:
+    /// operator words ("plus"/"плюс", "minus"/"минус", "times"/"умножить
+    /// на", "divided by"/"разделить на", "equals"/"равно"), superscripts
+    /// ("squared"/"в квадрате", "cubed"/"в кубе"), and "square root of"/
+    /// "корень из". Independent of `numbers` -- a user can want formula
+    /// symbols without forcing every spoken number to render as a digit,
+    /// or vice versa.
+    pub formulas: bool,
 }
 
 impl Default for NormalizeSettings {
@@ -69,6 +77,7 @@ impl Default for NormalizeSettings {
             paragraph_break: true,
             punctuation_toggle: true,
             dictionary: BTreeMap::new(),
+            formulas: true,
         }
     }
 }
@@ -90,6 +99,7 @@ mod tests {
                 paragraph_break: true,
                 punctuation_toggle: true,
                 dictionary: BTreeMap::new(),
+                formulas: true,
             }
         );
     }
@@ -252,5 +262,37 @@ mod tests {
             cfg.normalize.dictionary.get("code-term"),
             Some(&"expanded-code".to_string())
         );
+    }
+
+    #[test]
+    fn formulas_defaults_to_true() {
+        assert!(NormalizeSettings::default().formulas);
+    }
+
+    #[test]
+    fn formulas_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.normalize.formulas = false;
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert!(!round_tripped.normalize.formulas);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_formulas() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[normalize]").expect("failed to write normalize header");
+        writeln!(file, "formulas = false").expect("failed to write formulas");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert!(!cfg.normalize.formulas);
     }
 }
