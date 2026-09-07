@@ -75,6 +75,12 @@ fn boot() -> (State, Task<Message>) {
     state.hf_models = crate::hf::scan(&state.config);
     // Env-gated headless screenshot dev-path (see `crate::screenshot`).
     state.screenshot_path = crate::screenshot::path_from_env();
+    // When capturing, honor the requested screen + theme so any surface can
+    // be shot headlessly; normal runs are untouched.
+    if state.screenshot_path.is_some() {
+        state.screen = crate::screenshot::screen_from_env();
+        state.theme = crate::screenshot::theme_from_env();
+    }
 
     let (_id, open_hub) = window::open(crate::hub::window_settings());
     let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());

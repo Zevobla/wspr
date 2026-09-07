@@ -16,11 +16,43 @@ use std::time::Duration;
 
 use iced::window::Screenshot;
 
-use crate::state::{Message, State};
+use crate::state::{Message, Screen, State};
 
 /// The screenshot output path from `WHSPR_SCREENSHOT`, if set.
 pub fn path_from_env() -> Option<PathBuf> {
     std::env::var_os("WHSPR_SCREENSHOT").map(PathBuf::from)
+}
+
+/// Which screen to show in the capture, from `WHSPR_SCREENSHOT_SCREEN`
+/// (`dictate`/`history`/`models`/`speakers`/`settings`). Defaults to
+/// `Dictate` when unset or unrecognized.
+pub fn screen_from_env() -> Screen {
+    match std::env::var("WHSPR_SCREENSHOT_SCREEN")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "history" => Screen::History,
+        "models" => Screen::Models,
+        "speakers" => Screen::Speakers,
+        "settings" => Screen::Settings,
+        _ => Screen::Dictate,
+    }
+}
+
+/// Which theme to capture in, from `WHSPR_SCREENSHOT_THEME` (`light`/
+/// `dark`). Defaults to light.
+pub fn theme_from_env() -> iced::Theme {
+    match std::env::var("WHSPR_SCREENSHOT_THEME")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "dark" => iced::Theme::Dark,
+        _ => iced::Theme::Light,
+    }
 }
 
 /// Once, ~800ms after start (enough for fonts to load and the first frame
