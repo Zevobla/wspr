@@ -3,8 +3,10 @@
 //! single-directory [`installed`] scan (used by callers that only care about
 //! ASR models in one dir).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use super::llm::llm_model_by_filename;
 use super::whisper::model_by_filename;
 
 /// Which selector a discovered model file belongs to: an ASR (whisper GGML)
@@ -67,6 +69,87 @@ fn classify_name(path: &Path) -> Option<ModelKind> {
     } else {
         None
     }
+}
+
+/// One model file discovered by [`scan`], already sorted into an ASR or LLM
+/// bucket by [`classify`]. The unified counterpart to [`InstalledModel`]: it
+/// carries the [`ModelKind`] so a single scan populates both the ASR and the
+/// refiner selectors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalModel {
+    /// The file's name, e.g. `"ggml-base.bin"` or `"qwen2.5-3b-instruct-q4_k_m.gguf"`.
+    pub filename: String,
+    /// Absolute path to the file (what the relevant config path gets set to
+    /// when the user selects this model).
+    pub path: PathBuf,
+    /// Actual on-disk size in bytes (also the fit-badge footprint estimate).
+    pub size_bytes: u64,
+    /// Whether this is an ASR or a refiner LLM model (see [`ModelKind`]).
+    pub kind: ModelKind,
+    /// The matching curated model id (a [`super::WhisperModel::id`] for ASR or
+    /// a [`super::LlmModel::id`] for LLM), if this file is a known model;
+    /// `None` for one the user dropped in themselves.
+    pub known_id: Option<&'static str>,
+}
+
+/// The result of a [`scan`]: every discovered model, split by kind so each
+/// selector can be populated independently.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanResult {
+    /// Whisper GGML ASR models found across the scanned directories.
+    pub asr: Vec<LocalModel>,
+    /// GGUF refiner LLMs found across the scanned directories.
+    pub llm: Vec<LocalModel>,
+}
+
+/// Scans every directory in `dirs` for model files, classifying each with
+/// [`classify`] and routing it into [`ScanResult::asr`] or
+/// [`ScanResult::llm`]. Non-model files (and unreadable directories) are
+/// skipped; a file reachable through more than one directory is listed once
+/// (deduplicated by absolute path). Each bucket is sorted by filename for a
+/// stable list order. Only the top level of each directory is scanned -- the
+/// hidden `.hf-cache` download-cache subdir is a directory, so it's ignored.
+pub fn scan(dirs: &[PathBuf]) -> ScanResult {
+    let mut result = ScanResult::default();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() || !seen.insert(path.clone()) {
+                continue;
+            }
+            let Some(kind) = classify(&path) else {
+                continue;
+            };
+            let Some(filename) = path.file_name().and_then(|n| n.to_str()).map(String::from) else {
+                continue;
+            };
+            let size_bytes = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
+            let known_id = match kind {
+                ModelKind::Asr => model_by_filename(&filename).map(|m| m.id),
+                ModelKind::Llm => llm_model_by_filename(&filename).map(|m| m.id),
+            };
+            let model = LocalModel {
+                filename,
+                path,
+                size_bytes,
+                kind,
+                known_id,
+            };
+            match kind {
+                ModelKind::Asr => result.asr.push(model),
+                ModelKind::Llm => result.llm.push(model),
+            }
+        }
+    }
+
+    result.asr.sort_by(|a, b| a.filename.cmp(&b.filename));
+    result.llm.sort_by(|a, b| a.filename.cmp(&b.filename));
+    result
 }
 
 /// One model file found in a models directory.
@@ -184,5 +267,45 @@ mod tests {
         let path = dir.path().join("notes.txt");
         std::fs::write(&path, b"just some text").unwrap();
         assert_eq!(classify(&path), None);
+    }
+
+    #[test]
+    fn scan_routes_asr_and_llm_into_separate_buckets() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ggml-base.bin"), b"ggmlfake").unwrap();
+        std::fs::write(
+            dir.path().join("qwen2.5-3b-instruct-q4_k_m.gguf"),
+            b"GGUFdata",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("readme.txt"), b"ignore me").unwrap();
+
+        let result = scan(&[dir.path().to_path_buf()]);
+
+        assert_eq!(result.asr.len(), 1);
+        assert_eq!(result.asr[0].filename, "ggml-base.bin");
+        assert_eq!(result.asr[0].kind, ModelKind::Asr);
+        assert_eq!(result.asr[0].known_id, Some("base"));
+
+        assert_eq!(result.llm.len(), 1);
+        assert_eq!(result.llm[0].filename, "qwen2.5-3b-instruct-q4_k_m.gguf");
+        assert_eq!(result.llm[0].kind, ModelKind::Llm);
+        assert_eq!(result.llm[0].known_id, Some("qwen2.5-3b-instruct"));
+    }
+
+    #[test]
+    fn scan_deduplicates_a_file_reachable_through_two_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ggml-tiny.bin"), b"ggmlx").unwrap();
+
+        // The same directory passed twice must not double-list its models.
+        let result = scan(&[dir.path().to_path_buf(), dir.path().to_path_buf()]);
+        assert_eq!(result.asr.len(), 1);
+    }
+
+    #[test]
+    fn scan_tolerates_missing_dirs_and_returns_empty() {
+        let result = scan(&[PathBuf::from("/nonexistent/whspr-scan")]);
+        assert!(result.asr.is_empty() && result.llm.is_empty());
     }
 }
