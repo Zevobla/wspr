@@ -6,7 +6,9 @@
 //! The verdict logic ([`fits`]) is deliberately split from the live probe
 //! ([`probe`]): [`fits`] takes plain byte counts so it's a pure function
 //! unit-testable with injected RAM values, while [`probe`] is the thin,
-//! untested `sysinfo` shim that feeds it real numbers.
+//! untested `sysinfo`/Metal shim that feeds it real numbers.
+
+mod metal;
 
 use sysinfo::System;
 
@@ -86,14 +88,52 @@ pub fn fits(model_bytes: u64, available_bytes: u64) -> Fit {
     }
 }
 
+/// LM-Studio's default unified-memory fraction: how much of total physical
+/// RAM is assumed usable as GPU working set when there's no better signal
+/// (off macOS, or no Metal device found).
+const UNIFIED_MEMORY_FRACTION_NUMERATOR: u64 = 7;
+const UNIFIED_MEMORY_FRACTION_DENOMINATOR: u64 = 10;
+
+/// The plain RAM-fraction fallback ([`UNIFIED_MEMORY_FRACTION_NUMERATOR`]/
+/// [`UNIFIED_MEMORY_FRACTION_DENOMINATOR`] of `total_ram`) used when no
+/// Metal working-set figure is available. Pure and unit-tested on its own so
+/// [`gpu_budget`]'s live Metal call doesn't have to be exercised to cover it.
+fn unified_memory_fraction(total_ram: u64) -> u64 {
+    total_ram
+        .saturating_mul(UNIFIED_MEMORY_FRACTION_NUMERATOR)
+        .saturating_div(UNIFIED_MEMORY_FRACTION_DENOMINATOR)
+}
+
+/// The usable GPU/unified-memory budget for this machine: the Metal default
+/// device's `recommendedMaxWorkingSetSize` on Apple Silicon (mirrors LM
+/// Studio -- see [`metal::recommended_working_set`]), or, off macOS or when
+/// no Metal device is found, [`unified_memory_fraction`] of `total_ram`.
+pub fn gpu_budget(total_ram: u64) -> u64 {
+    metal::recommended_working_set().unwrap_or_else(|| unified_memory_fraction(total_ram))
+}
+
+/// The tighter of the GPU/unified-memory budget and the currently-available
+/// RAM once [`OS_RESERVE_BYTES`] is set aside for the OS, this app, and
+/// anything else running -- a raw `min(gpu_budget, available_ram)` would let
+/// a machine under memory pressure read as fine just because its GPU budget
+/// is large. Pure and unit-tested with injected values; not yet consumed by
+/// [`fits`] (see the follow-up commit that reworks the verdict around it).
+pub fn usable_memory(gpu_budget: u64, available_ram: u64) -> u64 {
+    gpu_budget.min(available_ram.saturating_sub(OS_RESERVE_BYTES))
+}
+
 /// A snapshot of the host's RAM, in bytes. Kept as plain fields so callers
-/// (and [`fits`]) never have to touch `sysinfo` directly.
+/// (and [`fits`]) never have to touch `sysinfo`/Metal directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HardwareSpecs {
     /// Total physical RAM installed.
     pub total_ram: u64,
     /// RAM the OS reports as currently available to new allocations.
     pub available_ram: u64,
+    /// The usable GPU/unified-memory budget (see [`usable_memory`]) --
+    /// already the tighter of [`gpu_budget`] and
+    /// [`available_ram`](Self::available_ram) less the OS reserve.
+    pub usable_ram: u64,
 }
 
 impl HardwareSpecs {
@@ -104,15 +144,21 @@ impl HardwareSpecs {
     }
 }
 
-/// Probes the host for its total and currently-available RAM via `sysinfo`.
-/// The untested live counterpart to [`fits`]: refreshes only memory (not the
-/// full, expensive system snapshot), so it's cheap enough to call on demand.
+/// Probes the host for its total/available RAM via `sysinfo` and its
+/// GPU/unified-memory budget via [`gpu_budget`], then derives
+/// [`HardwareSpecs::usable_ram`] via [`usable_memory`]. The untested live
+/// counterpart to [`fits`]: refreshes only memory (not the full, expensive
+/// system snapshot), so it's cheap enough to call on demand.
 pub fn probe() -> HardwareSpecs {
     let mut system = System::new();
     system.refresh_memory();
+    let total_ram = system.total_memory();
+    let available_ram = system.available_memory();
+    let budget = gpu_budget(total_ram);
     HardwareSpecs {
-        total_ram: system.total_memory(),
-        available_ram: system.available_memory(),
+        total_ram,
+        available_ram,
+        usable_ram: usable_memory(budget, available_ram),
     }
 }
 
@@ -178,6 +224,7 @@ mod tests {
         let specs = HardwareSpecs {
             total_ram: 64 * GB,
             available_ram: GB / 2,
+            usable_ram: 0,
         };
         assert_eq!(specs.fit(GB), Fit::Red);
     }
@@ -186,5 +233,26 @@ mod tests {
     fn fit_labels_are_distinct() {
         assert_ne!(Fit::Green.label(), Fit::Yellow.label());
         assert_ne!(Fit::Yellow.label(), Fit::Red.label());
+    }
+
+    #[test]
+    fn unified_memory_fraction_is_seventy_percent_of_total() {
+        assert_eq!(unified_memory_fraction(10 * GB), 7 * GB);
+    }
+
+    #[test]
+    fn usable_memory_is_the_tighter_of_budget_and_reserved_available() {
+        // Plenty of GPU budget, but little available RAM once the OS
+        // reserve is set aside -> available wins (and is the smaller side).
+        assert_eq!(usable_memory(64 * GB, 2 * GB), (2 * GB) - OS_RESERVE_BYTES);
+
+        // Lots of available RAM, but a small GPU budget -> budget wins.
+        assert_eq!(usable_memory(3 * GB, 64 * GB), 3 * GB);
+    }
+
+    #[test]
+    fn usable_memory_saturates_when_reserve_exceeds_available() {
+        // Less available RAM than the OS reserve alone -> zero, not a wrap.
+        assert_eq!(usable_memory(64 * GB, GB / 2), 0);
     }
 }
