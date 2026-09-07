@@ -39,7 +39,7 @@ pub fn screen_header<'a, M: 'a>(
     .padding(iced::Padding {
         top: 0.0,
         right: spacing::XXL,
-        bottom: 7.5,
+        bottom: spacing::layout::HEADER_TITLE_PAD_BOTTOM,
         left: spacing::XXL,
     });
 
