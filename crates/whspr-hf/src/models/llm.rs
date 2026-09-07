@@ -203,4 +203,42 @@ mod tests {
             assert_eq!(llm_model_by_filename(m.filename).unwrap().id, m.id);
         }
     }
+
+    #[test]
+    fn every_llm_has_sane_architecture_metadata() {
+        for m in LLM_MODELS {
+            assert!(m.n_layers > 0, "{} has zero layers", m.id);
+            assert!(m.n_embd > 0, "{} has zero embedding size", m.id);
+            assert!(m.n_head > 0, "{} has zero attention heads", m.id);
+            assert!(m.n_head_kv > 0, "{} has zero KV heads", m.id);
+            assert!(
+                m.n_head_kv <= m.n_head,
+                "{} has more KV heads than attention heads",
+                m.id
+            );
+            assert_eq!(
+                m.n_embd % m.n_head,
+                0,
+                "{} embedding size isn't divisible by head count",
+                m.id
+            );
+            assert!(m.context_length >= 4096, "{} has a tiny context", m.id);
+        }
+    }
+
+    #[test]
+    fn qwen25_3b_estimated_footprint_matches_the_kv_formula() {
+        // 2100 MiB weights + 144 MiB KV (36 layers, 4096 ctx, 128 head_dim,
+        // 2 KV heads) + 512 MiB (0.5 GiB) overhead = 2756 MiB.
+        let model = llm_model_by_id("qwen2.5-3b-instruct").unwrap();
+        assert_eq!(model.estimated_footprint(), mib(2756));
+    }
+
+    #[test]
+    fn phi_3_5_mini_has_no_gqa_shrinkage() {
+        // Phi-3.5-mini uses ordinary multi-head attention (no GQA), so its
+        // KV head count equals its attention head count.
+        let model = llm_model_by_id("phi-3.5-mini-instruct").unwrap();
+        assert_eq!(model.n_head_kv, model.n_head);
+    }
 }
