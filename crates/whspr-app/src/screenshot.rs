@@ -23,6 +23,15 @@ pub fn path_from_env() -> Option<PathBuf> {
     std::env::var_os("WHSPR_SCREENSHOT").map(PathBuf::from)
 }
 
+/// When a capture was requested, switches to the screen
+/// `WHSPR_SCREENSHOT_SCREEN` asks for so any surface can be shot headlessly;
+/// a no-op in normal runs.
+pub fn apply_to_screen(state: &mut State) {
+    if state.screenshot_path.is_some() {
+        state.screen = screen_from_env();
+    }
+}
+
 /// Which screen to show in the capture, from `WHSPR_SCREENSHOT_SCREEN`
 /// (`dictate`/`history`/`models`/`speakers`/`settings`). Defaults to
 /// `Dictate` when unset or unrecognized.
