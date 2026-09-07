@@ -4,21 +4,17 @@
 //! Flow Bar and the tray parity glyphs.
 
 use iced::widget::{container, row, Space};
-use iced::{Alignment, Border, Element, Length};
+use iced::{Alignment, Element, Length};
 
 use crate::theme::{color, styles};
 
-/// A status glyph shape. The mark *shape* (not just color) changes with
-/// state, so it stays legible in a monochrome menu bar.
+/// A status glyph shape -- a solid square in accent or ink. Shared by the
+/// nav rail, the Dictate hero and the Settings sub-nav active mark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mark {
-    /// Idle: a hollow 2px-outlined square.
-    Outline,
-    /// Active/recording: a solid accent square.
+    /// Active/recording, and the active nav mark: a solid accent square.
     Solid,
-    /// Thinking: a square half-filled with accent.
-    Half,
-    /// A solid ink square (status line bullet).
+    /// A solid ink square (the rail status-line bullet).
     Ink,
 }
 
@@ -38,37 +34,6 @@ pub fn status_square<'a, M: 'a>(
         Mark::Ink => square
             .style(move |_theme| styles::container::ink(scheme))
             .into(),
-        Mark::Outline => square
-            .style(move |_theme| container::Style {
-                border: Border {
-                    color: scheme.on_surface,
-                    width: 2.0,
-                    radius: 0.0.into(),
-                },
-                ..container::Style::default()
-            })
-            .into(),
-        Mark::Half => container(
-            row![
-                container(Space::new())
-                    .width(Length::Fixed(size / 2.0))
-                    .height(Length::Fill)
-                    .style(move |_theme| styles::container::accent(scheme)),
-                Space::new().width(Length::Fill),
-            ]
-            .height(Length::Fill),
-        )
-        .width(Length::Fixed(size))
-        .height(Length::Fixed(size))
-        .style(move |_theme| container::Style {
-            border: Border {
-                color: scheme.on_surface,
-                width: 2.0,
-                radius: 0.0.into(),
-            },
-            ..container::Style::default()
-        })
-        .into(),
     }
 }
 
@@ -111,8 +76,7 @@ mod tests {
 
     #[test]
     fn marks_are_distinct_variants() {
-        assert_ne!(Mark::Outline, Mark::Solid);
-        assert_ne!(Mark::Half, Mark::Ink);
+        assert_ne!(Mark::Solid, Mark::Ink);
     }
 
     #[test]

@@ -46,13 +46,6 @@ pub fn filled(scheme: &color::Scheme, status: Status) -> Style {
     }
 }
 
-/// The destructive/active accent fill -- Dictate's "Stop", where a live
-/// capture is running. Reads as the same red the Flow Bar's Recording
-/// state uses; mechanically identical to `filled`.
-pub fn error(scheme: &color::Scheme, status: Status) -> Style {
-    filled(scheme, status)
-}
-
 /// A neutral tinted fill for secondary emphasis where a border would read
 /// too quietly (segmented-control active option shares this look).
 pub fn tonal(scheme: &color::Scheme, status: Status) -> Style {
@@ -173,15 +166,6 @@ mod tests {
         assert_eq!(
             filled(scheme, Status::Pressed).background,
             Some(Background::Color(scheme.accent_pressed))
-        );
-    }
-
-    #[test]
-    fn error_button_matches_filled() {
-        let scheme = &color::LIGHT;
-        assert_eq!(
-            error(scheme, Status::Active).background,
-            filled(scheme, Status::Active).background
         );
     }
 

@@ -36,22 +36,6 @@ pub fn rail(scheme: &color::Scheme) -> Style {
     }
 }
 
-/// A section panel / card: the one tinted fill, zero radius, no shadow.
-pub fn section(scheme: &color::Scheme) -> Style {
-    Style {
-        background: Some(Background::Color(scheme.surface_container_low)),
-        text_color: Some(scheme.on_surface),
-        border: Border::default().rounded(shape::NONE),
-        ..Style::default()
-    }
-}
-
-/// A content card -- same tinted fill as `section`; named for call-site
-/// clarity where the element is a card rather than a settings panel.
-pub fn card(scheme: &color::Scheme) -> Style {
-    section(scheme)
-}
-
 /// A divider rule (ink @ 40%). The caller sets the weight via the
 /// container's height: 2px for strong section rules, 1px for hairlines.
 pub fn divider(scheme: &color::Scheme) -> Style {
@@ -154,14 +138,6 @@ mod tests {
         let style = surface(scheme);
         assert_eq!(style.background, Some(Background::Color(scheme.surface)));
         assert_eq!(style.text_color, Some(scheme.on_surface));
-    }
-
-    #[test]
-    fn section_is_a_square_tinted_fill() {
-        let scheme = &color::LIGHT;
-        let style = section(scheme);
-        assert!(style.background.is_some());
-        assert_eq!(style.border.radius, shape::NONE.into());
     }
 
     #[test]

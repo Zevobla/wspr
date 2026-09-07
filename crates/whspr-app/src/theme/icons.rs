@@ -16,15 +16,8 @@ use iced::{Color, Element, Length};
 pub const MIC: &[u8] = include_bytes!("../../assets/icons/mic.svg");
 pub const SQUARE: &[u8] = include_bytes!("../../assets/icons/square.svg");
 pub const CLIPBOARD: &[u8] = include_bytes!("../../assets/icons/clipboard.svg");
-pub const DOWNLOAD: &[u8] = include_bytes!("../../assets/icons/download.svg");
 pub const FILE_TEXT: &[u8] = include_bytes!("../../assets/icons/file-text.svg");
 pub const SEARCH: &[u8] = include_bytes!("../../assets/icons/search.svg");
-pub const PENCIL: &[u8] = include_bytes!("../../assets/icons/pencil.svg");
-pub const CHEVRON_DOWN: &[u8] = include_bytes!("../../assets/icons/chevron-down.svg");
-pub const EXTERNAL_LINK: &[u8] = include_bytes!("../../assets/icons/external-link.svg");
-pub const CHECK: &[u8] = include_bytes!("../../assets/icons/check.svg");
-pub const X: &[u8] = include_bytes!("../../assets/icons/x.svg");
-pub const LOG_OUT: &[u8] = include_bytes!("../../assets/icons/log-out.svg");
 
 /// A Lucide icon, sized to `size`x`size` and recolored to `color`. Generic
 /// over the message type because an icon emits no messages of its own, so
@@ -43,7 +36,7 @@ mod tests {
 
     #[test]
     fn vendored_icons_are_real_svgs() {
-        for data in [MIC, SQUARE, CLIPBOARD, DOWNLOAD, FILE_TEXT, SEARCH] {
+        for data in [MIC, SQUARE, CLIPBOARD, FILE_TEXT, SEARCH] {
             assert!(data.starts_with(b"<svg"), "expected an <svg> asset");
         }
     }

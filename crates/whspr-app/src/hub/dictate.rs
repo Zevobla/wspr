@@ -59,7 +59,7 @@ fn hero<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Mes
         column![
             row![
                 widgets::tag(TagKind::Neutral, "Auto-detect · EN", scheme),
-                widgets::tag(TagKind::Neutral, "Local LLM cleanup", scheme),
+                widgets::tag(TagKind::Accent, "Local LLM cleanup", scheme),
             ]
             .spacing(spacing::SM),
             text("Hold Ctrl+Space to dictate into any app, or record here.")

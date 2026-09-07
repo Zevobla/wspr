@@ -10,7 +10,7 @@ pub mod nav;
 pub mod table;
 pub mod tag;
 
-pub use controls::{labeled_field, segmented, toggle};
+pub use controls::{segmented, toggle};
 pub use marks::{meter, status_square, Mark};
 pub use nav::screen_header;
 pub use table::table;

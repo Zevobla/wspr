@@ -68,8 +68,6 @@ pub const LABEL_LARGE: TypeStyle = TypeStyle::new(14.0, Weight::Semibold);
 /// General body copy and table cells.
 pub const BODY_MEDIUM: TypeStyle = TypeStyle::new(13.0, Weight::Normal);
 
-/// The hero display size: the Dictate timer, onboarding statements.
-pub const DISPLAY: TypeStyle = TypeStyle::new(44.0, Weight::ExtraBold);
 /// A large stat number (History's dictations / words / wpm strip).
 pub const STAT: TypeStyle = TypeStyle::new(32.0, Weight::ExtraBold);
 /// The on-screen transcript body: large, quiet, readable.

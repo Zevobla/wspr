@@ -10,14 +10,8 @@
 /// The single radius the system uses: none.
 pub const NONE: f32 = 0.0;
 
-/// Formerly snackbars/error banner. Now square.
-pub const XS: f32 = NONE;
 /// Formerly text fields and pick lists. Now square.
 pub const SM: f32 = NONE;
-/// Formerly cards. Now square.
-pub const MD: f32 = NONE;
-/// Formerly the Flow Bar overlay. Now square.
-pub const LG: f32 = NONE;
 /// Formerly fully-rounded buttons and scrollbar thumbs. Now square, like
 /// everything else -- Modernist has no pill.
 pub const FULL: f32 = NONE;
@@ -28,7 +22,7 @@ mod tests {
 
     #[test]
     fn every_radius_is_zero() {
-        for r in [NONE, XS, SM, MD, LG, FULL] {
+        for r in [NONE, SM, FULL] {
             assert_eq!(r, 0.0);
         }
     }

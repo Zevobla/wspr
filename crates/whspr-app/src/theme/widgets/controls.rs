@@ -6,7 +6,7 @@
 use iced::widget::{button, container, row, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-use crate::theme::{color, spacing, styles, type_scale};
+use crate::theme::{color, styles, type_scale};
 
 const TRACK_W: f32 = 32.0;
 const TRACK_H: f32 = 18.0;
@@ -127,23 +127,6 @@ fn segment_style(
         },
         _ => base,
     }
-}
-
-/// A field caption over its control, grouped tight (`--space-1`).
-pub fn labeled_field<'a, M: 'a>(
-    label: impl Into<String>,
-    control: Element<'a, M>,
-    scheme: &'static color::Scheme,
-) -> Element<'a, M> {
-    iced::widget::column![
-        text(label.into())
-            .size(type_scale::LABEL_MEDIUM.size)
-            .font(type_scale::LABEL_MEDIUM.font())
-            .color(scheme.on_surface_variant),
-        control,
-    ]
-    .spacing(spacing::XS)
-    .into()
 }
 
 #[cfg(test)]
