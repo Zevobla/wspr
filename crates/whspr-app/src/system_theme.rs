@@ -148,6 +148,36 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apple_interface_style_dark_maps_to_dark_theme() {
+        // `defaults read` includes the trailing newline in its stdout.
+        assert_eq!(
+            theme_from_apple_interface_style(true, "Dark\n"),
+            iced::Theme::Dark
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apple_interface_style_absent_key_maps_to_light() {
+        // Light mode leaves the key unset; `defaults read` exits non-zero
+        // with empty stdout.
+        assert_eq!(
+            theme_from_apple_interface_style(false, ""),
+            iced::Theme::Light
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apple_interface_style_unexpected_value_maps_to_light() {
+        assert_eq!(
+            theme_from_apple_interface_style(true, "Light\n"),
+            iced::Theme::Light
+        );
+    }
+
     #[test]
     fn tick_applies_a_changed_detection() {
         let mut state = State::new(whspr_config::Config::default());
