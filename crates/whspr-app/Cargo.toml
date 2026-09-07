@@ -61,6 +61,12 @@ tracing-subscriber.workspace = true
 # PNG and exits. A leaf, pure-Rust dep declared directly here (not a shared
 # workspace dependency) since it's this crate's dev/verification concern only.
 png = "0.17"
+# Cross-platform OS light/dark appearance detection (see `crate::system_theme`):
+# boots the Hub into the system theme and polls for appearance changes. Only
+# this crate renders a theme, so -- same precedent as `rfd`/`png` above --
+# it's declared directly here rather than growing the shared workspace set
+# (not in the root `[workspace.dependencies]`).
+dark-light = "3.0"
 
 [dev-dependencies]
 tempfile.workspace = true
