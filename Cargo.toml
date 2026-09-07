@@ -59,6 +59,29 @@ arboard = "3.6"
 iced = "0.14"
 tray-icon = "0.24"
 
+# HuggingFace model client (whspr-hf). All four pinned to rustls-friendly,
+# default-features-off configs so nothing drags openssl/native-tls into the
+# tree -- the Nix build stays free of new C system libraries.
+#   - hf-hub: model download + local cache + listing. `tokio` for the async
+#     API, `rustls-tls` so its reqwest uses rustls (not native-tls).
+#   - oauth2: PKCE authorization-code flow. `reqwest` + `rustls-tls` for the
+#     async token-exchange HTTP client, no native-tls.
+#   - sysinfo: total/available RAM for the "fits your machine" badge. Only
+#     the `system` feature (RAM/CPU); disk/network/component/user dropped.
+#   - webbrowser: opens the system browser at the OAuth authorize URL.
+hf-hub = { version = "0.4", default-features = false, features = [
+    "tokio",
+    "rustls-tls",
+] }
+oauth2 = { version = "5.0", default-features = false, features = [
+    "reqwest",
+    "rustls-tls",
+] }
+sysinfo = { version = "0.39", default-features = false, features = [
+    "system",
+] }
+webbrowser = "1.0"
+
 # Scripting (macros) - a crate opts in with features = ["luajit", "vendored"]
 # to embed a JIT-compiled Lua engine; the vendored LuaJIT builds from source
 # via the existing cmake/clang toolchain, so no new system library is needed.
