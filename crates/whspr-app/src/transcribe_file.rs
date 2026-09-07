@@ -31,7 +31,9 @@ pub async fn run_transcribe_audio(audio: AudioBuffer, config: Config) -> Result<
     // record-button/file path and the hotkey path never disagree about
     // which language whisper was told to use.
     let language = whspr_config::effective_language(&config.language_settings, &config.language);
-    let pipeline = Pipeline::new(asr, refiner).with_language(language);
+    let pipeline = Pipeline::new(asr, refiner)
+        .with_language(language)
+        .with_translate(config.capture.translate);
     pipeline
         .run(audio, &RefineContext::default())
         .await
