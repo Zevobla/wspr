@@ -16,8 +16,9 @@
 //!
 //! - [`hardware`] -- `sysinfo` RAM probe + the pure red/yellow/green fit
 //!   heuristic.
-//! - [`models`] -- the curated whisper.cpp GGML model registry, a `download`
-//!   built on `hf-hub`, and an `installed` directory scan.
+//! - [`models`] -- the curated whisper.cpp GGML (ASR) and instruct-GGUF
+//!   (refiner LLM) registries, `hf-hub`-backed `download`/`download_llm`, a
+//!   magic-byte `classify`, a unified multi-directory `scan`, and `delete`.
 //! - [`oauth`] -- the HuggingFace OAuth PKCE flow (authorize URL, local
 //!   redirect catcher, code->token exchange, `whoami`).
 //!
