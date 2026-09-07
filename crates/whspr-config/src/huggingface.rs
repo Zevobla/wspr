@@ -26,6 +26,13 @@ pub struct HuggingFaceSettings {
     /// `ggml-*.bin` files; see `whspr_hf::installed`). `None` means the GUI
     /// falls back to a platform default under the app data dir.
     pub models_dir: Option<PathBuf>,
+    /// Extra directories the user has added in the Models tab where model
+    /// files (whisper GGML and/or GGUF LLMs) already live. The GUI scans all
+    /// of these -- plus [`models_dir`](Self::models_dir) / the platform
+    /// default -- to populate the ASR and refiner selectors (see
+    /// `whspr_hf::scan`). Empty by default; adding a directory here surfaces
+    /// its models, removing it drops them.
+    pub model_dirs: Vec<PathBuf>,
     /// The OAuth app's client id, created once by registering a Connected App
     /// at <https://huggingface.co/settings/applications> (see the `whspr-hf`
     /// crate docs). `None` until the user configures it; sign-in is disabled
@@ -50,6 +57,7 @@ mod tests {
         assert!(Config::default().huggingface.token.is_none());
         assert!(Config::default().huggingface.models_dir.is_none());
         assert!(Config::default().huggingface.oauth_client_id.is_none());
+        assert!(Config::default().huggingface.model_dirs.is_empty());
     }
 
     #[test]
@@ -58,12 +66,35 @@ mod tests {
         cfg.huggingface.token = Some("hf_testtoken".to_string());
         cfg.huggingface.models_dir = Some(PathBuf::from("/models/whisper"));
         cfg.huggingface.oauth_client_id = Some("client-abc123".to_string());
+        cfg.huggingface.model_dirs = vec![
+            PathBuf::from("/models/extra"),
+            PathBuf::from("/home/user/ggufs"),
+        ];
 
         let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
         let round_tripped: Config =
             toml::from_str(&toml_string).expect("failed to deserialize config");
 
         assert_eq!(round_tripped.huggingface, cfg.huggingface);
+    }
+
+    #[test]
+    fn load_from_toml_file_sets_model_dirs() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        let mut file = std::fs::File::create(&config_path).expect("failed to create config.toml");
+        writeln!(file, "[huggingface]").expect("failed to write header");
+        writeln!(file, "model-dirs = [\"/models/a\", \"/models/b\"]")
+            .expect("failed to write model-dirs");
+        drop(file);
+
+        let cfg = load_from(Some(temp_dir.path()));
+        assert_eq!(
+            cfg.huggingface.model_dirs,
+            vec![PathBuf::from("/models/a"), PathBuf::from("/models/b")]
+        );
     }
 
     #[test]
