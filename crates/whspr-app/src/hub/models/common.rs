@@ -33,11 +33,13 @@ pub(super) fn label_text(content: &'static str) -> Element<'static, Message> {
         .into()
 }
 
-/// The "fits your machine" verdict as a theme-aware Modernist tag: a calm
-/// neutral tag for green (fits), an accent-tinted tag for yellow (tight),
-/// and an accent-outline tag for red (too large). All three read on both
-/// the light and dark grounds because `widgets::tag` draws from the
-/// scheme's neutral/accent ramps (which invert per theme).
+/// The "fits your machine" verdict as a theme-aware, three-state Modernist
+/// traffic light: a calm neutral tag for green (fits), an accent-tinted tag
+/// for yellow (tight), and the loud filled error tag for red (won't fit --
+/// the estimated footprint exceeds the usable GPU/unified-memory budget).
+/// All three read on both the light and dark grounds because `widgets::tag`
+/// draws from the scheme's neutral/accent/error roles (which invert per
+/// theme).
 pub(super) fn fit_tag(
     fit: whspr_hf::Fit,
     scheme: &'static color::Scheme,
@@ -45,7 +47,7 @@ pub(super) fn fit_tag(
     let kind = match fit {
         whspr_hf::Fit::Green => TagKind::Neutral,
         whspr_hf::Fit::Yellow => TagKind::Accent,
-        whspr_hf::Fit::Red => TagKind::Outline,
+        whspr_hf::Fit::Red => TagKind::Error,
     };
     widgets::tag(kind, fit.label(), scheme)
 }

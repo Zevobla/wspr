@@ -38,7 +38,9 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         rows.push(CatalogRow {
             name: model.label.to_string(),
             size_bytes: model.size_bytes,
-            fit: state.hf_specs.fit(model.size_bytes),
+            fit: state
+                .hf_specs
+                .fit(model.size_bytes, whspr_hf::ModelKind::Llm),
             action,
         });
     }
@@ -48,7 +50,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         rows.push(CatalogRow {
             name: m.filename.clone(),
             size_bytes: m.size_bytes,
-            fit: state.hf_specs.fit(m.size_bytes),
+            fit: state.hf_specs.fit(m.size_bytes, whspr_hf::ModelKind::Llm),
             action: delete_button(scheme, state.hf_busy, m.path.clone()),
         });
     }
