@@ -344,6 +344,49 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(crate::tray::Action::Quit) => iced::exit(),
             None => Task::none(),
         },
+        Message::NoiseSuppressionToggled(enabled) => {
+            state.config.capture.noise_suppression = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::InputGainChanged(value) => {
+            state.config.capture.input_gain = value.clamp(0.0, 3.0);
+            persist_config(state);
+            Task::none()
+        }
+        Message::VadThresholdChanged(value) => {
+            state.config.capture.vad_threshold = value.clamp(0.0, 1.0);
+            persist_config(state);
+            Task::none()
+        }
+        Message::TranslateToggled(enabled) => {
+            state.config.capture.translate = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::ShortenToggled(enabled) => {
+            state.config.capture.shorten = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::AutoSendToggled(enabled) => {
+            state.config.capture.auto_send = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::InputFieldDetectionToggled(enabled) => {
+            state.config.capture.input_field_detection = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::RefineTimeoutMsChanged(text) => {
+            state.refine_timeout_draft = text.clone();
+            if let Ok(value) = text.trim().parse::<u64>() {
+                state.config.capture.refine_timeout_ms = value.clamp(0, 600_000);
+                persist_config(state);
+            }
+            Task::none()
+        }
     }
 }
 
