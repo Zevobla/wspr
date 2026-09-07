@@ -22,6 +22,11 @@ use crate::state::{Message, State};
 
 const HUB_TITLE: &str = "whspr";
 
+/// How long the tray's "Done" icon lingers after a completed dictation
+/// before reverting -- see `tray_done_subscription`/`Message::TrayDoneTick`
+/// and `Message::Worker`'s `Completed` arm, which starts the linger.
+const TRAY_DONE_LINGER: std::time::Duration = std::time::Duration::from_secs(2);
+
 thread_local! {
     /// The live mic capture backing the in-app Record button. cpal's stream
     /// is `!Send`/`!Debug`, so it can't live in `State`; it's only ever
@@ -206,6 +211,17 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         text,
                         duration_secs: Some(duration_secs),
                     });
+                    // Show a lingering "Done" tray icon: the pipeline has
+                    // no state for "just finished" (see `StateChanged`'s
+                    // handling above and `crate::tray`'s module doc
+                    // comment), so this is timed app-side and reverted by
+                    // `Message::TrayDoneTick` once `TRAY_DONE_LINGER`
+                    // elapses.
+                    if let Some(tray) = &state.tray {
+                        tray.set_visual(crate::tray::TrayVisual::Done);
+                    }
+                    state.tray_done_until =
+                        Some(std::time::Instant::now() + TRAY_DONE_LINGER);
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
