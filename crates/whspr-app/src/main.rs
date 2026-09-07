@@ -2,6 +2,7 @@ mod app;
 mod config_ui;
 mod devices;
 mod flow_bar;
+mod hf;
 mod history;
 mod hotkey_capture;
 mod hub;

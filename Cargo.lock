@@ -7006,6 +7006,7 @@ dependencies = [
  "whspr-config",
  "whspr-core",
  "whspr-diarize",
+ "whspr-hf",
  "whspr-inject",
  "whspr-refine",
 ]
