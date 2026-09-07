@@ -13,6 +13,7 @@ mod sound;
 mod speakers;
 mod state;
 mod stats;
+mod system_theme;
 mod theme;
 mod transcribe_file;
 mod tray;
