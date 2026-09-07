@@ -23,6 +23,7 @@ mod injection;
 mod language;
 mod normalize;
 mod privacy;
+mod refine;
 mod reload;
 mod sound;
 mod speaker;
@@ -34,6 +35,7 @@ pub use injection::InjectionSettings;
 pub use language::LanguageSettings;
 pub use normalize::NormalizeSettings;
 pub use privacy::PrivacySettings;
+pub use refine::RefineSettings;
 pub use reload::{api_key_for, config_reload};
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile};
@@ -222,6 +224,13 @@ pub struct Config {
     /// `[capture]` table.
     #[serde(default)]
     pub capture: CaptureSettings,
+    /// Model selection + instructions for the LLM refiner backends, read
+    /// from the config file's `[refine_settings]` table. Named
+    /// `refine_settings` rather than `refine` because that field name is
+    /// already `RefineChoice` above -- mirrors the `language`/
+    /// `language_settings` split.
+    #[serde(default)]
+    pub refine_settings: RefineSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
