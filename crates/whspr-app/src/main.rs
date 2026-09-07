@@ -7,6 +7,7 @@ mod history;
 mod hotkey_capture;
 mod hub;
 mod logging;
+mod model_menu;
 mod sound;
 mod speakers;
 mod state;
