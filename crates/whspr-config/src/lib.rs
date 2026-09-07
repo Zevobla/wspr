@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 mod autostart;
 mod capture;
 mod device;
+mod huggingface;
 mod injection;
 mod language;
 mod normalize;
@@ -30,6 +31,7 @@ mod speaker;
 pub use autostart::{install_autostart, remove_autostart, AutostartSettings};
 pub use capture::CaptureSettings;
 pub use device::DeviceSettings;
+pub use huggingface::HuggingFaceSettings;
 pub use injection::InjectionSettings;
 pub use language::LanguageSettings;
 pub use normalize::NormalizeSettings;
@@ -222,6 +224,11 @@ pub struct Config {
     /// `[capture]` table.
     #[serde(default)]
     pub capture: CaptureSettings,
+    /// In-app HuggingFace model-client settings (OAuth token, models
+    /// directory, OAuth client id), read from the config file's
+    /// `[huggingface]` table. See the `whspr-hf` crate.
+    #[serde(default)]
+    pub huggingface: HuggingFaceSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
