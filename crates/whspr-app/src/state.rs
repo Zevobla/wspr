@@ -14,6 +14,7 @@ pub enum Screen {
     #[default]
     Dictate,
     Speakers,
+    Models,
     History,
     Settings,
 }
@@ -103,6 +104,23 @@ pub struct State {
     /// `tray::Handle::create` needs iced's winit event loop to already be
     /// running on the calling thread.
     pub tray: Option<crate::tray::Handle>,
+    /// The signed-in HuggingFace username (from the OAuth `whoami` call), if
+    /// a login completed this session. `None` when signed out; a saved token
+    /// alone doesn't populate this (we don't re-run `whoami` at boot).
+    pub hf_username: Option<String>,
+    /// Status/progress text for the Models tab (sign-in, download, "use this
+    /// model" outcomes). `None` when nothing is happening.
+    pub hf_status: Option<String>,
+    /// Whether a HuggingFace login or model download is in flight -- disables
+    /// the Models tab's action buttons so a second one can't be kicked off.
+    pub hf_busy: bool,
+    /// Whisper models found in the models directory at boot / after a
+    /// download (see `crate::hf::scan_installed`). Drives the "installed"
+    /// list and which registry entries offer "Use this model".
+    pub hf_installed: Vec<whspr_hf::InstalledModel>,
+    /// This machine's RAM snapshot, probed once at boot, used for the
+    /// per-model "fits your machine" badge (see `whspr_hf::HardwareSpecs`).
+    pub hf_specs: whspr_hf::HardwareSpecs,
 }
 
 impl State {
@@ -110,6 +128,13 @@ impl State {
     /// fields start empty; `crate::app::boot` fills them in separately since
     /// enumerating devices is its own concern from loading config.
     pub fn new(config: Config) -> Self {
+        // Computed before the struct literal moves `config` into place: a
+        // saved token means "already signed in" even before any whoami call.
+        let hf_status = config
+            .huggingface
+            .token
+            .as_ref()
+            .map(|_| "Signed in with a saved token.".to_string());
         Self {
             hub_window: None,
             flow_bar_window: None,
@@ -132,6 +157,11 @@ impl State {
             mic_level: 0.0,
             pipeline_state_since: std::time::Instant::now(),
             tray: None,
+            hf_username: None,
+            hf_status,
+            hf_busy: false,
+            hf_installed: Vec::new(),
+            hf_specs: whspr_hf::probe(),
         }
     }
 }
@@ -259,4 +289,22 @@ pub enum Message {
     /// menu clicks (`crate::tray::Handle::poll_action`) and acts on the
     /// last one. Only ever fires once `state.tray` exists.
     TrayPoll,
+    /// The user clicked "Sign in with HuggingFace" on the Models tab: starts
+    /// the browser OAuth flow (see `crate::hf::run_login`).
+    HfSignIn,
+    /// The OAuth login finished: `(username, token)` on success, or an error
+    /// message. On success the token is saved to config and installed models
+    /// are rescanned.
+    HfSignedIn(Result<(String, String), String>),
+    /// The user clicked "Sign out": clears the saved token from config.
+    HfSignOut,
+    /// The user clicked "Download" for the curated model with this id (see
+    /// `whspr_hf::WhisperModel::id`): starts the background download.
+    HfDownloadModel(&'static str),
+    /// A model download finished: the flat on-disk path on success, or an
+    /// error message. On success installed models are rescanned.
+    HfModelDownloaded(Result<std::path::PathBuf, String>),
+    /// The user clicked "Use this model": points `config.whisper.model_path`
+    /// at this file so existing dictation picks it up, and persists.
+    HfUseModel(std::path::PathBuf),
 }
