@@ -2,9 +2,12 @@
 //!
 //! Supports compounds up to the billions ("one hundred and twenty five",
 //! "двести тридцать" -> "230", "восемь миллионов триста сорок тысяч" ->
-//! "8340000"). Scoped deliberately: no ordinals ("twenty-fifth", "двадцать
-//! пятого"). `u64` only, still no negatives. Fractions live in the
-//! percents pass.
+//! "8340000"), plus decimals in their own `decimals` submodule ("three
+//! point five" -> "3.5", "три целых четырнадцать сотых" -> "3.14").
+//! Scoped deliberately: no ordinals ("twenty-fifth", "двадцать пятого").
+//! `u64` only, still no negatives. Fractions live in the percents pass.
+
+mod decimals;
 
 use super::split_punct;
 
@@ -227,7 +230,10 @@ pub(super) fn parse_number_at(cores: &[&str], i: usize) -> Option<(u64, usize)> 
 
 /// Replaces every maximal run of number words in `text` with its digit
 /// value, leaving everything else - including surrounding punctuation on
-/// the first/last word of a run - untouched.
+/// the first/last word of a run - untouched. A decimal is tried first at
+/// each position, since a plain cardinal run would otherwise claim just
+/// its leading words - e.g. "three point five" would stop at "three" and
+/// leave "point five" behind.
 pub fn normalize_numbers(text: &str) -> String {
     let words: Vec<&str> = text.split(' ').collect();
     let cores: Vec<&str> = words.iter().map(|w| split_punct(w).0).collect();
@@ -235,7 +241,12 @@ pub fn normalize_numbers(text: &str) -> String {
     let mut out = Vec::with_capacity(words.len());
     let mut i = 0;
     while i < words.len() {
-        if let Some((value, count)) = parse_run(&cores[i..]) {
+        if let Some((body, count)) = decimals::parse_decimal_at(&cores, i) {
+            let (_, prefix, _) = split_punct(words[i]);
+            let (_, _, suffix) = split_punct(words[i + count - 1]);
+            out.push(format!("{prefix}{body}{suffix}"));
+            i += count;
+        } else if let Some((value, count)) = parse_run(&cores[i..]) {
             let (_, prefix, _) = split_punct(words[i]);
             let (_, _, suffix) = split_punct(words[i + count - 1]);
             out.push(format!("{prefix}{value}{suffix}"));
@@ -334,6 +345,19 @@ mod tests {
         assert_eq!(
             normalize_numbers("два миллиарда пятьсот миллионов"),
             "2500000000"
+        );
+    }
+
+    #[test]
+    fn decimals_wired_into_the_text_pass() {
+        // Proves `decimals::parse_decimal_at` is actually consulted here,
+        // not just unit-tested in isolation - the plain cardinal parser
+        // alone would stop at "three" and leave "point five" untouched.
+        assert_eq!(normalize_numbers("three point five"), "3.5");
+        assert_eq!(normalize_numbers("три целых четырнадцать сотых"), "3.14");
+        assert_eq!(
+            normalize_numbers("I have three point five apples"),
+            "I have 3.5 apples"
         );
     }
 
