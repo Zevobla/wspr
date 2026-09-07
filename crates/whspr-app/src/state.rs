@@ -4,6 +4,7 @@ use iced::window;
 use whspr_config::Config;
 
 use crate::history::HistoryEntry;
+use crate::model_menu::{AsrOption, RefineOption};
 
 /// Which top-level screen the Hub's tab bar (`crate::hub`) is currently
 /// showing. `Dictate` is the default: whspr's core action (record/dictate)
@@ -133,10 +134,11 @@ pub struct State {
     /// Whether a HuggingFace login or model download is in flight -- disables
     /// the Models tab's action buttons so a second one can't be kicked off.
     pub hf_busy: bool,
-    /// Whisper models found in the models directory at boot / after a
-    /// download (see `crate::hf::scan_installed`). Drives the "installed"
-    /// list and which registry entries offer "Use this model".
-    pub hf_installed: Vec<whspr_hf::InstalledModel>,
+    /// Every model file found across the effective model directories at boot
+    /// / after a download or delete (see `crate::hf::scan`), split into ASR
+    /// (whisper) and LLM (GGUF refiner) buckets. Populates both unified
+    /// selectors and the Models tab's per-model download/delete rows.
+    pub hf_models: whspr_hf::ScanResult,
     /// This machine's RAM snapshot, probed once at boot, used for the
     /// per-model "fits your machine" badge (see `whspr_hf::HardwareSpecs`).
     pub hf_specs: whspr_hf::HardwareSpecs,
@@ -184,7 +186,7 @@ impl State {
             hf_username: None,
             hf_status,
             hf_busy: false,
-            hf_installed: Vec::new(),
+            hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
         }
     }
@@ -416,13 +418,36 @@ pub enum Message {
     HfSignedIn(Result<(String, String), String>),
     /// The user clicked "Sign out": clears the saved token from config.
     HfSignOut,
-    /// The user clicked "Download" for the curated model with this id (see
-    /// `whspr_hf::WhisperModel::id`): starts the background download.
+    /// The user clicked "Download" for the curated whisper model with this id
+    /// (see `whspr_hf::WhisperModel::id`): starts the background download.
     HfDownloadModel(&'static str),
-    /// A model download finished: the flat on-disk path on success, or an
-    /// error message. On success installed models are rescanned.
+    /// A whisper model download finished: the flat on-disk path on success,
+    /// or an error message. On success the model dirs are rescanned.
     HfModelDownloaded(Result<std::path::PathBuf, String>),
-    /// The user clicked "Use this model": points `config.whisper.model_path`
-    /// at this file so existing dictation picks it up, and persists.
-    HfUseModel(std::path::PathBuf),
+    /// The user clicked "Download" for the curated GGUF refiner LLM with this
+    /// id (see `whspr_hf::LlmModel::id`): starts the background download.
+    HfDownloadLlm(&'static str),
+    /// A refiner LLM download finished: the flat on-disk path on success, or
+    /// an error message. On success the model dirs are rescanned.
+    HfLlmDownloaded(Result<std::path::PathBuf, String>),
+    /// The user picked an entry in the unified ASR selector (a local whisper
+    /// file or a cloud backend). Writes the choice into config and persists.
+    HfAsrSelected(AsrOption),
+    /// The user picked an entry in the unified refiner selector (None, a
+    /// cloud refiner, or a local GGUF LLM). Writes it into config and persists.
+    HfRefineSelected(RefineOption),
+    /// The user clicked "Delete" on a downloaded/local model file: removes the
+    /// file, then rescans.
+    HfDeleteModel(std::path::PathBuf),
+    /// A model delete finished: the deleted path on success, or an error
+    /// message. On success the model dirs are rescanned.
+    HfModelDeleted(Result<std::path::PathBuf, String>),
+    /// The user clicked "Add directory": opens a native folder picker.
+    HfAddModelDir,
+    /// The folder picker resolved (`None` if the user cancelled). A new dir is
+    /// added to `config.huggingface.model_dirs` and the models rescanned.
+    HfModelDirPicked(Option<std::path::PathBuf>),
+    /// The user clicked "Remove" on a model directory: drops it from
+    /// `config.huggingface.model_dirs` and rescans.
+    HfRemoveModelDir(std::path::PathBuf),
 }
