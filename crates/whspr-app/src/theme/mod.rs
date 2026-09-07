@@ -7,6 +7,7 @@
 
 pub mod color;
 pub mod fonts;
+pub mod icons;
 pub mod motion;
 pub mod shape;
 pub mod spacing;
