@@ -2,12 +2,13 @@
 //!
 //! Supports compounds up to the billions ("one hundred and twenty five",
 //! "двести тридцать" -> "230", "восемь миллионов триста сорок тысяч" ->
-//! "8340000"), plus decimals in their own `decimals` submodule ("three
-//! point five" -> "3.5", "три целых четырнадцать сотых" -> "3.14").
-//! Scoped deliberately: no ordinals ("twenty-fifth", "двадцать пятого").
-//! `u64` only, still no negatives. Fractions live in the percents pass.
+//! "8340000"), plus two narrower extensions in their own submodules:
+//! decimals (`decimals`, "three point five" -> "3.5") and ordinals
+//! (`ordinals`, "twenty fifth" -> "25th"). `u64` only, still no
+//! negatives. Fractions live in the percents pass.
 
 mod decimals;
+mod ordinals;
 
 use super::split_punct;
 
@@ -230,10 +231,12 @@ pub(super) fn parse_number_at(cores: &[&str], i: usize) -> Option<(u64, usize)> 
 
 /// Replaces every maximal run of number words in `text` with its digit
 /// value, leaving everything else - including surrounding punctuation on
-/// the first/last word of a run - untouched. A decimal is tried first at
-/// each position, since a plain cardinal run would otherwise claim just
-/// its leading words - e.g. "three point five" would stop at "three" and
-/// leave "point five" behind.
+/// the first/last word of a run - untouched. Decimals and ordinals are
+/// tried first at each position (most specific pattern wins), since a
+/// plain cardinal run would otherwise claim just their leading words - e.g.
+/// "three point five" would stop at "three" and leave "point five" behind,
+/// and "twenty fifth" would stop at "twenty" since "fifth" isn't a
+/// cardinal word at all.
 pub fn normalize_numbers(text: &str) -> String {
     let words: Vec<&str> = text.split(' ').collect();
     let cores: Vec<&str> = words.iter().map(|w| split_punct(w).0).collect();
@@ -242,6 +245,11 @@ pub fn normalize_numbers(text: &str) -> String {
     let mut i = 0;
     while i < words.len() {
         if let Some((body, count)) = decimals::parse_decimal_at(&cores, i) {
+            let (_, prefix, _) = split_punct(words[i]);
+            let (_, _, suffix) = split_punct(words[i + count - 1]);
+            out.push(format!("{prefix}{body}{suffix}"));
+            i += count;
+        } else if let Some((body, count)) = ordinals::parse_ordinal_at(&cores, i) {
             let (_, prefix, _) = split_punct(words[i]);
             let (_, _, suffix) = split_punct(words[i + count - 1]);
             out.push(format!("{prefix}{body}{suffix}"));
@@ -358,6 +366,18 @@ mod tests {
         assert_eq!(
             normalize_numbers("I have three point five apples"),
             "I have 3.5 apples"
+        );
+    }
+
+    #[test]
+    fn ordinals_wired_into_the_text_pass() {
+        // Same proof for `ordinals::parse_ordinal_at`.
+        assert_eq!(normalize_numbers("twenty fifth"), "25th");
+        assert_eq!(normalize_numbers("twenty-fifth"), "25th");
+        assert_eq!(normalize_numbers("двадцать пятый"), "25-й");
+        assert_eq!(
+            normalize_numbers("the twenty fifth of the month"),
+            "the 25th of the month"
         );
     }
 
