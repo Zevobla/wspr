@@ -97,7 +97,8 @@ fn build_asr_backend(
 /// rule-based number/date/time normalization (toggled per-rule by
 /// `config.normalize`) on top of whatever the backend itself returns — see
 /// `NormalizingRefiner`'s own doc comment: it's meant to wrap any refiner,
-/// `NoopRefiner` included, not replace one.
+/// `NoopRefiner` included, not replace one. Model IDs/paths come from
+/// `config.refine_settings` rather than being hardcoded.
 fn build_refiner(
     config: &whspr_config::Config,
     refine_id: Option<&str>,
@@ -114,7 +115,10 @@ fn build_refiner(
             let api_key = api_key_for(config, "openai").ok_or_else(|| {
                 anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
             })?;
-            Box::new(OpenAiRefiner::new(api_key, "gpt-4o-mini"))
+            Box::new(OpenAiRefiner::new(
+                api_key,
+                config.refine_settings.openai_model.clone(),
+            ))
         }
         RefineChoice::Anthropic => {
             let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
@@ -122,9 +126,25 @@ fn build_refiner(
                     "Anthropic API key not configured (set [api_keys].anthropic in config)"
                 )
             })?;
-            Box::new(AnthropicRefiner::new(api_key, "claude-3-5-sonnet-20241022"))
+            Box::new(AnthropicRefiner::new(
+                api_key,
+                config.refine_settings.anthropic_model.clone(),
+            ))
         }
-        RefineChoice::LlamaLocal => Box::new(LlamaLocal::new("model.gguf")),
+        RefineChoice::LlamaLocal => {
+            let model_path = config
+                .refine_settings
+                .llama_model_path
+                .clone()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                    "no llama-local model configured: set [refine_settings].llama_model_path in \
+                     the config file to a GGUF model file you've downloaded (whspr doesn't ship \
+                     or fetch one for you), or pass --refine noop for no LLM cleanup"
+                )
+                })?;
+            Box::new(LlamaLocal::new(model_path))
+        }
     };
 
     Ok(Box::new(NormalizingRefiner::new(
