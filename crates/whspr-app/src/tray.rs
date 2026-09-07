@@ -277,4 +277,49 @@ mod tests {
         assert!(Action::Quit == Action::Quit);
         assert!(Action::ShowHub != Action::Quit);
     }
+
+    #[test]
+    fn idle_maps_to_idle_visual() {
+        assert_eq!(visual_for(PipelineState::Idle), TrayVisual::Idle);
+    }
+
+    #[test]
+    fn recording_and_error_share_the_recording_visual() {
+        assert_eq!(visual_for(PipelineState::Recording), TrayVisual::Recording);
+        assert_eq!(visual_for(PipelineState::Error), TrayVisual::Recording);
+    }
+
+    #[test]
+    fn transcribing_and_refining_share_the_processing_visual() {
+        assert_eq!(
+            visual_for(PipelineState::Transcribing),
+            TrayVisual::Processing
+        );
+        assert_eq!(
+            visual_for(PipelineState::Refining),
+            TrayVisual::Processing
+        );
+    }
+
+    #[test]
+    fn injecting_maps_to_the_done_visual() {
+        assert_eq!(visual_for(PipelineState::Injecting), TrayVisual::Done);
+    }
+
+    #[test]
+    fn every_visual_bucket_is_distinct() {
+        let idle = visual_for(PipelineState::Idle);
+        let recording = visual_for(PipelineState::Recording);
+        let processing = visual_for(PipelineState::Transcribing);
+        let done = visual_for(PipelineState::Injecting);
+
+        let buckets = [idle, recording, processing, done];
+        for (i, a) in buckets.iter().enumerate() {
+            for (j, b) in buckets.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "buckets {i} and {j} must be visually distinct");
+                }
+            }
+        }
+    }
 }
