@@ -222,6 +222,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn with_translate_reaches_the_asr_backend() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        let pipeline = Pipeline::new(Box::new(spy), Box::new(NoopRefiner)).with_translate(true);
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert!(seen_options.lock().unwrap().as_ref().unwrap().translate);
+    }
+
+    #[tokio::test]
+    async fn default_pipeline_passes_translate_false() {
+        let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let spy = SpyAsr {
+            seen_options: seen_options.clone(),
+        };
+
+        // No .with_translate() call - the default, pre-J-10 behavior must
+        // be unchanged.
+        let pipeline = Pipeline::new(Box::new(spy), Box::new(NoopRefiner));
+
+        pipeline
+            .run(
+                AudioBuffer::new(vec![0.0; 100], 16_000),
+                &RefineContext::default(),
+            )
+            .await
+            .unwrap();
+
+        assert!(!seen_options.lock().unwrap().as_ref().unwrap().translate);
+    }
+
+    #[tokio::test]
     async fn with_asr_options_reaches_the_asr_backend() {
         let seen_options = std::sync::Arc::new(std::sync::Mutex::new(None));
         let spy = SpyAsr {
