@@ -224,20 +224,15 @@ pub struct Config {
     /// `[capture]` table.
     #[serde(default)]
     pub capture: CaptureSettings,
-    /// In-app HuggingFace model-client settings (OAuth token, models
-    /// directory, OAuth client id), read from the config file's
-    /// `[huggingface]` table. See the `whspr-hf` crate.
+    /// In-app HuggingFace model-client settings (`[huggingface]` table).
     #[serde(default)]
     pub huggingface: HuggingFaceSettings,
 }
 
 /// Settings for the local whisper.cpp backend. Config-file-only like
-/// `Config::api_keys` (no env var fallback) — see the module doc comment.
-///
-/// `WhisperLocal::new(path)` (in `whspr-asr`) already accepts any path
-/// directly, so this field is a convenience for whoever eventually wires
-/// config into backend construction (e.g. `whspr-cli`); that wiring is not
-/// done here, out of scope for this crate.
+/// `Config::api_keys` (no env var fallback) — see the module doc comment. A
+/// convenience for whoever wires config into backend construction (e.g.
+/// `whspr-cli`); `WhisperLocal::new(path)` already takes any path directly.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WhisperConfig {
     /// Path to a GGML model file (e.g. `ggml-base.bin`). `None` means no
