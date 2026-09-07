@@ -33,18 +33,11 @@ const SCREENS: [Screen; 5] = [
     Screen::Settings,
 ];
 
-/// The brand block's padding. On macOS the window has no system title bar
-/// (`window_settings`), so the traffic lights float top-left over the rail;
-/// the wider left inset keeps the "whspr" wordmark clear of them. Other
-/// platforms keep the normal inset.
-#[cfg(target_os = "macos")]
-const BRAND_PAD: iced::Padding = iced::Padding {
-    top: 16.0,
-    right: 20.0,
-    bottom: 0.0,
-    left: 82.0,
-};
-#[cfg(not(target_os = "macos"))]
+/// The brand block's padding, from the rail reference (`WhsprRail.dc.html`:
+/// `padding: 38px 20px 0`). Left is 20px -- flush with the "01/02/..." nav
+/// numbers below it -- the same on every platform. The 38px top is what
+/// clears the macOS traffic lights (which float at ~y20, above the brand);
+/// on other platforms it's just header padding.
 const BRAND_PAD: iced::Padding = iced::Padding {
     top: 38.0,
     right: 20.0,
