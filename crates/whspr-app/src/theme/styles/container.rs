@@ -95,6 +95,25 @@ pub fn tag_outline(scheme: &color::Scheme) -> Style {
     }
 }
 
+/// `.tag-error`: the loudest tag -- an error-container fill with
+/// on-error-container text and a 1px error border. Reuses the same roles as
+/// [`error_banner`] (Modernist keeps errors mono/red, never a dark
+/// snackbar) so a hard "won't fit" verdict reads distinctly from
+/// [`tag_accent`]'s plain tint even though both draw from the one accent
+/// hue.
+pub fn tag_error(scheme: &color::Scheme) -> Style {
+    Style {
+        background: Some(Background::Color(scheme.error_container)),
+        text_color: Some(scheme.on_error_container),
+        border: Border {
+            color: scheme.error,
+            width: 1.0,
+            radius: shape::NONE.into(),
+        },
+        ..Style::default()
+    }
+}
+
 /// The error notice: an accent-100 tint with accent-800 text and a 1px
 /// accent border -- Modernist keeps errors mono (red), never a dark
 /// snackbar.
@@ -149,6 +168,17 @@ mod tests {
         );
         assert_eq!(tag_outline(scheme).background, None);
         assert_eq!(tag_outline(scheme).border.color, scheme.primary);
+    }
+
+    #[test]
+    fn tag_error_is_filled_unlike_tag_outline() {
+        let scheme = &color::LIGHT;
+        assert_eq!(
+            tag_error(scheme).background,
+            Some(Background::Color(scheme.error_container))
+        );
+        assert_eq!(tag_error(scheme).border.color, scheme.error);
+        assert_ne!(tag_error(scheme).background, tag_outline(scheme).background);
     }
 
     #[test]

@@ -15,6 +15,13 @@ pub enum TagKind {
     Neutral,
     /// transparent, 1px accent border + accent text -- "On this Mac".
     Outline,
+    /// error-container fill, on-error-container text, 1px error border --
+    /// the loudest tag, for a hard "this won't work" verdict (e.g. a model
+    /// that won't fit the machine). Distinct from [`TagKind::Accent`] even
+    /// though Modernist keeps a single accent hue, since it borrows the
+    /// same solid-fill-plus-border treatment as the error banner rather
+    /// than a plain tint.
+    Error,
 }
 
 /// A tag pill (square): 11px tracked label, 3x10 padding, zero radius.
@@ -39,6 +46,9 @@ pub fn tag<'a, M: 'a>(
         TagKind::Outline => body
             .style(move |_theme| styles::container::tag_outline(scheme))
             .into(),
+        TagKind::Error => body
+            .style(move |_theme| styles::container::tag_error(scheme))
+            .into(),
     }
 }
 
@@ -48,7 +58,12 @@ mod tests {
 
     #[test]
     fn tag_builds_for_every_kind() {
-        for kind in [TagKind::Accent, TagKind::Neutral, TagKind::Outline] {
+        for kind in [
+            TagKind::Accent,
+            TagKind::Neutral,
+            TagKind::Outline,
+            TagKind::Error,
+        ] {
             let _: Element<'_, ()> = tag(kind, "Active", &color::LIGHT);
         }
     }
