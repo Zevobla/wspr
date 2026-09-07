@@ -1,10 +1,10 @@
-//! The "Devices" group: the input-device picker (`microphone_section`) and
-//! the hotkey preview (`hotkey_section`) -- hardware- and input-adjacent
-//! settings kept together the way they already were before the Settings
-//! screen was split into per-topic groups (see `super`'s module doc
-//! comment).
+//! The "Devices" group: the input-device picker (`microphone_section`), the
+//! `config.device` flag toggles (`flags_section`), and the hotkey preview
+//! (`hotkey_section`) -- hardware- and input-adjacent settings kept
+//! together the way they already were before the Settings screen was split
+//! into per-topic groups (see `super`'s module doc comment).
 
-use iced::widget::{button, column, pick_list, text};
+use iced::widget::{button, checkbox, column, pick_list, text};
 use iced::Element;
 
 use crate::hub::common::{field, section};
@@ -14,6 +14,7 @@ use crate::theme::{color, spacing, styles, type_scale};
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     column![
         microphone_section(state, scheme),
+        flags_section(state, scheme),
         hotkey_section(state, scheme),
     ]
     .spacing(spacing::XL)
@@ -37,6 +38,47 @@ fn microphone_section<'a>(
         scheme,
         "Microphone",
         field(scheme, "Input device", device_picker.into()),
+    )
+}
+
+fn flags_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let device_hotplug = checkbox(state.config.device.device_hotplug)
+        .label("Rescan devices when one is plugged/unplugged")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::DeviceHotplugToggled);
+
+    let active_window = checkbox(state.config.device.active_window)
+        .label("Track the focused app for per-app stats")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::ActiveWindowToggled);
+
+    let bluetooth_source = checkbox(state.config.device.bluetooth_source)
+        .label("Allow Bluetooth microphones")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::BluetoothSourceToggled);
+
+    let virtual_source = checkbox(state.config.device.virtual_source)
+        .label("Allow virtual/software audio sources")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::VirtualSourceToggled);
+
+    let tray_static = checkbox(state.config.device.tray_static)
+        .label("Keep the tray icon static (no flicker on state changes)")
+        .style(move |_theme: &iced::Theme, status| styles::checkbox::field(scheme, status))
+        .on_toggle(Message::TrayStaticToggled);
+
+    section(
+        scheme,
+        "Devices",
+        column![
+            device_hotplug,
+            active_window,
+            bluetooth_source,
+            virtual_source,
+            tray_static,
+        ]
+        .spacing(spacing::MD)
+        .into(),
     )
 }
 

@@ -405,6 +405,31 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
             Task::none()
         }
+        Message::DeviceHotplugToggled(enabled) => {
+            state.config.device.device_hotplug = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::ActiveWindowToggled(enabled) => {
+            state.config.device.active_window = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::BluetoothSourceToggled(enabled) => {
+            state.config.device.bluetooth_source = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::VirtualSourceToggled(enabled) => {
+            state.config.device.virtual_source = enabled;
+            persist_config(state);
+            Task::none()
+        }
+        Message::TrayStaticToggled(enabled) => {
+            state.config.device.tray_static = enabled;
+            persist_config(state);
+            Task::none()
+        }
     }
 }
 

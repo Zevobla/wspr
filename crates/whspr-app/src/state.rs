@@ -326,4 +326,18 @@ pub enum Message {
     MicPrivacyToggled(bool),
     /// The user toggled "Encrypt history at rest" in the Privacy section.
     HistoryEncryptionToggled(bool),
+    /// The user toggled "Rescan devices when one is plugged/unplugged" in
+    /// the Devices section.
+    DeviceHotplugToggled(bool),
+    /// The user toggled "Track the focused app for per-app stats" in the
+    /// Devices section.
+    ActiveWindowToggled(bool),
+    /// The user toggled "Allow Bluetooth microphones" in the Devices
+    /// section.
+    BluetoothSourceToggled(bool),
+    /// The user toggled "Allow virtual/software audio sources" in the
+    /// Devices section.
+    VirtualSourceToggled(bool),
+    /// The user toggled "Keep the tray icon static" in the Devices section.
+    TrayStaticToggled(bool),
 }
