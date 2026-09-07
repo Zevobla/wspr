@@ -15,6 +15,7 @@
 //! llama_model_path`) can point straight at the file -- the same "one fixed
 //! directory of model files" shape `whspr-diarize` uses.
 
+mod llm;
 mod scan;
 mod whisper;
 
@@ -26,6 +27,7 @@ use hf_hub::api::tokio::{ApiBuilder, Progress};
 use tokio::sync::mpsc::UnboundedSender;
 use whspr_core::{Result, WhsprError};
 
+pub use llm::{download_llm, llm_model_by_filename, llm_model_by_id, LlmModel, LLM_MODELS};
 pub use scan::{classify, installed, InstalledModel, ModelKind};
 pub use whisper::{download, model_by_filename, model_by_id, WhisperModel, MODELS, REPO};
 
