@@ -15,10 +15,13 @@
 //! # Modules
 //!
 //! - [`hardware`] -- `sysinfo` RAM probe + the pure red/yellow/green fit
-//!   heuristic.
+//!   heuristic, including the exact, GGUF-metadata-based KV-cache footprint
+//!   for LLMs ([`hardware::kv_cache_bytes`]).
 //! - [`models`] -- the curated whisper.cpp GGML (ASR) and instruct-GGUF
 //!   (refiner LLM) registries, `hf-hub`-backed `download`/`download_llm`, a
 //!   magic-byte `classify`, a unified multi-directory `scan`, and `delete`.
+//! - [`gguf`] -- a minimal, read-only GGUF header parser: reads a local
+//!   `.gguf` file's architecture metadata for the exact KV-cache footprint.
 //! - [`oauth`] -- the HuggingFace OAuth PKCE flow (authorize URL, local
 //!   redirect catcher, code->token exchange, `whoami`).
 //!
@@ -42,11 +45,16 @@
 //! There is no client *secret*: whspr is a native public client and uses PKCE
 //! instead, so nothing secret is ever stored in the config file.
 
+pub mod gguf;
 pub mod hardware;
 pub mod models;
 pub mod oauth;
 
-pub use hardware::{estimated_footprint, fits, probe, Fit, HardwareSpecs};
+pub use gguf::{read_metadata as read_gguf_metadata, GgufMetadata};
+pub use hardware::{
+    estimated_footprint, estimated_llm_footprint, fits, fits_llm, kv_cache_bytes, probe, Fit,
+    HardwareSpecs, LlmShape,
+};
 pub use models::{
     classify, delete, download, download_llm, human_size, installed, llm_model_by_filename,
     llm_model_by_id, model_by_filename, model_by_id, resolve_models_dir, scan, DownloadProgress,
