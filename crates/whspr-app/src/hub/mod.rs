@@ -45,6 +45,21 @@ const BRAND_PAD: iced::Padding = iced::Padding {
     left: 20.0,
 };
 
+/// The rasterized window icon's side length, in lockstep with the constant
+/// of the same name `build.rs` renders `assets/icon.svg` to.
+const ICON_SIZE: u32 = 512;
+
+/// The Hub window's icon (the "1c" mark). `build.rs` rasterizes
+/// `assets/icon.svg` to flat RGBA8 at build time and writes it to
+/// `OUT_DIR`; only the vector is committed to git (see the repo
+/// `.gitignore`). `cargo run` without an app bundle has limited macOS dock-
+/// icon support, but the window icon itself is correct today and will
+/// carry over once whspr ships as a bundled `.app`.
+fn window_icon() -> Option<iced::window::icon::Icon> {
+    const ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
+    iced::window::icon::from_rgba(ICON_RGBA.to_vec(), ICON_SIZE, ICON_SIZE).ok()
+}
+
 /// The Hub window's settings. On macOS the system title bar is hidden and
 /// made transparent with a full-size content view, so the app's own paper
 /// ground and rounded corners reach the top edge and the traffic lights
@@ -60,13 +75,17 @@ pub fn window_settings() -> iced::window::Settings {
             titlebar_transparent: true,
             fullsize_content_view: true,
         },
+        icon: window_icon(),
         ..iced::window::Settings::default()
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn window_settings() -> iced::window::Settings {
-    iced::window::Settings::default()
+    iced::window::Settings {
+        icon: window_icon(),
+        ..iced::window::Settings::default()
+    }
 }
 
 /// Renders the Hub window's content for the current state.
