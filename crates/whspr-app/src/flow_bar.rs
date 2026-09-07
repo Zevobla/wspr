@@ -36,8 +36,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let fill = animate(state.pipeline_state, base_fill, scheme, elapsed);
 
     let label = text(label_for(state.pipeline_state))
-        .size(type_scale::TITLE_LARGE.emphasized().size)
-        .font(type_scale::TITLE_LARGE.emphasized().font())
+        .size(type_scale::TITLE_MEDIUM.emphasized().size)
+        .font(type_scale::TITLE_MEDIUM.emphasized().font())
         .color(text_color);
 
     let content: Element<'_, Message> = if matches!(
