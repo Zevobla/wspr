@@ -371,6 +371,37 @@ mod tests {
     }
 
     #[test]
+    fn build_refiner_llama_local_requires_a_configured_model_path() {
+        let config = Config {
+            refine: RefineChoice::LlamaLocal,
+            ..Default::default()
+        };
+
+        // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
+        // available -- match directly instead.
+        match build_refiner(&config) {
+            Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
+            Err(error) => assert!(error.contains("llama_model_path")),
+        }
+    }
+
+    #[test]
+    fn build_refiner_llama_local_uses_configured_model_path() {
+        let config = Config {
+            refine: RefineChoice::LlamaLocal,
+            refine_settings: whspr_config::RefineSettings {
+                llama_model_path: Some(PathBuf::from("/explicit/model.gguf")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let refiner =
+            build_refiner(&config).expect("an explicit llama_model_path should be enough to build");
+        assert_eq!(refiner.id(), "llama-local");
+    }
+
+    #[test]
     fn start_recording_with_no_active_capture_starts_one() {
         assert_eq!(
             capture_decision(DebounceAction::StartRecording, false),
