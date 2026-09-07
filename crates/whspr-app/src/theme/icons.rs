@@ -18,6 +18,8 @@ pub const SQUARE: &[u8] = include_bytes!("../../assets/icons/square.svg");
 pub const CLIPBOARD: &[u8] = include_bytes!("../../assets/icons/clipboard.svg");
 pub const FILE_TEXT: &[u8] = include_bytes!("../../assets/icons/file-text.svg");
 pub const SEARCH: &[u8] = include_bytes!("../../assets/icons/search.svg");
+pub const DOWNLOAD: &[u8] = include_bytes!("../../assets/icons/download.svg");
+pub const TRASH: &[u8] = include_bytes!("../../assets/icons/trash.svg");
 
 /// A Lucide icon, sized to `size`x`size` and recolored to `color`. Generic
 /// over the message type because an icon emits no messages of its own, so
@@ -36,7 +38,7 @@ mod tests {
 
     #[test]
     fn vendored_icons_are_real_svgs() {
-        for data in [MIC, SQUARE, CLIPBOARD, FILE_TEXT, SEARCH] {
+        for data in [MIC, SQUARE, CLIPBOARD, FILE_TEXT, SEARCH, DOWNLOAD, TRASH] {
             assert!(data.starts_with(b"<svg"), "expected an <svg> asset");
         }
     }
