@@ -27,7 +27,11 @@ pub async fn run_transcribe_audio(audio: AudioBuffer, config: Config) -> Result<
     let asr = build_asr_backend(&config)?;
     let refiner = build_refiner(&config)?;
 
-    let pipeline = Pipeline::new(asr, refiner).with_language(config.language.clone());
+    // Resolve the same way live dictation does (`crate::worker::run`) so the
+    // record-button/file path and the hotkey path never disagree about
+    // which language whisper was told to use.
+    let language = whspr_config::effective_language(&config.language_settings, &config.language);
+    let pipeline = Pipeline::new(asr, refiner).with_language(language);
     pipeline
         .run(audio, &RefineContext::default())
         .await
