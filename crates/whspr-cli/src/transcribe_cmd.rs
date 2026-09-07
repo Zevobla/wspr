@@ -13,7 +13,9 @@ use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
 use whspr_config::{api_key_for, AsrChoice, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, Pipeline, RefineContext, TextRefiner};
-use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner};
+use whspr_refine::{
+    effective_instructions, AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner,
+};
 
 /// Builds an ASR backend from command-line flags, defaulting to a real
 /// `WhisperLocal` backend when `--asr` is not explicitly passed.
@@ -251,7 +253,12 @@ pub async fn run(
     // the same as before this was wired up.
     let pipeline = Pipeline::new(asr_backend, refiner)
         .with_language(language.or_else(|| config.language.clone()));
-    let ctx = RefineContext::default();
+    let ctx = RefineContext {
+        instructions: Some(effective_instructions(
+            config.refine_settings.instructions.as_deref(),
+        )),
+        ..Default::default()
+    };
 
     eprintln!("Transcribing and refining...");
     let (transcript, output) = pipeline.run_with_transcript(audio, &ctx).await?;
@@ -346,7 +353,12 @@ pub async fn run_batch(
             match crate::load_audio(&path).await {
                 Ok(audio) => {
                     let audio_duration_secs = audio.duration_secs();
-                    let ctx = RefineContext::default();
+                    let ctx = RefineContext {
+                        instructions: Some(effective_instructions(
+                            config.refine_settings.instructions.as_deref(),
+                        )),
+                        ..Default::default()
+                    };
 
                     match pipeline.run(audio, &ctx).await {
                         Ok(output) => {
