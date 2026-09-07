@@ -97,6 +97,7 @@ pub fn boot(state: &mut State) {
         Some(_) => crate::screenshot::theme_from_env(),
         None => detect(),
     };
+    tracing::debug!(?theme, "system_theme::boot detected OS appearance");
     state.system_theme = theme.clone();
     state.theme = theme;
 }
@@ -107,6 +108,11 @@ pub fn boot(state: &mut State) {
 /// manual override.
 pub fn tick(state: &mut State) -> Task<Message> {
     let detected = detect();
+    tracing::debug!(
+        ?detected,
+        current = ?state.theme,
+        "system_theme::tick re-checked OS appearance"
+    );
     if detected != state.system_theme {
         state.theme = detected.clone();
     }
