@@ -1,0 +1,130 @@
+name: Release
+
+# Cut a release by pushing a version tag:  git tag v0.1.0 && git push origin v0.1.0
+# See docs/RELEASING.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the GitHub Release and upload assets
+
+jobs:
+  release-macos:
+    runs-on: macos-14 # Apple Silicon (arm64)
+
+    # Signing/notarization is OPTIONAL: the steps below run only if these
+    # secrets are set on the repo. GitHub's `secrets` context can't be used
+    # in `if:` directly, so they're surfaced as job env and the signing/notes
+    # steps gate on `env.MACOS_CERTIFICATE != ''`. Absent -> ship UNSIGNED.
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+      MACOS_NOTARY_PWD: ${{ secrets.MACOS_NOTARY_PWD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Determine version from tag
+        id: version
+        # v0.1.0 -> 0.1.0
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: nix flake check (the gate)
+        run: nix flake check --print-build-logs
+
+      - name: Bundle macOS .app / .dmg / .zip
+        # The script self-resolves ARCHIVO_DIR from the flake and pulls
+        # resvg via `nix shell`, so it's run directly (top-level PATH has nix).
+        run: ./scripts/bundle-macos.sh --version "${{ steps.version.outputs.version }}"
+
+      - name: Sign & notarize (optional; only when signing secrets are present)
+        if: env.MACOS_CERTIFICATE != ''
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          APP="dist/whspr.app"
+          ZIP="dist/whspr-${VERSION}-macos.zip"
+          DMG="dist/whspr-${VERSION}-macos.dmg"
+
+          # Import the signing certificate into a temporary keychain.
+          KEYCHAIN="$RUNNER_TEMP/whspr-signing.keychain-db"
+          KEYCHAIN_PWD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | tr -d '"')
+
+          # Sign the bundle with the hardened runtime, then verify.
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$MACOS_SIGN_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          # Repackage the now-signed app.
+          rm -f "$ZIP" "$DMG"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          hdiutil create -volname whspr -srcfolder "$APP" -ov -format UDZO "$DMG"
+
+          # Notarize the dmg, then staple the ticket to dmg and app.
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_PWD" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler staple "$APP"
+          # Re-zip so the stapled app ships in the zip too.
+          rm -f "$ZIP"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+
+      - name: Write release notes
+        run: |
+          set -eu
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES="$RUNNER_TEMP/notes.md"
+          {
+            echo "## whspr $VERSION"
+            echo
+            echo "macOS (Apple Silicon) build. Download \`whspr-${VERSION}-macos.dmg\`, open it, and drag **whspr** to Applications."
+            echo
+            if [ -z "${MACOS_CERTIFICATE:-}" ]; then
+              echo "### Unsigned build"
+              echo
+              echo "This build is **not signed or notarized**, so Gatekeeper blocks it on first launch. Either right-click **whspr.app** and choose **Open**, or clear the quarantine flag:"
+              echo
+              echo '```sh'
+              echo "xattr -dr com.apple.quarantine /Applications/whspr.app"
+              echo '```'
+            else
+              echo "This build is signed with Developer ID and notarized by Apple."
+            fi
+          } > "$NOTES"
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          cat "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        id: notes
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.notes.outputs.notes }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/whspr-*-macos.dmg
+            dist/whspr-*-macos.zip
