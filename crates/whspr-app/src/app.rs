@@ -280,7 +280,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Message::FileTranscribed,
             )
         }
-        Message::FileTranscribed(Ok((text, duration_secs))) => {
+        Message::FileTranscribed(Ok((text, duration_secs, _embedding))) => {
             state.transcribe_status = Some("Transcription complete".to_string());
             state.transcribed_text = Some(text.clone());
             crate::history::record_completed(state, text, Some(duration_secs), None);

@@ -348,11 +348,13 @@ pub enum Message {
     PickFileToTranscribe,
     /// The transcribe file picker resolved (`None` if the user cancelled).
     FileToTranscribePicked(Option<std::path::PathBuf>),
-    /// A background file-transcription run finished: the recognized text and
-    /// the recorded audio's duration, or an error message. Shown in the
-    /// Hub's Transcribe section (no injection) and, on success, saved to
-    /// history (see `crate::history::record_completed`).
-    FileTranscribed(Result<(String, f32), String>),
+    /// A background file-transcription run finished: the recognized text, the
+    /// recorded audio's duration, and an optional per-clip speaker embedding
+    /// (see `crate::transcribe_file::TranscribeOutcome`), or an error message.
+    /// Shown in the Hub's Transcribe section (no injection) and, on success,
+    /// attributed to a speaker and saved to history (see
+    /// `crate::speakers::attribute_speaker` / `crate::history::record_completed`).
+    FileTranscribed(Result<crate::transcribe_file::TranscribeOutcome, String>),
     /// The user clicked the in-app Record button: starts capture if idle,
     /// stops + transcribes if already recording.
     ToggleRecording,
