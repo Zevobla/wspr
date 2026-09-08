@@ -171,16 +171,16 @@ mod platform {
         icon_for_visual(super::visual_for(state))
     }
 
-    /// Renders the icon for a `TrayVisual` bucket. Modernist: the glyph is a
-    /// square whose *shape* changes (outline / solid / half-filled /
-    /// inverted-check), not just its color, so it stays legible in a
+    /// Renders the icon for a `TrayVisual` bucket. Modernist: each state is
+    /// a distinct *shape* (hollow square / microphone / half-filled square /
+    /// inverted check), not just a color, so it stays legible in a
     /// monochrome menu bar. Colors come from `crate::theme::color` so the
-    /// tray and Flow Bar agree on what each state means.
+    /// tray's state colors match the rest of the app.
     fn icon_for_visual(visual: TrayVisual) -> Icon {
         let scheme = &crate::theme::color::LIGHT;
         match visual {
             TrayVisual::Idle => render_square_outline(scheme.on_surface_variant),
-            TrayVisual::Recording => render_square_solid(scheme.error),
+            TrayVisual::Recording => render_microphone(scheme.error),
             TrayVisual::Processing => render_square_half(scheme.tertiary),
             TrayVisual::Done => render_check(scheme.success_container, scheme.on_success_container),
         }
@@ -220,11 +220,6 @@ mod platform {
             (color.b * 255.0) as u8,
             255,
         ]
-    }
-
-    /// Recording: a solid filled square.
-    fn render_square_solid(color: iced::Color) -> Icon {
-        render_icon(move |dx, dy| in_square(dx, dy, RADIUS).then_some(color))
     }
 
     /// Idle: a hollow 2px-outlined square -- the opposite of Recording's
