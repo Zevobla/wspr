@@ -70,7 +70,7 @@
 //! which must stay offline and model-free).
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use sherpa_rs::diarize::{Diarize, DiarizeConfig};
 use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
@@ -169,6 +169,36 @@ impl SherpaDiarizer {
             embedder: Mutex::new(embedder),
         })
     }
+
+    /// Locks the shared speaker-embedding extractor, mapping a poisoned
+    /// lock into a `WhsprError`. Factored out because both the per-turn
+    /// path in [`diarize`](SherpaDiarizer::diarize) and the whole-clip
+    /// [`embed_clip`](SherpaDiarizer::embed_clip) run the same extractor.
+    fn lock_embedder(&self) -> Result<MutexGuard<'_, EmbeddingExtractor>> {
+        self.embedder
+            .lock()
+            .map_err(|_| WhsprError::Diarize("embedding extractor lock poisoned".into()))
+    }
+
+    /// Computes a single speaker-embedding vector over the entire clip
+    /// (dictation is single-speaker), suitable for
+    /// `whspr_config::SpeakerDb::match_or_enroll`. Runs the loaded
+    /// speaker-embedding model over the whole `audio` rather than
+    /// per-segment (contrast [`diarize`](SherpaDiarizer::diarize)).
+    ///
+    /// Returns a `WhsprError::Diarize` (rather than panicking) if `audio`
+    /// carries no samples.
+    pub fn embed_clip(&self, audio: &AudioBuffer) -> Result<Vec<f32>> {
+        if audio.samples.is_empty() {
+            return Err(WhsprError::Diarize(
+                "cannot compute a speaker embedding over an empty audio clip".into(),
+            ));
+        }
+        let mut embedder = self.lock_embedder()?;
+        embedder
+            .compute_speaker_embedding(audio.samples.clone(), audio.sample_rate)
+            .map_err(|e| WhsprError::Diarize(format!("clip embedding extraction failed: {e}")))
+    }
 }
 
 /// Clamps a turn's `[start_secs, end_secs)` span to a valid sample range
@@ -209,10 +239,7 @@ impl Diarizer for SherpaDiarizer {
                 .map_err(|e| WhsprError::Diarize(format!("diarization failed: {e}")))?
         };
 
-        let mut embedder = self
-            .embedder
-            .lock()
-            .map_err(|_| WhsprError::Diarize("embedding extractor lock poisoned".into()))?;
+        let mut embedder = self.lock_embedder()?;
 
         let mut turns = Vec::with_capacity(segments.len());
         for segment in segments {
