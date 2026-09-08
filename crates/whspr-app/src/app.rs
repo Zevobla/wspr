@@ -183,6 +183,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 crate::worker::WorkerEvent::Completed {
                     text,
                     duration_secs,
+                    embedding,
                 } => {
                     // Inject the dictated text into whatever app has focus.
                     // This runs here in `update()` -- iced's MAIN thread, where
@@ -200,15 +201,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     // Also surface it on-screen in the Hub's transcription field.
                     state.transcribed_text = Some(text.clone());
                     state.transcribe_status = Some("Dictated".to_string());
-                    state.history.push(crate::history::HistoryEntry {
-                        text,
-                        duration_secs: Some(duration_secs),
-                        // The live-hotkey path doesn't compute an embedding
-                        // (only the record-button/file path does, see
-                        // `crate::speakers::attribute_speaker`), so this
-                        // stays unattributed for now.
-                        speaker_id: None,
-                    });
+                    // Attribute a speaker from the worker's clip embedding and
+                    // persist the dictation to history (in memory *and* on
+                    // disk), exactly like the record-button/file path -- which
+                    // also fixes the pre-existing bug where live-hotkey
+                    // dictations were never saved to disk.
+                    let speaker_id = crate::speakers::attribute_speaker(state, embedding);
+                    crate::history::record_completed(state, text, Some(duration_secs), speaker_id);
                     // The pipeline has no "just finished" state to glance at
                     // (see `crate::tray`), so it's timed app-side here.
                     begin_tray_done_linger(state);

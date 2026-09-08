@@ -78,7 +78,11 @@ pub async fn run_transcribe_audio(
 /// logging real failures. A speaker fingerprint is never worth failing an
 /// otherwise-good transcription over, so this deliberately swallows errors
 /// into `None` rather than propagating them.
-async fn compute_embedding(audio: &AudioBuffer, config: &Config) -> Option<Vec<f32>> {
+///
+/// `pub(crate)` so the live-hotkey path (`crate::worker::run`) reuses the
+/// exact same fingerprinting logic as the record-button/file path rather
+/// than duplicating it.
+pub(crate) async fn compute_embedding(audio: &AudioBuffer, config: &Config) -> Option<Vec<f32>> {
     if !config.speaker.enabled {
         return None;
     }
