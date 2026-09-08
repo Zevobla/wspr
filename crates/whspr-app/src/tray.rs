@@ -30,10 +30,10 @@
 //! itself can't represent. `crate::app` drives that extra bucket directly
 //! via `Handle::set_visual`, timing a lingering "Done" display off
 //! `WorkerEvent::Completed` rather than off any single `PipelineState`
-//! transition. `Injecting` itself maps to `Done` here too, matching
-//! `crate::flow_bar`'s existing precedent (`base_colors_for`), which
-//! already treats `Injecting` as "Done" -- both agree on what that
-//! instant means, it's just the tray that additionally makes it linger.
+//! transition. `Injecting` itself maps to `Done` here too: the pipeline
+//! reports `Injecting` at the instant a turn's text is handed off, which is
+//! exactly the "done" moment worth a glance -- the tray just additionally
+//! makes it linger.
 //!
 //! ## Platform support
 //! Implemented for macOS and Windows only, both of which integrate with
@@ -68,7 +68,7 @@ pub enum TrayVisual {
 /// Maps a raw pipeline state onto its tray visual bucket. Pure, so it's
 /// unit-testable without a live tray icon (see the `tests` module below).
 /// `Injecting` maps to `Done` -- see the module doc comment for why that
-/// mirrors `crate::flow_bar`'s existing treatment of that state.
+/// instant is the "done" moment worth surfacing.
 fn visual_for(state: PipelineState) -> TrayVisual {
     match state {
         PipelineState::Idle => TrayVisual::Idle,
@@ -171,16 +171,16 @@ mod platform {
         icon_for_visual(super::visual_for(state))
     }
 
-    /// Renders the icon for a `TrayVisual` bucket. Modernist: the glyph is a
-    /// square whose *shape* changes (outline / solid / half-filled /
-    /// inverted-check), not just its color, so it stays legible in a
+    /// Renders the icon for a `TrayVisual` bucket. Modernist: each state is
+    /// a distinct *shape* (hollow square / microphone / half-filled square /
+    /// inverted check), not just a color, so it stays legible in a
     /// monochrome menu bar. Colors come from `crate::theme::color` so the
-    /// tray and Flow Bar agree on what each state means.
+    /// tray's state colors match the rest of the app.
     fn icon_for_visual(visual: TrayVisual) -> Icon {
         let scheme = &crate::theme::color::LIGHT;
         match visual {
             TrayVisual::Idle => render_square_outline(scheme.on_surface_variant),
-            TrayVisual::Recording => render_square_solid(scheme.error),
+            TrayVisual::Recording => render_microphone(scheme.error),
             TrayVisual::Processing => render_square_half(scheme.tertiary),
             TrayVisual::Done => render_check(scheme.success_container, scheme.on_success_container),
         }
@@ -222,13 +222,8 @@ mod platform {
         ]
     }
 
-    /// Recording: a solid filled square.
-    fn render_square_solid(color: iced::Color) -> Icon {
-        render_icon(move |dx, dy| in_square(dx, dy, RADIUS).then_some(color))
-    }
-
-    /// Idle: a hollow 2px-outlined square -- the opposite of Recording's
-    /// solid fill (empty vs. full), not just a dimmer color.
+    /// Idle: a hollow 2px-outlined square -- a clean empty frame, a distinct
+    /// silhouette from the other three states rather than just a dimmer color.
     fn render_square_outline(color: iced::Color) -> Icon {
         const THICKNESS: f32 = 3.0;
         render_icon(move |dx, dy| {
@@ -269,10 +264,55 @@ mod platform {
         })
     }
 
+    /// Recording: a bold microphone silhouette painted in `color` (the
+    /// scheme's red), so "recording" reads as an unmistakable mic at a
+    /// glance rather than as one more colored box.
+    fn render_microphone(color: iced::Color) -> Icon {
+        render_icon(move |dx, dy| in_microphone(dx, dy).then_some(color))
+    }
+
     /// Whether `(dx, dy)` (relative to the icon's center) falls inside a
     /// square of half-side `half` -- the one silhouette Modernist uses.
     fn in_square(dx: f32, dy: f32, half: f32) -> bool {
         dx.abs() <= half && dy.abs() <= half
+    }
+
+    /// Whether `(dx, dy)` (center-relative) falls inside an axis-aligned
+    /// rectangle spanning `[-half_w, half_w]` horizontally and `[y0, y1]`
+    /// vertically. Backs the microphone's stem and base bar.
+    fn in_rect(dx: f32, dy: f32, half_w: f32, y0: f32, y1: f32) -> bool {
+        dx.abs() <= half_w && dy >= y0 && dy <= y1
+    }
+
+    /// Whether `(dx, dy)` (center-relative) falls inside the disc of radius
+    /// `r` centered at `c`. Used as an annulus (outer minus inner) for the
+    /// microphone's cradle.
+    fn in_disc(dx: f32, dy: f32, c: (f32, f32), r: f32) -> bool {
+        let (ex, ey) = (dx - c.0, dy - c.1);
+        ex * ex + ey * ey <= r * r
+    }
+
+    /// Whether `(dx, dy)` (center-relative) falls within the microphone
+    /// silhouette: a vertical capsule "head", a U-shaped cradle hugging its
+    /// lower half, a narrow stem, and a wider base bar. Pure so `shape_tests`
+    /// can assert the shape without rasterizing an `Icon`.
+    fn in_microphone(dx: f32, dy: f32) -> bool {
+        // Head: a vertical stadium -- a rectangle capped by two half-discs,
+        // expressed as everything within `HEAD_HALF_WIDTH` of a vertical
+        // segment (`dist_to_segment`) -- sitting in the upper center.
+        const HEAD_HALF_WIDTH: f32 = 3.5;
+        let head = dist_to_segment((dx, dy), (0.0, -5.5), (0.0, -1.5)) <= HEAD_HALF_WIDTH;
+        // Cradle: the lower arc of a ring around the head, with short arms
+        // rising up its sides -- the detail that reads as a mic rather than
+        // a lollipop.
+        let cradle_center = (0.0, -3.0);
+        let cradle = in_disc(dx, dy, cradle_center, 6.0)
+            && !in_disc(dx, dy, cradle_center, 4.0)
+            && dy >= -4.5;
+        // Stem down to, and the foot bar it stands on.
+        let stem = in_rect(dx, dy, 1.2, 3.0, 6.0);
+        let base = in_rect(dx, dy, 5.0, 6.0, 8.0);
+        head || cradle || stem || base
     }
 
     /// Euclidean distance from point `p` to the segment `a`-`b`, clamping
@@ -332,6 +372,38 @@ mod platform {
         fn dist_to_segment_clamps_to_the_nearest_endpoint_beyond_the_segment() {
             let d = dist_to_segment((5.0, 0.0), (-2.0, 0.0), (2.0, 0.0));
             assert!((d - 3.0).abs() < 1e-6);
+        }
+
+        #[test]
+        fn in_rect_is_inclusive_within_bounds_and_empty_outside() {
+            assert!(in_rect(0.0, 5.0, 2.0, 4.0, 6.0));
+            // Beyond the half-width, or past the vertical span, is empty.
+            assert!(!in_rect(3.0, 5.0, 2.0, 4.0, 6.0));
+            assert!(!in_rect(0.0, 7.0, 2.0, 4.0, 6.0));
+        }
+
+        #[test]
+        fn in_disc_includes_center_but_excludes_a_far_point() {
+            assert!(in_disc(0.0, 0.0, (0.0, 0.0), 3.0));
+            assert!(in_disc(2.0, 0.0, (0.0, 0.0), 3.0));
+            assert!(!in_disc(4.0, 0.0, (0.0, 0.0), 3.0));
+        }
+
+        #[test]
+        fn microphone_head_paints_but_a_far_corner_is_transparent() {
+            // A point on the head's vertical centerline is inside the mic...
+            assert!(in_microphone(0.0, -3.5));
+            // ...while a top corner of the canvas is clearly outside it.
+            assert!(!in_microphone(-9.0, -9.0));
+        }
+
+        #[test]
+        fn microphone_base_bar_is_wider_than_its_stem() {
+            // Out near the base's edge is filled (the foot bar)...
+            assert!(in_microphone(4.5, 7.0));
+            // ...but the same column higher up, level with the narrow stem,
+            // is empty.
+            assert!(!in_microphone(4.5, 4.5));
         }
     }
 }

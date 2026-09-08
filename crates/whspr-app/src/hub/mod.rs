@@ -308,7 +308,7 @@ fn status_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element
     .into()
 }
 
-/// A glanceable word for the pipeline's current state (rail + Flow Bar).
+/// A glanceable word for the pipeline's current state (shown on the rail).
 fn pipeline_word(state: whspr_core::PipelineState) -> &'static str {
     match state {
         whspr_core::PipelineState::Idle => "Ready",

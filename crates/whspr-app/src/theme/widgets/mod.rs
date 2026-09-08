@@ -1,5 +1,5 @@
 //! Reusable Modernist widgets built from iced primitives -- the shared
-//! component surface every Hub screen and the Flow Bar draw from. Split
+//! component surface every Hub screen draws from. Split
 //! into small submodules (marks, tags, controls, table, nav) so no file
 //! approaches the 600-line cap, and re-exported flat here so call sites
 //! write `widgets::tag(..)`, `widgets::toggle(..)`, `widgets::hr(..)`.

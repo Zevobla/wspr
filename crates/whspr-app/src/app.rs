@@ -1,10 +1,12 @@
-//! Wires up the iced `Program`: `boot` opens the Hub window, `update` handles
-//! messages, and `view` renders the right content for each open window.
+//! Wires up the iced `Program`: `boot` opens the Hub window, `update`
+//! handles messages, and `view` renders the Hub.
 //!
-//! Built on `iced::daemon` (rather than the simpler `iced::application`)
-//! from the start, since the Flow Bar overlay needs a second, independently
-//! styled window and `daemon`'s `view`/`theme`/`title` all take a
-//! `window::Id` so each window can render its own content.
+//! Built on `iced::daemon` (rather than the simpler `iced::application`):
+//! unlike `application`, `daemon` doesn't tie the process lifetime to a
+//! single window, which suits a menu-bar app whose tray icon and "Show
+//! Hub" action need to outlive the Hub window. Its `view`/`theme`/`title`
+//! all take a `window::Id`; `view` ignores it here since the Hub is the
+//! only window.
 //!
 //! ## Settings persistence
 //! Every Hub setting is written straight back to the config file the moment
@@ -40,8 +42,8 @@ pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
         // Load the three static Archivo faces and make Regular the default,
-        // so every Hub/Flow Bar surface renders in the Modernist type
-        // family and each weight resolves to its own crisp static face
+        // so every Hub surface renders in the Modernist type family and each
+        // weight resolves to its own crisp static face
         // (see `crate::theme::fonts`).
         .font(crate::theme::fonts::ARCHIVO_REGULAR)
         .font(crate::theme::fonts::ARCHIVO_SEMIBOLD)
@@ -81,14 +83,8 @@ fn boot() -> (State, Task<Message>) {
     crate::system_theme::boot(&mut state);
 
     let (_id, open_hub) = window::open(crate::hub::window_settings());
-    let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
 
-    let open = Task::batch([
-        open_hub.map(Message::HubOpened),
-        open_flow_bar.map(Message::FlowBarOpened),
-    ]);
-
-    (state, open)
+    (state, open_hub.map(Message::HubOpened))
 }
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
@@ -102,10 +98,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.tray.is_none() {
                 state.tray = crate::tray::Handle::create(state.pipeline_state);
             }
-            Task::none()
-        }
-        Message::FlowBarOpened(id) => {
-            state.flow_bar_window = Some(id);
             Task::none()
         }
         Message::LanguageChanged(label) => {
@@ -166,9 +158,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Worker(event) => {
             match event {
                 crate::worker::WorkerEvent::StateChanged(pipeline_state) => {
-                    if pipeline_state != state.pipeline_state {
-                        state.pipeline_state_since = std::time::Instant::now();
-                    }
                     state.pipeline_state = pipeline_state;
 
                     let showing_done =
@@ -375,8 +364,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-        // No state to update -- see the variant's doc comment.
-        Message::AnimationTick => Task::none(),
         Message::TrayPoll => match state
             .tray
             .as_ref()
@@ -488,29 +475,6 @@ fn worker_subscription(_state: &State) -> iced::Subscription<Message> {
     iced::Subscription::run(crate::worker::pipeline_worker).map(Message::Worker)
 }
 
-/// Drives the Flow Bar's per-state animation (see `crate::flow_bar`):
-/// ticks continuously while a state animates on a loop (Recording's pulse,
-/// Transcribing/Refining's sweep), and briefly after entering `Injecting`
-/// for its one-shot fade-in -- then stops, so an idle Flow Bar costs
-/// nothing. ~60Hz is plenty smooth for a small overlay pill.
-fn flow_bar_animation_subscription(state: &State) -> iced::Subscription<Message> {
-    let animating = match state.pipeline_state {
-        whspr_core::PipelineState::Recording
-        | whspr_core::PipelineState::Transcribing
-        | whspr_core::PipelineState::Refining => true,
-        whspr_core::PipelineState::Injecting => {
-            state.pipeline_state_since.elapsed() < crate::theme::motion::MEDIUM_4
-        }
-        whspr_core::PipelineState::Idle | whspr_core::PipelineState::Error => false,
-    };
-
-    if animating {
-        iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
-    } else {
-        iced::Subscription::none()
-    }
-}
-
 /// Polls the tray icon for pending menu clicks (see `crate::tray`'s module
 /// doc comment for why this is polled rather than pushed). Only runs once
 /// `state.tray` actually exists -- `None` on Linux, or if creation failed
@@ -542,7 +506,6 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
     iced::Subscription::batch([
         hotkey_capture_subscription(state),
         worker_subscription(state),
-        flow_bar_animation_subscription(state),
         tray_poll_subscription(state),
         tray_done_subscription(state),
         mic_level_subscription(state),
@@ -561,12 +524,8 @@ fn mic_level_subscription(state: &State) -> iced::Subscription<Message> {
     }
 }
 
-fn view(state: &State, window: window::Id) -> Element<'_, Message> {
-    if Some(window) == state.flow_bar_window {
-        crate::flow_bar::view(state)
-    } else {
-        crate::hub::view(state)
-    }
+fn view(state: &State, _window: window::Id) -> Element<'_, Message> {
+    crate::hub::view(state)
 }
 
 #[cfg(test)]

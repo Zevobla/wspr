@@ -1,7 +1,7 @@
 //! Modernist color tokens: the single source of truth for whspr-app's light
 //! and dark color schemes, plus the small color-math helpers ("state
-//! layers", disabled-state opacities, `lerp`) the interactive components
-//! and the Flow Bar's animation are built from.
+//! layers", disabled-state opacities, `lerp`) the interactive components are
+//! built from.
 //!
 //! ## Role names are intentionally stable
 //! The `Scheme` field names are carried over from the app's previous
@@ -23,8 +23,8 @@
 //! | `error_container`/`on_*` | accent-100 tint / accent-800 text | ramp |
 //! | `secondary_container`/`on_*` | neutral-200 tint / ink | ramp |
 //! | `tertiary`/`tertiary_container` | accent / neutral-200 track | ramp |
-//! | `inverse_surface`/`on_*` | ink / paper (Flow Bar "Injected") | swap |
-//! | `success_container`/`on_*` | ink / paper (Flow Bar "Done", inverted) | swap |
+//! | `inverse_surface`/`on_*` | ink / paper (inverted surfaces) | swap |
+//! | `success_container`/`on_*` | ink / paper (tray "Done", inverted) | swap |
 //!
 //! `neutral`/`accent_ramp` carry the full 100..900 tonal ramps (indexed
 //! 0..8) for tags, tables and meters; `accent_hover`/`accent_pressed` are
@@ -221,7 +221,7 @@ pub const DISABLED_CONTENT_OPACITY: f32 = 0.38;
 
 /// Linearly interpolates every channel (including alpha) from `from` to
 /// `to` at `t` (`0.0` = `from`, `1.0` = `to`). The shared primitive behind
-/// `state_layer` and the Flow Bar's pulse/fade animations.
+/// `state_layer`.
 pub fn lerp(from: Color, to: Color, t: f32) -> Color {
     Color {
         r: from.r + (to.r - from.r) * t,

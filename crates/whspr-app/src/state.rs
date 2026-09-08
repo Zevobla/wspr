@@ -37,13 +37,11 @@ pub enum SettingsSection {
     Accounts,
 }
 
-/// Top-level state for the whspr GUI daemon (Hub window + Flow Bar window).
+/// Top-level state for the whspr GUI daemon (the Hub window).
 #[derive(Debug)]
 pub struct State {
     /// Window id of the Hub window, once it has finished opening.
     pub hub_window: Option<window::Id>,
-    /// Window id of the Flow Bar overlay, once it has finished opening.
-    pub flow_bar_window: Option<window::Id>,
     /// The effective config as of app start (defaults overlaid with the
     /// user's config file, per `whspr_config::load`). Edits made in the Hub
     /// are saved back to the config file immediately (see
@@ -93,7 +91,7 @@ pub struct State {
     pub history_search: String,
     /// The dictation pipeline's current state, driven by
     /// `crate::worker::pipeline_worker`'s `WorkerEvent::StateChanged` and
-    /// shown by the Flow Bar overlay.
+    /// reflected by the menu-bar tray icon (see `crate::tray`).
     pub pipeline_state: whspr_core::PipelineState,
     /// The most recent error reported by the pipeline worker (hotkey
     /// listener startup, mic capture, or a pipeline run), if any.
@@ -126,12 +124,6 @@ pub struct State {
     /// Live microphone input level (RMS, ~0.0..1.0) while `is_recording`,
     /// polled by the `MicLevelTick` subscription and shown as a meter.
     pub mic_level: f32,
-    /// When `pipeline_state` most recently changed. The Flow Bar times its
-    /// per-state animation (pulse/sweep phase, fade-in progress -- see
-    /// `crate::flow_bar::animate`) from this instant rather than from app
-    /// boot, so e.g. the "Done" fade always restarts from the moment a
-    /// dictation turn actually completes.
-    pub pipeline_state_since: std::time::Instant,
     /// The system tray icon (B-11), if this platform supports one -- see
     /// `crate::tray`'s module doc comment for which do. `None` until
     /// lazily created on the first `HubOpened` message (see
@@ -201,7 +193,6 @@ impl State {
             .map(|_| "Signed in with a saved token.".to_string());
         Self {
             hub_window: None,
-            flow_bar_window: None,
             config,
             input_devices: Vec::new(),
             selected_device: None,
@@ -222,7 +213,6 @@ impl State {
             transcribed_text: None,
             is_recording: false,
             mic_level: 0.0,
-            pipeline_state_since: std::time::Instant::now(),
             tray: None,
             tray_done_until: None,
             refine_timeout_draft,
@@ -248,7 +238,6 @@ mod tests {
         let state = State::new(config);
 
         assert!(state.hub_window.is_none());
-        assert!(state.flow_bar_window.is_none());
         assert!(state.input_devices.is_empty());
         assert!(state.selected_device.is_none());
         assert!(!state.hotkey_capturing);
@@ -302,9 +291,6 @@ mod tests {
 pub enum Message {
     /// The Hub window finished opening; `window::open` resolves with its id.
     HubOpened(window::Id),
-    /// The Flow Bar overlay finished opening; `window::open` resolves with
-    /// its id.
-    FlowBarOpened(window::Id),
     /// The user picked a language override label in the Hub's `pick_list`
     /// ("auto" means no override, i.e. `config.language = None`). Persisted
     /// immediately -- see `crate::app::persist_config`.
@@ -378,12 +364,6 @@ pub enum Message {
     SpeakerRenameInputChanged(String, String),
     /// The user pressed "Save" on a speaker's rename: speaker id.
     SpeakerRenameSubmitted(String),
-    /// A tick of the Flow Bar's animation clock (see
-    /// `crate::app::flow_bar_animation_subscription`). Carries no data --
-    /// its only job is to make iced re-invoke `view` while a Flow Bar
-    /// animation is playing; the animation itself reads elapsed time from
-    /// `State::pipeline_state_since` at render time.
-    AnimationTick,
     /// A tick of the tray icon's event-poll clock (see
     /// `crate::app::tray_poll_subscription`): drains any pending tray
     /// menu clicks (`crate::tray::Handle::poll_action`) and acts on the

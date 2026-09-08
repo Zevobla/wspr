@@ -1,7 +1,7 @@
 //! Modernist's spacing scale (`--space-1..8` = 4/8/12/16/24/32) plus the
 //! fixed structural metrics the shell is built on (`layout`). Every
-//! `spacing`/`padding` call in `hub`/`flow_bar` reaches for one of these
-//! rather than a bare number, so the grid stays a single source of truth.
+//! `spacing`/`padding` call in `hub` reaches for one of these rather than a
+//! bare number, so the grid stays a single source of truth.
 
 /// A tight pairing, e.g. a field caption sitting right above its control.
 pub const XS: f32 = 4.0;

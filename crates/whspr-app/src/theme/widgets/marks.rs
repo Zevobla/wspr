@@ -1,7 +1,7 @@
 //! The Modernist geometric status marks and the level meter -- drawn from
 //! `container` + `Border` primitives (never icons) so they stay crisp and
-//! theme-reactive at any DPI. Shared by the nav rail, the Dictate hero, the
-//! Flow Bar and the tray parity glyphs.
+//! theme-reactive at any DPI. Shared by the nav rail, the Dictate hero, and
+//! the tray parity glyphs.
 
 use iced::widget::{container, row, Space};
 use iced::{Alignment, Element, Length};

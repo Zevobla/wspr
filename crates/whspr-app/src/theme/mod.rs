@@ -1,14 +1,13 @@
-//! Material 3 design tokens for whspr-app: color, shape, spacing, type
-//! scale, and motion, plus the iced widget `style` functions built on top
-//! of them (see `styles`). One source of truth every Hub/Flow Bar surface
-//! styles from -- iced isn't the web, so there's no `--md-sys-*` custom
-//! property layer to lean on; these modules translate the MD3 spec into
-//! iced's `Theme`/`Style`/`Border`/`Color` model directly.
+//! Material 3 design tokens for whspr-app: color, shape, spacing, and type
+//! scale, plus the iced widget `style` functions built on top of them (see
+//! `styles`). One source of truth every Hub surface styles from -- iced
+//! isn't the web, so there's no `--md-sys-*` custom property layer to lean
+//! on; these modules translate the MD3 spec into iced's
+//! `Theme`/`Style`/`Border`/`Color` model directly.
 
 pub mod color;
 pub mod fonts;
 pub mod icons;
-pub mod motion;
 pub mod shape;
 pub mod spacing;
 pub mod styles;

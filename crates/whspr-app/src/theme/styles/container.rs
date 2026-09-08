@@ -1,21 +1,12 @@
 //! Modernist container styles: the Hub chrome (paper ground, tinted
-//! sections/cards, the nav rail), the divider rules, the tag fills, the
-//! error notice, and the Flow Bar overlay. Nothing inside the Hub is
-//! shadowed -- structure is carried by 2px rules, not elevation -- so the
-//! only shadow lives on the Flow Bar, which genuinely floats over arbitrary
-//! desktop content.
+//! sections/cards, the nav rail), the divider rules, the tag fills, and the
+//! error notice. Nothing inside the Hub is shadowed -- structure is carried
+//! by 2px rules, not elevation.
 
 use iced::widget::container::Style;
-use iced::{Background, Border, Color, Shadow, Vector};
+use iced::{Background, Border};
 
 use crate::theme::{color, shape};
-
-/// The Flow Bar's ambient shadow (`--shadow-md`): a soft ink-tinted drop.
-const FLOW_BAR_SHADOW: Shadow = Shadow {
-    color: Color::from_rgba(0.0, 0.0, 0.0, 0.16),
-    offset: Vector::new(0.0, 3.0),
-    blur_radius: 10.0,
-};
 
 /// The Hub window's ground (paper).
 pub fn surface(scheme: &color::Scheme) -> Style {
@@ -130,23 +121,6 @@ pub fn error_banner(scheme: &color::Scheme) -> Style {
     }
 }
 
-/// The Flow Bar overlay: a flat rectangle (radius 0) with a 1px divider
-/// hairline and one soft ambient shadow so it stays legible floating over
-/// arbitrary content. `fill` is the current (possibly animated) color from
-/// `crate::flow_bar::animate`.
-pub fn flow_bar(fill: Color, scheme: &color::Scheme) -> Style {
-    Style {
-        background: Some(Background::Color(fill)),
-        border: Border {
-            color: scheme.outline_variant,
-            width: 1.0,
-            radius: shape::NONE.into(),
-        },
-        shadow: FLOW_BAR_SHADOW,
-        ..Style::default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,13 +161,5 @@ mod tests {
         let style = error_banner(scheme);
         assert_eq!(style.text_color, Some(scheme.on_error_container));
         assert_eq!(style.border.color, scheme.primary);
-    }
-
-    #[test]
-    fn flow_bar_is_square_and_shadowed() {
-        let scheme = &color::LIGHT;
-        let style = flow_bar(scheme.primary, scheme);
-        assert_eq!(style.border.radius, shape::NONE.into());
-        assert!(style.shadow.blur_radius > 0.0);
     }
 }
