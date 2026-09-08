@@ -15,6 +15,58 @@ pub fn speaker_db_path() -> Option<PathBuf> {
     Some(dirs.data_dir().join("speakers.json"))
 }
 
+/// Resolves the speaker for a just-finished dictation, given the optional
+/// per-clip embedding from `crate::transcribe_file::run_transcribe_audio`.
+///
+/// With `Some(embedding)`: matches (or enrolls) it against
+/// `state.speaker_db` at the configured similarity threshold, persists the
+/// updated db to disk (logging -- never panicking -- on a write error), and
+/// returns the matched/enrolled speaker's UUID.
+///
+/// With `None`: returns `None`, and -- if speaker attribution is *enabled*
+/// yet no diarization model is installed (nothing for
+/// `SherpaDiarizer::resolve_model_dir` to find) -- raises the
+/// `state.needs_speaker_model` prompt flag so the UI can offer to install
+/// one. A `None` while attribution is disabled leaves that flag untouched.
+///
+/// Kept here (rather than inline in `crate::app`) so the `FileTranscribed`
+/// arm stays a one-liner and `app.rs` stays under its line cap (AA-06).
+pub fn attribute_speaker(
+    state: &mut crate::state::State,
+    embedding: Option<Vec<f32>>,
+) -> Option<String> {
+    let Some(embedding) = embedding else {
+        if state.config.speaker.enabled
+            && whspr_diarize::SherpaDiarizer::resolve_model_dir(
+                state.config.speaker.model_dir.clone(),
+            )
+            .is_none()
+        {
+            state.needs_speaker_model = true;
+        }
+        return None;
+    };
+
+    // A unix-timestamp scan id: distinct per dictation and human-orderable,
+    // matching the `first_seen`/`last_seen` clock `SpeakerDb` already keeps.
+    let scan_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        .to_string();
+    let (id, _is_new) = state.speaker_db.match_or_enroll(
+        &embedding,
+        state.config.speaker.similarity_threshold,
+        &scan_id,
+    );
+    if let Some(path) = speaker_db_path() {
+        if let Err(e) = state.speaker_db.save(&path) {
+            tracing::warn!("whspr: failed to save speaker db after attribution: {e}");
+        }
+    }
+    Some(id)
+}
+
 /// Decodes + resamples `file`, runs it through a `Diarizer` (a real
 /// `SherpaDiarizer` if a model directory is available -- from `model_dir`,
 /// or else the `SPEAKER_MODEL_DIR` env var, see
@@ -79,6 +131,13 @@ pub async fn run_diarize_scan(
 mod tests {
     use super::*;
 
+    /// Serializes the tests that read/write the process-global
+    /// `SPEAKER_MODEL_DIR` env var, which `cargo test` would otherwise run on
+    /// parallel threads and race on. A `tokio::sync::Mutex` (not a
+    /// `std::sync::Mutex`) so a `#[tokio::test]` can hold the guard across
+    /// its `.await` points without tripping `clippy::await_holding_lock`.
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     /// Writes a minimal silent WAV file to `path` so `run_diarize_scan` has
     /// something real to decode. Mirrors `whspr-cli`'s e2e test fixture
     /// helper (`create_test_wav` in `crates/whspr-cli/tests/e2e.rs`).
@@ -104,6 +163,7 @@ mod tests {
     /// identically-reasoned `resolve_model_path_precedence` test.
     #[tokio::test]
     async fn run_diarize_scan_mock_and_env_var_fallback() {
+        let _env = ENV_LOCK.lock().await;
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let wav_path = dir.path().join("recording.wav");
         write_test_wav(&wav_path);
@@ -176,5 +236,47 @@ mod tests {
             err.contains("disabled"),
             "expected a disabled-feature error, got: {err}"
         );
+    }
+
+    /// `attribute_speaker(None)` with attribution enabled but no model
+    /// installed returns `None` and raises the `needs_speaker_model` prompt.
+    /// Holds `ENV_LOCK` and clears `SPEAKER_MODEL_DIR` so
+    /// `resolve_model_dir` deterministically finds nothing (default config
+    /// leaves `model_dir = None`).
+    #[tokio::test]
+    async fn attribute_speaker_none_raises_prompt_when_enabled_without_a_model() {
+        let _env = ENV_LOCK.lock().await;
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+        assert!(
+            state.config.speaker.enabled,
+            "default config enables speakers"
+        );
+        assert!(!state.needs_speaker_model);
+
+        let id = attribute_speaker(&mut state, None);
+
+        assert!(id.is_none());
+        assert!(
+            state.needs_speaker_model,
+            "an enabled-but-model-less attribution should raise the install prompt"
+        );
+    }
+
+    /// With attribution disabled, a `None` embedding raises no prompt (and
+    /// resolves no speaker) -- the feature being off is not a "missing model"
+    /// situation. Env-independent: the disabled check short-circuits before
+    /// `resolve_model_dir` ever consults `SPEAKER_MODEL_DIR`.
+    #[test]
+    fn attribute_speaker_none_leaves_prompt_clear_when_disabled() {
+        let mut config = whspr_config::Config::default();
+        config.speaker.enabled = false;
+        let mut state = crate::state::State::new(config);
+
+        let id = attribute_speaker(&mut state, None);
+
+        assert!(id.is_none());
+        assert!(!state.needs_speaker_model);
     }
 }

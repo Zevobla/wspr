@@ -175,6 +175,13 @@ pub struct State {
     pub screenshot_path: Option<std::path::PathBuf>,
     /// Guards the one-shot screenshot so the capture fires exactly once.
     pub screenshot_taken: bool,
+    /// Set when a just-finished dictation *would* have been attributed to a
+    /// speaker (speaker fingerprinting is enabled) but no diarization model
+    /// is installed, so no embedding could be computed (see
+    /// `crate::speakers::attribute_speaker`). The History-screen UI (a later
+    /// task) reads this to raise an "install a speaker model" prompt; it
+    /// stays `false` whenever attribution is disabled or a model is present.
+    pub needs_speaker_model: bool,
 }
 
 impl State {
@@ -224,6 +231,7 @@ impl State {
             hf_specs: whspr_hf::probe(),
             screenshot_path: None,
             screenshot_taken: false,
+            needs_speaker_model: false,
         }
     }
 }
@@ -348,11 +356,13 @@ pub enum Message {
     PickFileToTranscribe,
     /// The transcribe file picker resolved (`None` if the user cancelled).
     FileToTranscribePicked(Option<std::path::PathBuf>),
-    /// A background file-transcription run finished: the recognized text and
-    /// the recorded audio's duration, or an error message. Shown in the
-    /// Hub's Transcribe section (no injection) and, on success, saved to
-    /// history (see `crate::history::record_completed`).
-    FileTranscribed(Result<(String, f32), String>),
+    /// A background file-transcription run finished: the recognized text, the
+    /// recorded audio's duration, and an optional per-clip speaker embedding
+    /// (see `crate::transcribe_file::TranscribeOutcome`), or an error message.
+    /// Shown in the Hub's Transcribe section (no injection) and, on success,
+    /// attributed to a speaker and saved to history (see
+    /// `crate::speakers::attribute_speaker` / `crate::history::record_completed`).
+    FileTranscribed(Result<crate::transcribe_file::TranscribeOutcome, String>),
     /// The user clicked the in-app Record button: starts capture if idle,
     /// stops + transcribes if already recording.
     ToggleRecording,
