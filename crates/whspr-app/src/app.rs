@@ -299,6 +299,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     Some(Ok(audio)) => {
                         state.transcribe_status = Some("Transcribing recording...".to_string());
                         state.transcribed_text = None;
+                        // Show the "thinking" tray icon while transcription runs.
+                        set_pipeline_state(state, whspr_core::PipelineState::Transcribing);
                         Task::perform(
                             crate::transcribe_file::run_transcribe_audio(
                                 audio,
@@ -309,6 +311,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     }
                     Some(Err(error)) => {
                         state.transcribe_status = Some(format!("Recording failed: {error}"));
+                        set_pipeline_state(state, whspr_core::PipelineState::Idle);
                         Task::none()
                     }
                     None => Task::none(),
@@ -322,10 +325,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.mic_level = 0.0;
                         state.transcribe_status =
                             Some("Recording... click Stop to transcribe".to_string());
+                        // Turn the tray red-mic, mirroring the hotkey path.
+                        set_pipeline_state(state, whspr_core::PipelineState::Recording);
                     }
                     Err(error) => {
                         state.transcribe_status =
                             Some(format!("Could not start recording: {error}"));
+                        set_pipeline_state(state, whspr_core::PipelineState::Idle);
                     }
                 }
                 Task::none()
@@ -414,6 +420,17 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 /// without a real clock tick.
 fn tray_done_active(tray_done_until: Option<std::time::Instant>, now: std::time::Instant) -> bool {
     tray_done_until.is_some_and(|until| now < until)
+}
+
+/// Drives `state.pipeline_state` and the tray together to `new`, clearing
+/// any pending "Done" linger so the transition isn't clobbered by the next
+/// `TrayDoneTick` -- the Record button's echo of the hotkey `StateChanged` arm.
+fn set_pipeline_state(state: &mut State, new: whspr_core::PipelineState) {
+    state.pipeline_state = new;
+    state.tray_done_until = None;
+    if let Some(tray) = &state.tray {
+        tray.set_state(new);
+    }
 }
 
 /// Starts the tray's lingering "Done" glance (the Done visual plus the
@@ -565,5 +582,14 @@ mod tests {
         let before = std::time::Instant::now();
         begin_tray_done_linger(&mut state);
         assert!(state.tray_done_until.is_some_and(|until| until >= before));
+    }
+
+    #[test]
+    fn set_pipeline_state_updates_state_and_clears_linger() {
+        let mut state = State::new(whspr_config::Config::default());
+        state.tray_done_until = Some(std::time::Instant::now());
+        set_pipeline_state(&mut state, whspr_core::PipelineState::Recording);
+        assert_eq!(state.pipeline_state, whspr_core::PipelineState::Recording);
+        assert!(state.tray_done_until.is_none());
     }
 }
