@@ -33,19 +33,40 @@ const SCREENS: [Screen; 5] = [
     Screen::Settings,
 ];
 
+/// Archivo's descent ratio -- the fraction of a font's size that sits
+/// *below* the glyph baseline (descender / units-per-em, as iced lays the
+/// line out). Used to turn a font-size difference into a baseline offset.
+/// ~0.3 for Archivo; tunable after a real-window check.
+const ARCHIVO_DESCENT_RATIO: f32 = 0.3;
+
+/// How much higher the brand's smaller wordmark must ride so its glyph
+/// baseline lands on the screen title's. Both bands bottom-align their
+/// content with `HEADER_TITLE_PAD_BOTTOM`, which aligns the text *boxes*,
+/// not the baselines: the 28px `TITLE_LARGE` screen title has a larger
+/// descent than the 18px `TITLE_MEDIUM` brand, so its baseline sits higher
+/// and the brand hangs low. The gap is
+/// `descent_ratio × (TITLE_LARGE − TITLE_MEDIUM)` ≈ 0.3 × (28 − 18) ≈ 3px,
+/// which we add to the brand's bottom padding to lift it onto the shared
+/// baseline. Tunable after a real-window check.
+const HEADER_BASELINE_COMPENSATION: f32 =
+    (type_scale::TITLE_LARGE.size - type_scale::TITLE_MEDIUM.size) * ARCHIVO_DESCENT_RATIO;
+
 /// The brand block's padding. Left is 20px -- flush with the "01/02/..."
-/// nav numbers below it -- the same on every platform. Vertically it's
-/// bottom-aligned with the same `HEADER_TITLE_PAD_BOTTOM` the screen
-/// header's title uses (see `brand` below and
-/// `crate::theme::widgets::screen_header`), so "whspr" and the screen
-/// title share a baseline instead of each band anchoring its content
-/// differently. That bottom-weighted position sits well clear of the
-/// macOS traffic lights (which float near the band's top, ~y20) without
-/// needing top padding to dodge them.
+/// nav numbers below it -- the same on every platform. Vertically the brand
+/// bottom-aligns in its `RAIL_HEADER_H` band just as the screen header's
+/// title does in `HEADER_H` (see `brand` below and
+/// `crate::theme::widgets::screen_header`), but with an extra
+/// `HEADER_BASELINE_COMPENSATION` on top of `HEADER_TITLE_PAD_BOTTOM`:
+/// bottom-alignment aligns the text *boxes*, and the 18px "whspr" has a
+/// smaller descent than the 28px screen title, so without the lift its
+/// baseline would hang ~3px below the title's. The compensation raises
+/// "whspr" onto the screen title's baseline. That bottom-weighted position
+/// still sits well clear of the macOS traffic lights (which float near the
+/// band's top, ~y20) without needing top padding to dodge them.
 const BRAND_PAD: iced::Padding = iced::Padding {
     top: 0.0,
     right: 20.0,
-    bottom: spacing::layout::HEADER_TITLE_PAD_BOTTOM,
+    bottom: spacing::layout::HEADER_TITLE_PAD_BOTTOM + HEADER_BASELINE_COMPENSATION,
     left: 20.0,
 };
 
