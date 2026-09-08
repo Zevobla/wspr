@@ -11,7 +11,8 @@ use crate::theme::{color, spacing, type_scale};
 /// element for none). The band is `HEADER_H` tall with the title aligned to
 /// its bottom edge, then a 2px rule -- matched to the rail brand's own
 /// bottom-weighted position in its `RAIL_HEADER_H` band (`crate::hub`'s
-/// `brand`) so the two sit on the same line. `.align_y(Alignment::End)` on
+/// `brand`, which adds a baseline compensation for its smaller type) so the
+/// two sit on the same baseline. `.align_y(Alignment::End)` on
 /// this outer `container` is what actually anchors the row to the band's
 /// bottom edge (the row's own `.align_y(End)` below only aligns the title
 /// against `trailing`, since both are already the same height); the same
