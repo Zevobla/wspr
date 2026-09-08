@@ -30,10 +30,10 @@
 //! itself can't represent. `crate::app` drives that extra bucket directly
 //! via `Handle::set_visual`, timing a lingering "Done" display off
 //! `WorkerEvent::Completed` rather than off any single `PipelineState`
-//! transition. `Injecting` itself maps to `Done` here too, matching
-//! `crate::flow_bar`'s existing precedent (`base_colors_for`), which
-//! already treats `Injecting` as "Done" -- both agree on what that
-//! instant means, it's just the tray that additionally makes it linger.
+//! transition. `Injecting` itself maps to `Done` here too: the pipeline
+//! reports `Injecting` at the instant a turn's text is handed off, which is
+//! exactly the "done" moment worth a glance -- the tray just additionally
+//! makes it linger.
 //!
 //! ## Platform support
 //! Implemented for macOS and Windows only, both of which integrate with
@@ -68,7 +68,7 @@ pub enum TrayVisual {
 /// Maps a raw pipeline state onto its tray visual bucket. Pure, so it's
 /// unit-testable without a live tray icon (see the `tests` module below).
 /// `Injecting` maps to `Done` -- see the module doc comment for why that
-/// mirrors `crate::flow_bar`'s existing treatment of that state.
+/// instant is the "done" moment worth surfacing.
 fn visual_for(state: PipelineState) -> TrayVisual {
     match state {
         PipelineState::Idle => TrayVisual::Idle,
