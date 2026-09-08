@@ -2,9 +2,10 @@
 //! average speed), and a filtered table of past transcriptions -- restyled
 //! onto the Modernist widgets.
 
-use iced::widget::{column, row, text, text_input, Space};
+use iced::widget::{column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::history::HistoryEntry;
 use crate::state::{Message, State};
 use crate::stats;
 use crate::theme::widgets::{self};
@@ -16,16 +17,70 @@ fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
 }
 
+/// Shown in the Speaker column when a dictation carries no attribution
+/// (fingerprinting off, no model, or the embedding failed).
+const SPEAKER_UNATTRIBUTED: &str = "—";
+
+/// Resolves the Speaker column label for one history entry against the
+/// enrolled-speaker db. Pure over `(entry, db)` so it's unit-testable
+/// without a running app:
+/// - a matching profile with a user-set `name` -> that name;
+/// - a `speaker_id` with no name (or no matching profile) -> the UUID,
+///   shortened to its first group so it fits the column but still reads as
+///   the speaker's id;
+/// - no `speaker_id` -> a neutral placeholder.
+fn speaker_label(entry: &HistoryEntry, db: &whspr_config::SpeakerDb) -> String {
+    match &entry.speaker_id {
+        None => SPEAKER_UNATTRIBUTED.to_string(),
+        Some(id) => db
+            .profiles
+            .iter()
+            .find(|p| &p.id == id)
+            .and_then(|p| p.name.clone())
+            .unwrap_or_else(|| short_uuid(id)),
+    }
+}
+
+/// The first group of a UUID (its first 8 characters) -- enough to
+/// disambiguate a speaker in a fixed-width column while staying legible.
+/// Shorter ids are returned whole.
+fn short_uuid(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
 /// Renders the History screen.
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    column![
-        search_row(state, scheme),
-        stat_strip(state, scheme),
-        widgets::hr(scheme),
-        history_table(state, scheme),
-    ]
-    .spacing(spacing::XL)
+    let mut root = column![search_row(state, scheme)]
+        .spacing(spacing::XL)
+        .width(Length::Fill);
+
+    // A non-blocking nudge, only while attribution can't run for lack of a
+    // model -- so the empty Speaker cells read as "not set up yet".
+    if state.needs_speaker_model {
+        root = root.push(install_model_prompt(scheme));
+    }
+
+    root = root
+        .push(stat_strip(state, scheme))
+        .push(widgets::hr(scheme))
+        .push(history_table(state, scheme));
+
+    root.into()
+}
+
+/// A modest mono-accent notice prompting the user to install a
+/// speaker-embedding model so dictations can be attributed. Reuses the
+/// Hub's `error_banner` role (Modernist keeps notices mono/red, never a
+/// dark snackbar); rendered only when `state.needs_speaker_model`.
+fn install_model_prompt<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+    container(
+        text("Install a speaker model in Models to label speakers.")
+            .size(type_scale::BODY_MEDIUM.size)
+            .font(type_scale::BODY_MEDIUM.font()),
+    )
+    .padding(spacing::MD)
     .width(Length::Fill)
+    .style(move |_theme| styles::container::error_banner(scheme))
     .into()
 }
 
@@ -110,6 +165,11 @@ fn history_table<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
                     .font(type_scale::BODY_MEDIUM.font())
                     .color(scheme.on_surface)
                     .into(),
+                text(speaker_label(entry, &state.speaker_db))
+                    .size(type_scale::BODY_MEDIUM.size)
+                    .font(type_scale::BODY_MEDIUM.font())
+                    .color(scheme.on_surface_variant)
+                    .into(),
                 text(format!("{} words", word_count(&entry.text)))
                     .size(type_scale::BODY_MEDIUM.size)
                     .font(type_scale::BODY_MEDIUM.font())
@@ -138,6 +198,7 @@ fn history_table<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
     widgets::table(
         vec![
             ("What you said", Length::Fill),
+            ("Speaker", Length::Fixed(160.0)),
             ("Words", Length::Fixed(96.0)),
         ],
         rows,
@@ -148,10 +209,61 @@ fn history_table<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
 #[cfg(test)]
 mod tests {
     use super::*;
+    use whspr_config::{SpeakerDb, SpeakerProfile};
+
+    const UUID: &str = "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d";
+
+    fn profile(id: &str, name: Option<&str>) -> SpeakerProfile {
+        SpeakerProfile {
+            id: id.to_string(),
+            name: name.map(str::to_string),
+            centroid: Vec::new(),
+            samples: 0,
+            scans: Vec::new(),
+            first_seen: 0,
+            last_seen: 0,
+        }
+    }
+
+    fn entry(speaker_id: Option<&str>) -> HistoryEntry {
+        HistoryEntry {
+            text: "hello world".to_string(),
+            duration_secs: None,
+            speaker_id: speaker_id.map(str::to_string),
+        }
+    }
 
     #[test]
     fn word_count_counts_tokens() {
         assert_eq!(word_count("a b c"), 3);
         assert_eq!(word_count(""), 0);
+    }
+
+    #[test]
+    fn speaker_label_uses_the_profile_name_when_set() {
+        let db = SpeakerDb {
+            profiles: vec![profile(UUID, Some("Ada"))],
+        };
+        assert_eq!(speaker_label(&entry(Some(UUID)), &db), "Ada");
+    }
+
+    #[test]
+    fn speaker_label_falls_back_to_the_short_uuid_when_unnamed() {
+        let db = SpeakerDb {
+            profiles: vec![profile(UUID, None)],
+        };
+        assert_eq!(speaker_label(&entry(Some(UUID)), &db), "1a2b3c4d");
+    }
+
+    #[test]
+    fn speaker_label_shows_the_short_uuid_when_no_profile_matches() {
+        let db = SpeakerDb::default();
+        assert_eq!(speaker_label(&entry(Some(UUID)), &db), "1a2b3c4d");
+    }
+
+    #[test]
+    fn speaker_label_shows_a_placeholder_when_unattributed() {
+        let db = SpeakerDb::default();
+        assert_eq!(speaker_label(&entry(None), &db), SPEAKER_UNATTRIBUTED);
     }
 }
