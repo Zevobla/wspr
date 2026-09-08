@@ -16,8 +16,9 @@ use whspr_core::cosine_similarity;
 /// every turn matched to them so far, plus display metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpeakerProfile {
-    /// Stable identifier, e.g. "Speaker 3". Never changes once assigned —
-    /// `name` is what the UI should prefer to display once it's set.
+    /// Stable primary key: a v4 UUID assigned at enrollment, stable forever
+    /// once assigned. `name` is an optional display label the UI should
+    /// prefer once it's set.
     pub id: String,
     /// User-assigned display name. `None` until the user renames this
     /// speaker via `SpeakerDb::rename`; until then, callers should fall
@@ -48,8 +49,7 @@ impl SpeakerDb {
     /// embedding into that profile's running centroid (a running mean
     /// weighted by its `samples` count so far), records `scan_id` if new,
     /// bumps `last_seen`, and returns `(id, false)`. Otherwise enrolls a
-    /// brand new profile named "Speaker N" (N = current profile count + 1)
-    /// and returns `(id, true)`.
+    /// brand-new profile with a fresh v4 UUID id and returns `(id, true)`.
     pub fn match_or_enroll(
         &mut self,
         embedding: &[f32],
@@ -79,7 +79,7 @@ impl SpeakerDb {
             }
             (profile.id.clone(), false)
         } else {
-            let id = format!("Speaker {}", self.profiles.len() + 1);
+            let id = uuid::Uuid::new_v4().to_string();
             self.profiles.push(SpeakerProfile {
                 id: id.clone(),
                 name: None,
@@ -141,17 +141,27 @@ fn now_unix() -> u64 {
 mod tests {
     use super::*;
 
+    /// A newly enrolled speaker gets a fresh v4 UUID as its id.
+    fn assert_is_uuid(id: &str) {
+        assert_eq!(id.len(), 36, "a v4 UUID string is 36 chars: {id}");
+        assert!(id.contains('-'), "a UUID string is hyphenated: {id}");
+        assert!(
+            uuid::Uuid::parse_str(id).is_ok(),
+            "id should parse as a UUID: {id}"
+        );
+    }
+
     #[test]
-    fn match_or_enroll_empty_db_creates_speaker_1() {
+    fn match_or_enroll_empty_db_assigns_uuid() {
         let mut db = SpeakerDb::default();
         let embedding = vec![1.0, 0.0, 0.0];
 
         let (id, is_new) = db.match_or_enroll(&embedding, 0.7, "scan1");
 
-        assert_eq!(id, "Speaker 1");
+        assert_is_uuid(&id);
         assert!(is_new);
         assert_eq!(db.profiles.len(), 1);
-        assert_eq!(db.profiles[0].id, "Speaker 1");
+        assert_eq!(db.profiles[0].id, id);
         assert_eq!(db.profiles[0].samples, 1);
         assert_eq!(db.profiles[0].scans, vec!["scan1".to_string()]);
     }
@@ -163,12 +173,12 @@ mod tests {
 
         // First enrollment
         let (id1, is_new1) = db.match_or_enroll(&embedding, 0.7, "scan1");
-        assert_eq!(id1, "Speaker 1");
+        assert_is_uuid(&id1);
         assert!(is_new1);
 
-        // Second enrollment with identical embedding should match
+        // Second enrollment with identical embedding should match the same id
         let (id2, is_new2) = db.match_or_enroll(&embedding, 0.7, "scan2");
-        assert_eq!(id2, "Speaker 1");
+        assert_eq!(id2, id1);
         assert!(!is_new2);
 
         // Should have only one profile with updated samples and scans
@@ -187,13 +197,14 @@ mod tests {
         let embedding2 = vec![0.0, 1.0, 0.0];
 
         let (id1, is_new1) = db.match_or_enroll(&embedding1, 0.7, "scan1");
-        assert_eq!(id1, "Speaker 1");
+        assert_is_uuid(&id1);
         assert!(is_new1);
 
         // Orthogonal embedding should score 0.0, below threshold
         let (id2, is_new2) = db.match_or_enroll(&embedding2, 0.7, "scan1");
-        assert_eq!(id2, "Speaker 2");
+        assert_is_uuid(&id2);
         assert!(is_new2);
+        assert_ne!(id2, id1);
 
         assert_eq!(db.profiles.len(), 2);
     }
@@ -204,9 +215,9 @@ mod tests {
         let embedding = vec![1.0, 0.0, 0.0];
 
         let (id, _) = db.match_or_enroll(&embedding, 0.7, "scan1");
-        assert_eq!(id, "Speaker 1");
+        assert_is_uuid(&id);
 
-        let renamed = db.rename("Speaker 1", "Alice");
+        let renamed = db.rename(&id, "Alice");
         assert!(renamed);
         assert_eq!(db.profiles[0].name, Some("Alice".to_string()));
     }
@@ -241,7 +252,7 @@ mod tests {
 
         let loaded = SpeakerDb::load(&db_path);
         assert_eq!(loaded.profiles.len(), 1);
-        assert_eq!(loaded.profiles[0].id, "Speaker 1");
+        assert_eq!(loaded.profiles[0].id, id);
         assert_eq!(loaded.profiles[0].name, Some("Test Speaker".to_string()));
         assert_eq!(loaded.profiles[0].samples, 1);
         assert!(!loaded.profiles[0].centroid.is_empty());
