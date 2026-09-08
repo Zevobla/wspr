@@ -208,16 +208,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         text,
                         duration_secs: Some(duration_secs),
                     });
-                    // Show a lingering "Done" tray icon: the pipeline has
-                    // no state for "just finished" (see `StateChanged`'s
-                    // handling above and `crate::tray`'s module doc
-                    // comment), so this is timed app-side and reverted by
-                    // `Message::TrayDoneTick` once `TRAY_DONE_LINGER`
-                    // elapses.
-                    if let Some(tray) = &state.tray {
-                        tray.set_visual(crate::tray::TrayVisual::Done);
-                    }
-                    state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
+                    // The pipeline has no "just finished" state to glance at
+                    // (see `crate::tray`), so it's timed app-side here.
+                    begin_tray_done_linger(state);
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
@@ -290,10 +283,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.transcribe_status = Some("Transcription complete".to_string());
             state.transcribed_text = Some(text.clone());
             crate::history::record_completed(state, text, Some(duration_secs));
+            // Back to Idle so the linger reverts to Idle, then show "Done".
+            state.pipeline_state = whspr_core::PipelineState::Idle;
+            begin_tray_done_linger(state);
             Task::none()
         }
         Message::FileTranscribed(Err(error)) => {
             state.transcribe_status = Some(format!("Transcription failed: {error}"));
+            set_pipeline_state(state, whspr_core::PipelineState::Idle);
             Task::none()
         }
         Message::ToggleRecording => {
@@ -306,6 +303,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     Some(Ok(audio)) => {
                         state.transcribe_status = Some("Transcribing recording...".to_string());
                         state.transcribed_text = None;
+                        // Show the "thinking" tray icon while transcription runs.
+                        set_pipeline_state(state, whspr_core::PipelineState::Transcribing);
                         Task::perform(
                             crate::transcribe_file::run_transcribe_audio(
                                 audio,
@@ -316,6 +315,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     }
                     Some(Err(error)) => {
                         state.transcribe_status = Some(format!("Recording failed: {error}"));
+                        set_pipeline_state(state, whspr_core::PipelineState::Idle);
                         Task::none()
                     }
                     None => Task::none(),
@@ -329,10 +329,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         state.mic_level = 0.0;
                         state.transcribe_status =
                             Some("Recording... click Stop to transcribe".to_string());
+                        // Turn the tray red-mic, mirroring the hotkey path.
+                        set_pipeline_state(state, whspr_core::PipelineState::Recording);
                     }
                     Err(error) => {
                         state.transcribe_status =
                             Some(format!("Could not start recording: {error}"));
+                        set_pipeline_state(state, whspr_core::PipelineState::Idle);
                     }
                 }
                 Task::none()
@@ -421,6 +424,27 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 /// without a real clock tick.
 fn tray_done_active(tray_done_until: Option<std::time::Instant>, now: std::time::Instant) -> bool {
     tray_done_until.is_some_and(|until| now < until)
+}
+
+/// Drives `state.pipeline_state` and the tray together to `new`, clearing
+/// any pending "Done" linger so the transition isn't clobbered by the next
+/// `TrayDoneTick` -- the Record button's echo of the hotkey `StateChanged` arm.
+fn set_pipeline_state(state: &mut State, new: whspr_core::PipelineState) {
+    state.pipeline_state = new;
+    state.tray_done_until = None;
+    if let Some(tray) = &state.tray {
+        tray.set_state(new);
+    }
+}
+
+/// Starts the tray's lingering "Done" glance (the Done visual plus the
+/// `TRAY_DONE_LINGER` window `TrayDoneTick` reverts). Shared by the hotkey
+/// `WorkerEvent::Completed` arm and the button's `FileTranscribed(Ok)` arm.
+fn begin_tray_done_linger(state: &mut State) {
+    if let Some(tray) = &state.tray {
+        tray.set_visual(crate::tray::TrayVisual::Done);
+    }
+    state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
 }
 
 /// Saves `state.config` to the platform config directory immediately,
@@ -554,5 +578,22 @@ mod tests {
     #[test]
     fn tray_done_active_false_when_nothing_pending() {
         assert!(!tray_done_active(None, std::time::Instant::now()));
+    }
+
+    #[test]
+    fn begin_tray_done_linger_arms_the_linger_window() {
+        let mut state = State::new(whspr_config::Config::default());
+        let before = std::time::Instant::now();
+        begin_tray_done_linger(&mut state);
+        assert!(state.tray_done_until.is_some_and(|until| until >= before));
+    }
+
+    #[test]
+    fn set_pipeline_state_updates_state_and_clears_linger() {
+        let mut state = State::new(whspr_config::Config::default());
+        state.tray_done_until = Some(std::time::Instant::now());
+        set_pipeline_state(&mut state, whspr_core::PipelineState::Recording);
+        assert_eq!(state.pipeline_state, whspr_core::PipelineState::Recording);
+        assert!(state.tray_done_until.is_none());
     }
 }
