@@ -156,9 +156,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Worker(event) => {
             match event {
                 crate::worker::WorkerEvent::StateChanged(pipeline_state) => {
-                    if pipeline_state != state.pipeline_state {
-                        state.pipeline_state_since = std::time::Instant::now();
-                    }
                     state.pipeline_state = pipeline_state;
 
                     let showing_done =
