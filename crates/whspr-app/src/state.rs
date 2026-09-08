@@ -68,9 +68,17 @@ pub struct State {
     /// completes during this session (session-only, not written back to
     /// disk -- see `crate::app`'s persistence note).
     pub history: Vec<HistoryEntry>,
-    /// The active iced theme, toggled between `Theme::Light`/`Theme::Dark`
-    /// by the Hub's theme button (see `crate::app`'s `.theme` wiring).
+    /// The active iced theme. Set from the OS appearance at boot and
+    /// re-synced whenever it changes (see `crate::system_theme`); the Hub's
+    /// theme button (`Message::ThemeToggled`) can override it temporarily,
+    /// but only until the OS appearance next actually changes or the app
+    /// restarts.
     pub theme: iced::Theme,
+    /// The last OS appearance `crate::system_theme` detected, kept apart
+    /// from `theme` so a poll that finds *no* change doesn't clobber a
+    /// manual override back to the (unchanged) system value. See
+    /// `crate::system_theme`'s module doc comment.
+    pub system_theme: iced::Theme,
     /// Which screen the Hub's nav rail is currently showing. Switched by
     /// `Message::TabSelected` (see `crate::hub`'s nav rail).
     pub screen: Screen,
@@ -198,6 +206,7 @@ impl State {
             captured_hotkey: None,
             history: Vec::new(),
             theme: iced::Theme::Light,
+            system_theme: iced::Theme::Light,
             screen: Screen::default(),
             settings_section: SettingsSection::default(),
             history_search: String::new(),
@@ -315,8 +324,13 @@ pub enum Message {
     /// on (see `update`), but the subscription hands over every event since
     /// `Subscription` has no `filter_map` combinator to narrow it upstream.
     HotkeyCaptureKeyEvent(iced::keyboard::Event),
-    /// The user toggled between light and dark theme in the Hub.
+    /// The user toggled between light and dark theme in the Hub. A
+    /// temporary override -- see `crate::system_theme`.
     ThemeToggled,
+    /// A tick of the OS-appearance poll clock (see
+    /// `crate::system_theme::subscription`): re-checks the system light/dark
+    /// setting and re-syncs `State::theme` if it actually changed.
+    SystemThemeTick,
     /// The user clicked a nav-rail entry: switches which screen renders to
     /// the right of the rail (see `Screen`).
     TabSelected(Screen),

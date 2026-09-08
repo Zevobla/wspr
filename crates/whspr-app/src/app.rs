@@ -75,12 +75,10 @@ fn boot() -> (State, Task<Message>) {
     state.hf_models = crate::hf::scan(&state.config);
     // Env-gated headless screenshot dev-path (see `crate::screenshot`).
     state.screenshot_path = crate::screenshot::path_from_env();
-    // When capturing, honor the requested screen + theme so any surface can
-    // be shot headlessly; normal runs are untouched.
-    if state.screenshot_path.is_some() {
-        state.screen = crate::screenshot::screen_from_env();
-        state.theme = crate::screenshot::theme_from_env();
-    }
+    crate::screenshot::apply_to_screen(&mut state);
+    // Boots into the OS light/dark appearance (or the screenshot harness's
+    // forced theme) -- never a hardcoded default. See `crate::system_theme`.
+    crate::system_theme::boot(&mut state);
 
     let (_id, open_hub) = window::open(crate::hub::window_settings());
     let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
@@ -156,6 +154,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             Task::none()
         }
+        Message::SystemThemeTick => crate::system_theme::tick(state),
         Message::TabSelected(screen) => {
             state.screen = screen;
             Task::none()
@@ -547,6 +546,7 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
         tray_done_subscription(state),
         mic_level_subscription(state),
         crate::screenshot::subscription(state),
+        crate::system_theme::subscription(state),
     ])
 }
 

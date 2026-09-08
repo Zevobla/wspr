@@ -9,6 +9,14 @@ result-*
 *.ggml
 .DS_Store
 
+# --- app icon rasters (generated, not sources -- see crates/whspr-app/build.rs) ---
+# Only assets/icon.svg (and the app-icon/ design-direction *.svg sources) is
+# committed; the window icon itself is rasterized from it at build time.
+# These patterns keep a stray `sips`/`iconutil` export from being re-added.
+*.icns
+*.iconset/
+crates/whspr-app/assets/app-icon/*.png
+
 # --- Rust / Cargo (upstream template) ---
 debug
 **/*.rs.bk

@@ -33,17 +33,36 @@ const SCREENS: [Screen; 5] = [
     Screen::Settings,
 ];
 
-/// The brand block's padding, from the rail reference (`WhsprRail.dc.html`:
-/// `padding: 38px 20px 0`). Left is 20px -- flush with the "01/02/..." nav
-/// numbers below it -- the same on every platform. The 38px top is what
-/// clears the macOS traffic lights (which float at ~y20, above the brand);
-/// on other platforms it's just header padding.
+/// The brand block's padding. Left is 20px -- flush with the "01/02/..."
+/// nav numbers below it -- the same on every platform. Vertically it's
+/// bottom-aligned with the same `HEADER_TITLE_PAD_BOTTOM` the screen
+/// header's title uses (see `brand` below and
+/// `crate::theme::widgets::screen_header`), so "whspr" and the screen
+/// title share a baseline instead of each band anchoring its content
+/// differently. That bottom-weighted position sits well clear of the
+/// macOS traffic lights (which float near the band's top, ~y20) without
+/// needing top padding to dodge them.
 const BRAND_PAD: iced::Padding = iced::Padding {
-    top: 38.0,
+    top: 0.0,
     right: 20.0,
-    bottom: 0.0,
+    bottom: spacing::layout::HEADER_TITLE_PAD_BOTTOM,
     left: 20.0,
 };
+
+/// The rasterized window icon's side length, in lockstep with the constant
+/// of the same name `build.rs` renders `assets/icon.svg` to.
+const ICON_SIZE: u32 = 512;
+
+/// The Hub window's icon (the "1c" mark). `build.rs` rasterizes
+/// `assets/icon.svg` to flat RGBA8 at build time and writes it to
+/// `OUT_DIR`; only the vector is committed to git (see the repo
+/// `.gitignore`). `cargo run` without an app bundle has limited macOS dock-
+/// icon support, but the window icon itself is correct today and will
+/// carry over once whspr ships as a bundled `.app`.
+fn window_icon() -> Option<iced::window::icon::Icon> {
+    const ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
+    iced::window::icon::from_rgba(ICON_RGBA.to_vec(), ICON_SIZE, ICON_SIZE).ok()
+}
 
 /// The Hub window's settings. On macOS the system title bar is hidden and
 /// made transparent with a full-size content view, so the app's own paper
@@ -60,13 +79,17 @@ pub fn window_settings() -> iced::window::Settings {
             titlebar_transparent: true,
             fullsize_content_view: true,
         },
+        icon: window_icon(),
         ..iced::window::Settings::default()
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn window_settings() -> iced::window::Settings {
-    iced::window::Settings::default()
+    iced::window::Settings {
+        icon: window_icon(),
+        ..iced::window::Settings::default()
+    }
 }
 
 /// Renders the Hub window's content for the current state.
@@ -167,7 +190,9 @@ fn nav_rail<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a,
 }
 
 /// The rail's brand block: a 12px accent square + the "whspr" wordmark, in
-/// a `RAIL_HEADER_H`-tall band matched to the screen header.
+/// a `RAIL_HEADER_H`-tall band bottom-aligned to match the screen header
+/// (see `BRAND_PAD` and `crate::theme::widgets::screen_header`) so the two
+/// titles land on the same line.
 fn brand<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
     container(
         row![
@@ -181,6 +206,8 @@ fn brand<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
         .align_y(Alignment::Center),
     )
     .height(Length::Fixed(spacing::layout::RAIL_HEADER_H))
+    .width(Length::Fill)
+    .align_y(Alignment::End)
     .padding(BRAND_PAD)
     .into()
 }
