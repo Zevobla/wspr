@@ -211,9 +211,11 @@ fn nav_rail<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a,
 }
 
 /// The rail's brand block: a 12px accent square + the "whspr" wordmark, in
-/// a `RAIL_HEADER_H`-tall band bottom-aligned to match the screen header
-/// (see `BRAND_PAD` and `crate::theme::widgets::screen_header`) so the two
-/// titles land on the same line.
+/// a `RAIL_HEADER_H`-tall band bottom-aligned to match the screen header,
+/// plus a baseline compensation so the smaller wordmark's glyph baseline
+/// lands on the larger screen title's (see `BRAND_PAD` and
+/// `crate::theme::widgets::screen_header`) -- the two titles share a
+/// baseline, not just a box bottom.
 fn brand<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
     container(
         row![

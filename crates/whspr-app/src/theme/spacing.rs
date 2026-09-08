@@ -30,12 +30,14 @@ pub mod layout {
     /// Height of the nav rail's brand block, matched to `HEADER_H` so the
     /// rail's top rule lines up with the screen header's bottom rule.
     pub const RAIL_HEADER_H: f32 = 72.0;
-    /// Bottom padding shared by the screen header's title
+    /// Base bottom padding for the screen header's title
     /// (`crate::theme::widgets::screen_header`) and the rail's brand block
     /// (`crate::hub::brand`) -- both bottom-align their content in their
-    /// `HEADER_H`/`RAIL_HEADER_H` band with this same padding, so "Dictate"
-    /// and "whspr" land on the same line regardless of the two bands'
-    /// differently-sized content (a 28px title vs. a 12px mark + 18px word).
+    /// `HEADER_H`/`RAIL_HEADER_H` band with this padding. That aligns the
+    /// text *boxes*; because the brand's 18px word has a smaller descent
+    /// than the 28px title, `crate::hub::brand` adds a
+    /// `HEADER_BASELINE_COMPENSATION` on top of this so "Dictate" and
+    /// "whspr" land on the same glyph baseline, not just the same box bottom.
     pub const HEADER_TITLE_PAD_BOTTOM: f32 = 7.5;
     /// The system's strong divider weight -- 2px rules between major
     /// sections (`crate::theme::styles::container::divider`).
