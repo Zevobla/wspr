@@ -21,6 +21,12 @@ pub struct HistoryEntry {
     /// carry timing -- callers computing wpm should skip those rather than
     /// inventing a duration.
     pub duration_secs: Option<f32>,
+    /// The attributed speaker's UUID (`whspr_config::SpeakerProfile::id`),
+    /// if speaker attribution resolved one for this dictation. `None` when
+    /// unresolved -- speaker fingerprinting disabled, no model installed, or
+    /// the embedding failed (see `crate::speakers::attribute_speaker`).
+    /// Serialized as the JSON line's `"speaker"` field (omitted when `None`).
+    pub speaker_id: Option<String>,
 }
 
 impl HistoryEntry {
@@ -43,9 +49,16 @@ pub fn parse_history_jsonl(contents: &str) -> Vec<HistoryEntry> {
                 .get("duration_secs")
                 .and_then(Value::as_f64)
                 .map(|d| d as f32);
+            // Tolerant like every other field here: a missing (or non-string)
+            // `"speaker"` reads back as `None` rather than skipping the line.
+            let speaker_id = value
+                .get("speaker")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             Some(HistoryEntry {
                 text,
                 duration_secs,
+                speaker_id,
             })
         })
         .collect()
@@ -83,12 +96,18 @@ fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let line = serde_json::json!({
+    let mut line = serde_json::json!({
         "text": entry.text,
         "duration_secs": entry.duration_secs,
         "timestamp": timestamp,
         "source": "app",
     });
+    // Only write `"speaker"` when a speaker was actually attributed, so
+    // unattributed lines stay identical to the pre-speaker format rather
+    // than carrying a null (`parse_history_jsonl` tolerates either).
+    if let Some(speaker_id) = &entry.speaker_id {
+        line["speaker"] = serde_json::Value::String(speaker_id.clone());
+    }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -127,6 +146,7 @@ fn record_completed_at(
     let entry = HistoryEntry {
         text,
         duration_secs,
+        speaker_id: None,
     };
     if let Some(path) = path {
         if let Err(e) = append_history_entry(path, &entry) {
@@ -178,6 +198,7 @@ mod tests {
         let entry = HistoryEntry {
             text: "the quick brown fox".to_string(),
             duration_secs: None,
+            speaker_id: None,
         };
 
         assert_eq!(entry.word_count(), 4);
@@ -210,6 +231,7 @@ mod tests {
         let entry = HistoryEntry {
             text: "hello from the app".to_string(),
             duration_secs: Some(1.5),
+            speaker_id: None,
         };
 
         append_history_entry(&path, &entry).expect("append should create the file and its parent");
@@ -219,6 +241,36 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].text, "hello from the app");
         assert_eq!(entries[0].duration_secs, Some(1.5));
+    }
+
+    /// A `speaker_id` survives the on-disk JSONL round trip via the line's
+    /// `"speaker"` field, and an unattributed entry reads back as `None`.
+    #[test]
+    fn speaker_id_round_trips_through_disk_as_the_speaker_field() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let attributed = HistoryEntry {
+            text: "attributed line".to_string(),
+            duration_secs: Some(2.0),
+            speaker_id: Some("spk-uuid-123".to_string()),
+        };
+        let unattributed = HistoryEntry {
+            text: "unattributed line".to_string(),
+            duration_secs: None,
+            speaker_id: None,
+        };
+
+        append_history_entry(&path, &attributed).expect("append should succeed");
+        append_history_entry(&path, &unattributed).expect("append should succeed");
+
+        // The raw line carries `"speaker"` only for the attributed entry.
+        let raw = std::fs::read_to_string(&path).expect("history file should exist");
+        assert!(raw.contains("\"speaker\":\"spk-uuid-123\""));
+
+        let entries = read_history_file(&path);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].speaker_id, Some("spk-uuid-123".to_string()));
+        assert_eq!(entries[1].speaker_id, None);
     }
 
     /// The record/file-transcribe completion path (`crate::app`'s

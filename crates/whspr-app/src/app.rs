@@ -203,6 +203,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.history.push(crate::history::HistoryEntry {
                         text,
                         duration_secs: Some(duration_secs),
+                        // The live-hotkey path doesn't compute an embedding
+                        // (only the record-button/file path does, see
+                        // `crate::speakers::attribute_speaker`), so this
+                        // stays unattributed for now.
+                        speaker_id: None,
                     });
                     // The pipeline has no "just finished" state to glance at
                     // (see `crate::tray`), so it's timed app-side here.

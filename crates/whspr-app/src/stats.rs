@@ -65,10 +65,12 @@ mod tests {
             HistoryEntry {
                 text: "one two three four five six".to_string(), // 6 words
                 duration_secs: Some(3.0),                        // 120 wpm
+                speaker_id: None,
             },
             HistoryEntry {
                 text: "no timing on this one".to_string(),
                 duration_secs: None,
+                speaker_id: None,
             },
         ];
 
@@ -81,10 +83,12 @@ mod tests {
             HistoryEntry {
                 text: "one two three four five six".to_string(), // 6 words / 3s = 120 wpm
                 duration_secs: Some(3.0),
+                speaker_id: None,
             },
             HistoryEntry {
                 text: "one two three four".to_string(), // 4 words / 2s = 120 wpm
                 duration_secs: Some(2.0),
+                speaker_id: None,
             },
         ];
 
