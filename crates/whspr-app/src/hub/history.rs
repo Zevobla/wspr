@@ -5,6 +5,7 @@
 use iced::widget::{column, row, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
+use crate::history::HistoryEntry;
 use crate::state::{Message, State};
 use crate::stats;
 use crate::theme::widgets::{self};
@@ -14,6 +15,37 @@ use super::common::kicker;
 
 fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
+}
+
+/// Shown in the Speaker column when a dictation carries no attribution
+/// (fingerprinting off, no model, or the embedding failed).
+const SPEAKER_UNATTRIBUTED: &str = "—";
+
+/// Resolves the Speaker column label for one history entry against the
+/// enrolled-speaker db. Pure over `(entry, db)` so it's unit-testable
+/// without a running app:
+/// - a matching profile with a user-set `name` -> that name;
+/// - a `speaker_id` with no name (or no matching profile) -> the UUID,
+///   shortened to its first group so it fits the column but still reads as
+///   the speaker's id;
+/// - no `speaker_id` -> a neutral placeholder.
+fn speaker_label(entry: &HistoryEntry, db: &whspr_config::SpeakerDb) -> String {
+    match &entry.speaker_id {
+        None => SPEAKER_UNATTRIBUTED.to_string(),
+        Some(id) => db
+            .profiles
+            .iter()
+            .find(|p| &p.id == id)
+            .and_then(|p| p.name.clone())
+            .unwrap_or_else(|| short_uuid(id)),
+    }
+}
+
+/// The first group of a UUID (its first 8 characters) -- enough to
+/// disambiguate a speaker in a fixed-width column while staying legible.
+/// Shorter ids are returned whole.
+fn short_uuid(id: &str) -> String {
+    id.chars().take(8).collect()
 }
 
 /// Renders the History screen.
@@ -148,10 +180,61 @@ fn history_table<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
 #[cfg(test)]
 mod tests {
     use super::*;
+    use whspr_config::{SpeakerDb, SpeakerProfile};
+
+    const UUID: &str = "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d";
+
+    fn profile(id: &str, name: Option<&str>) -> SpeakerProfile {
+        SpeakerProfile {
+            id: id.to_string(),
+            name: name.map(str::to_string),
+            centroid: Vec::new(),
+            samples: 0,
+            scans: Vec::new(),
+            first_seen: 0,
+            last_seen: 0,
+        }
+    }
+
+    fn entry(speaker_id: Option<&str>) -> HistoryEntry {
+        HistoryEntry {
+            text: "hello world".to_string(),
+            duration_secs: None,
+            speaker_id: speaker_id.map(str::to_string),
+        }
+    }
 
     #[test]
     fn word_count_counts_tokens() {
         assert_eq!(word_count("a b c"), 3);
         assert_eq!(word_count(""), 0);
+    }
+
+    #[test]
+    fn speaker_label_uses_the_profile_name_when_set() {
+        let db = SpeakerDb {
+            profiles: vec![profile(UUID, Some("Ada"))],
+        };
+        assert_eq!(speaker_label(&entry(Some(UUID)), &db), "Ada");
+    }
+
+    #[test]
+    fn speaker_label_falls_back_to_the_short_uuid_when_unnamed() {
+        let db = SpeakerDb {
+            profiles: vec![profile(UUID, None)],
+        };
+        assert_eq!(speaker_label(&entry(Some(UUID)), &db), "1a2b3c4d");
+    }
+
+    #[test]
+    fn speaker_label_shows_the_short_uuid_when_no_profile_matches() {
+        let db = SpeakerDb::default();
+        assert_eq!(speaker_label(&entry(Some(UUID)), &db), "1a2b3c4d");
+    }
+
+    #[test]
+    fn speaker_label_shows_a_placeholder_when_unattributed() {
+        let db = SpeakerDb::default();
+        assert_eq!(speaker_label(&entry(None), &db), SPEAKER_UNATTRIBUTED);
     }
 }
