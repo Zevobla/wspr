@@ -142,6 +142,11 @@ fn history_table<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
                     .font(type_scale::BODY_MEDIUM.font())
                     .color(scheme.on_surface)
                     .into(),
+                text(speaker_label(entry, &state.speaker_db))
+                    .size(type_scale::BODY_MEDIUM.size)
+                    .font(type_scale::BODY_MEDIUM.font())
+                    .color(scheme.on_surface_variant)
+                    .into(),
                 text(format!("{} words", word_count(&entry.text)))
                     .size(type_scale::BODY_MEDIUM.size)
                     .font(type_scale::BODY_MEDIUM.font())
@@ -170,6 +175,7 @@ fn history_table<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
     widgets::table(
         vec![
             ("What you said", Length::Fill),
+            ("Speaker", Length::Fixed(160.0)),
             ("Words", Length::Fixed(96.0)),
         ],
         rows,
