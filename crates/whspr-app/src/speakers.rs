@@ -31,11 +31,16 @@ pub fn speaker_db_path() -> Option<PathBuf> {
 ///
 /// Kept here (rather than inline in `crate::app`) so the `FileTranscribed`
 /// arm stays a one-liner and `app.rs` stays under its line cap (AA-06).
-pub fn attribute_speaker(state: &mut crate::state::State, embedding: Option<Vec<f32>>) -> Option<String> {
+pub fn attribute_speaker(
+    state: &mut crate::state::State,
+    embedding: Option<Vec<f32>>,
+) -> Option<String> {
     let Some(embedding) = embedding else {
         if state.config.speaker.enabled
-            && whspr_diarize::SherpaDiarizer::resolve_model_dir(state.config.speaker.model_dir.clone())
-                .is_none()
+            && whspr_diarize::SherpaDiarizer::resolve_model_dir(
+                state.config.speaker.model_dir.clone(),
+            )
+            .is_none()
         {
             state.needs_speaker_model = true;
         }
@@ -49,10 +54,11 @@ pub fn attribute_speaker(state: &mut crate::state::State, embedding: Option<Vec<
         .map(|d| d.as_secs())
         .unwrap_or(0)
         .to_string();
-    let (id, _is_new) =
-        state
-            .speaker_db
-            .match_or_enroll(&embedding, state.config.speaker.similarity_threshold, &scan_id);
+    let (id, _is_new) = state.speaker_db.match_or_enroll(
+        &embedding,
+        state.config.speaker.similarity_threshold,
+        &scan_id,
+    );
     if let Some(path) = speaker_db_path() {
         if let Err(e) = state.speaker_db.save(&path) {
             tracing::warn!("whspr: failed to save speaker db after attribution: {e}");
@@ -243,7 +249,10 @@ mod tests {
         std::env::remove_var("SPEAKER_MODEL_DIR");
 
         let mut state = crate::state::State::new(whspr_config::Config::default());
-        assert!(state.config.speaker.enabled, "default config enables speakers");
+        assert!(
+            state.config.speaker.enabled,
+            "default config enables speakers"
+        );
         assert!(!state.needs_speaker_model);
 
         let id = attribute_speaker(&mut state, None);

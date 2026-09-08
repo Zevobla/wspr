@@ -100,7 +100,9 @@ async fn compute_embedding(audio: &AudioBuffer, config: &Config) -> Option<Vec<f
             None
         }
         Err(e) => {
-            tracing::warn!("whspr: speaker embedding task panicked, leaving dictation unattributed: {e}");
+            tracing::warn!(
+                "whspr: speaker embedding task panicked, leaving dictation unattributed: {e}"
+            );
             None
         }
     }

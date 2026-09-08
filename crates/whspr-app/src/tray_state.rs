@@ -17,7 +17,10 @@ pub const TRAY_DONE_LINGER: std::time::Duration = std::time::Duration::from_secs
 /// at `now`. Pure so the Idle-suppression branch in `crate::app`'s
 /// `StateChanged` arm, and the revert in `TrayDoneTick`, are unit-testable
 /// without a real clock tick.
-pub fn tray_done_active(tray_done_until: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+pub fn tray_done_active(
+    tray_done_until: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> bool {
     tray_done_until.is_some_and(|until| now < until)
 }
 
