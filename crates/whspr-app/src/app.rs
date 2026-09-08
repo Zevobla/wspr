@@ -98,10 +98,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-        Message::FlowBarOpened(id) => {
-            state.flow_bar_window = Some(id);
-            Task::none()
-        }
         Message::LanguageChanged(label) => {
             state.config.language = config_ui::language_from_label(&label);
             persist_config(state);
@@ -555,12 +551,8 @@ fn mic_level_subscription(state: &State) -> iced::Subscription<Message> {
     }
 }
 
-fn view(state: &State, window: window::Id) -> Element<'_, Message> {
-    if Some(window) == state.flow_bar_window {
-        crate::flow_bar::view(state)
-    } else {
-        crate::hub::view(state)
-    }
+fn view(state: &State, _window: window::Id) -> Element<'_, Message> {
+    crate::hub::view(state)
 }
 
 #[cfg(test)]
