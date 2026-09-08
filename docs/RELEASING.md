@@ -21,7 +21,8 @@ That tag push triggers `.github/workflows/release.yml` on a `macos-14`
 2. Runs `scripts/bundle-macos.sh --version 0.1.0`, which builds the app
    (`nix build .#whspr-app`), generates `whspr.icns` from
    `crates/whspr-app/assets/icon.svg` at bundle time, assembles
-   `whspr.app`, and produces `whspr-0.1.0-macos.dmg` + `whspr-0.1.0-macos.zip`.
+   `whspr.app`, vendors its native dylibs (see below), and produces
+   `whspr-0.1.0-macos.dmg` + `whspr-0.1.0-macos.zip`.
 3. Creates a GitHub Release for the tag and uploads the `.dmg` and `.zip`.
 
 The tag version (with the leading `v` stripped) becomes
@@ -40,6 +41,34 @@ Outputs land in `dist/` (git-ignored): `whspr.app`, `whspr-<v>-macos.dmg`,
 `crates/whspr-app/assets/icon.svg`, rasterized at bundle time.
 
 `--binary <path>` reuses a prebuilt binary instead of running `nix build`.
+
+## Self-contained bundle (vendored dylibs)
+
+The `whspr-app` binary links native dynamic libraries that are **not** present
+on a clean end-user Mac:
+
+- `libonnxruntime.1.17.1.dylib` and `libsherpa-onnx-c-api.dylib` — the
+  ONNX Runtime + sherpa-onnx libs behind speaker diarization
+  (`whspr-diarize` → `sherpa-rs`), linked by `@rpath`. Nix's `fixupPhase`
+  strips the build-time `LC_RPATH`, so the binary ships with `@rpath` deps
+  and **no** rpath to resolve them.
+- `libiconv.2.dylib` (which re-exports `libcharset.1.dylib`) — linked by an
+  absolute `/nix/store/…` path that only exists on the build machine.
+
+Left alone, the launched `.app` `dyld`-crashes (`Library not loaded`) before a
+window ever appears. So after assembling the bundle, `bundle-macos.sh` copies
+every non-system dependency into `whspr.app/Contents/Frameworks`, rewrites each
+reference to `@rpath/<name>`, adds an `@executable_path/../Frameworks` rpath to
+the executable, and ad-hoc re-signs the dylibs and the bundle (rewriting
+install-names invalidates any existing signature, which macOS then refuses to
+load). The result runs standalone on a machine with no Nix and no dev tools.
+
+The dylibs are sourced at bundle time from the `sherpa-rs` download cache
+(`~/Library/Caches/sherpa-rs/…`) and the Nix store the build used — none of
+them is committed, matching the "nothing generated is committed" rule above.
+The headless gate (`cargo build` / `cargo test` / `nix flake check`) never
+launches the GUI, so it does not catch this — hence the vendoring lives in the
+bundle step.
 
 ## The unsigned-app caveat
 

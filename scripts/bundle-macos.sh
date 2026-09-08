@@ -240,6 +240,127 @@ PLIST
 # Validate the plist -- fail loudly if we produced something malformed.
 plutil -lint "$CONTENTS/Info.plist"
 
+# --- vendor non-system dylibs so the .app is self-contained ----------------
+# The whspr-app binary links native dylibs that DON'T exist on a clean Mac:
+#
+#   * @rpath/libonnxruntime.1.17.1.dylib and @rpath/libsherpa-onnx-c-api.dylib
+#     -- speaker diarization (whspr-diarize -> sherpa-rs). nix's fixupPhase
+#     strips the build-time LC_RPATH that pointed into the sherpa-rs-sys build
+#     sandbox, so the binary ends up with @rpath deps and ZERO LC_RPATH.
+#   * /nix/store/.../libiconv.2.dylib (which re-exports libcharset.1.dylib)
+#     -- an absolute path into THIS machine's nix store, absent everywhere the
+#     app is actually installed.
+#
+# Either one makes the launched app dyld-crash ("Library not loaded") before a
+# window ever shows -- and the headless gate (cargo build/test, nix flake
+# check) never launches the GUI, so it doesn't catch it. We copy every
+# non-system dependency into Contents/Frameworks, rewrite each reference to
+# @rpath/<name>, and point the executable's rpath at Frameworks so dyld
+# resolves the whole graph inside the bundle.
+#
+# Nothing here is committed: the dylibs are sourced at bundle time from the
+# sherpa-rs download cache / the nix store the build we just ran used.
+FRAMEWORKS="$CONTENTS/Frameworks"
+mkdir -p "$FRAMEWORKS"
+
+# A dependency is "system" (left untouched -- present on every macOS, served
+# from the dyld shared cache) iff it lives under /usr/lib or /System.
+is_system_dep() {
+  case "$1" in
+    /usr/lib/*|/System/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The dependency install-names of a Mach-O, one per line, deduped. Only the
+# tab-indented lines are dependencies: otool -L prints the file path (and, for
+# universal2 dylibs like sherpa/onnx, a per-architecture "(architecture arm64):"
+# banner) flush-left, and those must be skipped.
+dep_names() {
+  otool -L "$1" | awk '/^\t/ {print $1}' | sort -u
+}
+
+# Resolve the on-disk source for a dependency install-name:
+#   * absolute paths (e.g. the /nix/store libiconv) ARE the source;
+#   * @rpath/... names come from the sherpa-rs prebuilt download cache
+#     (universal2), with the cargo target dirs as a fallback.
+locate_dylib_source() {
+  local dep="$1" name hit
+  name="${dep##*/}"
+  case "$dep" in
+    /*) [ -f "$dep" ] && { printf '%s\n' "$dep"; return 0; } ;;
+  esac
+  for hit in "$HOME"/Library/Caches/sherpa-rs/*/*/sherpa-onnx-*/lib/"$name"; do
+    [ -f "$hit" ] && { printf '%s\n' "$hit"; return 0; }
+  done
+  for hit in "$REPO_ROOT"/target/*/"$name" "$REPO_ROOT"/target/*/deps/"$name"; do
+    [ -f "$hit" ] && { printf '%s\n' "$hit"; return 0; }
+  done
+  return 1
+}
+
+echo "==> vendoring non-system dylibs into Contents/Frameworks"
+
+# Breadth-first over the binary and every dylib we copy, so transitive deps
+# (sherpa-onnx-c-api -> onnxruntime, libiconv -> libcharset) come along too.
+WORKLIST=("$CONTENTS/MacOS/whspr")
+idx=0
+while [ "$idx" -lt "${#WORKLIST[@]}" ]; do
+  cur="${WORKLIST[$idx]}"
+  idx=$((idx + 1))
+
+  while IFS= read -r dep; do
+    [ -z "$dep" ] && continue
+    is_system_dep "$dep" && continue
+
+    name="${dep##*/}"
+    dest="$FRAMEWORKS/$name"
+
+    if [ ! -f "$dest" ]; then
+      if ! src="$(locate_dylib_source "$dep")"; then
+        echo "error: cannot find dylib '$name' (needed by $cur)." >&2
+        echo "       looked in the sherpa-rs cache" \
+             "(~/Library/Caches/sherpa-rs/*/*/sherpa-onnx-*/lib) and" \
+             "$REPO_ROOT/target/*; refusing to ship a broken bundle." >&2
+        exit 1
+      fi
+      echo "    + $name"
+      cp "$src" "$dest"
+      chmod u+w "$dest"
+      # Normalize the copy's own install id, and give it an @loader_path rpath
+      # so its own @rpath deps resolve from the same Frameworks dir (unless it
+      # already has one -- sherpa-onnx-c-api ships with @loader_path, and
+      # re-adding it would error).
+      install_name_tool -id "@rpath/$name" "$dest"
+      if ! otool -l "$dest" | grep -q 'path @loader_path (offset'; then
+        install_name_tool -add_rpath @loader_path "$dest"
+      fi
+      WORKLIST+=("$dest")
+    fi
+
+    # Repoint the referrer (binary or dylib) at the vendored copy.
+    if [ "$dep" != "@rpath/$name" ]; then
+      install_name_tool -change "$dep" "@rpath/$name" "$cur"
+    fi
+  done < <(dep_names "$cur")
+done
+
+# Point the executable's rpath at the bundled Frameworks so its @rpath deps
+# (including everything we just rewrote to @rpath) resolve inside the .app.
+install_name_tool -add_rpath @executable_path/../Frameworks "$CONTENTS/MacOS/whspr"
+
+# install_name_tool invalidates any code signature, and macOS refuses to load
+# a modified-but-signed Mach-O. Re-sign every bundled dylib (inner first),
+# then seal the bundle -- which signs the main executable and records
+# Frameworks in _CodeSignature/CodeResources. When CI has the signing secrets,
+# release.yml re-signs the whole bundle for real on top of this.
+echo "==> ad-hoc re-signing bundled dylibs + sealing the bundle"
+for dylib in "$FRAMEWORKS"/*.dylib; do
+  codesign --force --sign - "$dylib"
+done
+codesign --force --sign - "$APP"
+codesign --verify --deep --strict "$APP"
+
 echo "==> assembled: $APP"
 
 # --- distributables: .zip (ditto) + .dmg (hdiutil) -------------------------
