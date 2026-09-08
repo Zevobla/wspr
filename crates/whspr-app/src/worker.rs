@@ -35,8 +35,17 @@ pub enum WorkerEvent {
     /// The pipeline moved to a new state.
     StateChanged(PipelineState),
     /// A dictation turn finished successfully; `duration_secs` is the
-    /// recorded audio's length, used for the Hub's wpm stat.
-    Completed { text: String, duration_secs: f32 },
+    /// recorded audio's length, used for the Hub's wpm stat. `embedding` is
+    /// the per-clip speaker fingerprint (see
+    /// `crate::transcribe_file::compute_embedding`), or `None` when speaker
+    /// attribution isn't possible -- fed to
+    /// `crate::speakers::attribute_speaker` so live dictations attribute a
+    /// speaker exactly like the record-button/file path.
+    Completed {
+        text: String,
+        duration_secs: f32,
+        embedding: Option<Vec<f32>>,
+    },
     /// Hotkey listener startup, mic capture, or a pipeline run failed.
     Failed(String),
 }
@@ -277,6 +286,13 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 match handle.stop() {
                     Ok(audio) => {
                         let duration_secs = audio.duration_secs();
+                        // Fingerprint the speaker over the whole clip *before*
+                        // `pipeline.run` consumes `audio` (it takes it by
+                        // value), reusing the file path's exact logic. `None`
+                        // whenever attribution isn't possible; transcription
+                        // proceeds unaffected either way.
+                        let embedding =
+                            crate::transcribe_file::compute_embedding(&audio, &config).await;
                         let ctx = RefineContext {
                             instructions: Some(whspr_refine::effective_instructions(
                                 config.refine_settings.instructions.as_deref(),
@@ -289,6 +305,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                                     .send(WorkerEvent::Completed {
                                         text,
                                         duration_secs,
+                                        embedding,
                                     })
                                     .await;
                             }
