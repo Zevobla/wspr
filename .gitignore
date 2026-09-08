@@ -17,6 +17,10 @@ result-*
 *.iconset/
 crates/whspr-app/assets/app-icon/*.png
 
+# --- Archivo fonts (fetched hermetically by flake.nix, not vendored --
+# see crates/whspr-app/build.rs and ARCHIVO_DIR) ---
+crates/whspr-app/assets/fonts/*.ttf
+
 # --- Rust / Cargo (upstream template) ---
 debug
 **/*.rs.bk
