@@ -1,7 +1,6 @@
-//! MD3's type scale, trimmed to the roles whspr-app's Hub/Flow Bar
-//! actually use. See the material-3 skill's typography reference for the
-//! full 15-style scale and the "emphasized" variants (`TypeStyle::
-//! emphasized`) this trims from.
+//! MD3's type scale, trimmed to the roles whspr-app's Hub actually uses.
+//! See the material-3 skill's typography reference for the full 15-style
+//! scale this trims from.
 //!
 //! Operate-mode product UI doesn't need MD3's Display/Headline sizes
 //! (those are for marketing-scale hero text) or a wide type-scale ratio --
@@ -37,24 +36,6 @@ impl TypeStyle {
             ..fonts::DEFAULT
         }
     }
-
-    /// MD3's "emphasized" variant of this style: same size, one weight
-    /// step heavier (see the skill's Emphasized Type Styles notes). Used
-    /// for the Flow Bar's glanceable state label -- the one place in this
-    /// app where that extra emphasis earns its keep.
-    pub const fn emphasized(self) -> Self {
-        let weight = match self.weight {
-            Weight::Thin => Weight::ExtraLight,
-            Weight::ExtraLight => Weight::Light,
-            Weight::Light => Weight::Normal,
-            Weight::Normal => Weight::Medium,
-            Weight::Medium => Weight::Semibold,
-            Weight::Semibold => Weight::Bold,
-            Weight::Bold => Weight::ExtraBold,
-            Weight::ExtraBold | Weight::Black => Weight::Black,
-        };
-        Self { weight, ..self }
-    }
 }
 
 /// A screen's `<h2>` title in the header band ("Dictate", "Settings").
@@ -75,34 +56,3 @@ pub const TRANSCRIPT: TypeStyle = TypeStyle::new(22.0, Weight::Normal);
 /// An uppercase kicker / table header / rail number: small, tracked caps.
 /// Callers uppercase the string themselves (iced has no `text-transform`).
 pub const KICKER: TypeStyle = TypeStyle::new(11.0, Weight::Semibold);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn emphasized_steps_up_exactly_one_weight() {
-        assert_eq!(
-            TypeStyle::new(14.0, Weight::Normal).emphasized().weight,
-            Weight::Medium
-        );
-        assert_eq!(
-            TypeStyle::new(14.0, Weight::Medium).emphasized().weight,
-            Weight::Semibold
-        );
-    }
-
-    #[test]
-    fn emphasized_preserves_size() {
-        let style = TITLE_LARGE.emphasized();
-        assert_eq!(style.size, TITLE_LARGE.size);
-    }
-
-    #[test]
-    fn emphasized_saturates_at_black() {
-        assert_eq!(
-            TypeStyle::new(14.0, Weight::Black).emphasized().weight,
-            Weight::Black
-        );
-    }
-}
