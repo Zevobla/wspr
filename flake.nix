@@ -20,7 +20,19 @@
         toolchain = fenix.packages.${system}.stable.toolchain;
         craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
 
-        src = craneLib.cleanCargoSource ./.;
+        # crane's cleanCargoSource keeps only Rust/Cargo files, which drops
+        # crates/whspr-app/assets/icon.svg -- the vector whspr-app's build
+        # script rasterizes into the window icon. Keep .svg assets in the
+        # build source alongside the Cargo sources so that build script can
+        # read the icon in the sandboxed crane build (`nix build`/`nix flake
+        # check`). The Archivo fonts don't need to be in-source: build.rs
+        # reads them from ARCHIVO_DIR (a Nix store path) instead.
+        src = lib.cleanSourceWith {
+          src = ./.;
+          filter = path: type:
+            (lib.hasSuffix ".svg" path) || (craneLib.filterCargoSources path type);
+          name = "source";
+        };
 
         # nixpkgs dropped the old per-framework `darwin.apple_sdk.frameworks.*`
         # stubs (https://nixos.org/manual/nixpkgs/stable/#sec-darwin-legacy-frameworks);
