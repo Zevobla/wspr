@@ -16,6 +16,7 @@ mod system_theme;
 mod theme;
 mod transcribe_file;
 mod tray;
+mod tray_state;
 mod worker;
 
 fn main() -> iced::Result {
