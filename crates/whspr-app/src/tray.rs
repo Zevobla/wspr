@@ -222,8 +222,8 @@ mod platform {
         ]
     }
 
-    /// Idle: a hollow 2px-outlined square -- the opposite of Recording's
-    /// solid fill (empty vs. full), not just a dimmer color.
+    /// Idle: a hollow 2px-outlined square -- a clean empty frame, a distinct
+    /// silhouette from the other three states rather than just a dimmer color.
     fn render_square_outline(color: iced::Color) -> Icon {
         const THICKNESS: f32 = 3.0;
         render_icon(move |dx, dy| {
@@ -264,8 +264,8 @@ mod platform {
         })
     }
 
-    /// Recording: a bold microphone silhouette in the same red as the old
-    /// solid square, so "recording" reads as an unmistakable mic at a
+    /// Recording: a bold microphone silhouette painted in `color` (the
+    /// scheme's red), so "recording" reads as an unmistakable mic at a
     /// glance rather than as one more colored box.
     fn render_microphone(color: iced::Color) -> Icon {
         render_icon(move |dx, dy| in_microphone(dx, dy).then_some(color))
