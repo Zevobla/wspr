@@ -7,6 +7,7 @@
 //! compatible with whatever shape another tool (e.g. whspr-cli) eventually
 //! settles on, as long as it keeps a `text` field.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -65,6 +66,74 @@ pub fn read_history_file(path: &Path) -> Vec<HistoryEntry> {
         Ok(contents) => parse_history_jsonl(&contents),
         Err(_) => Vec::new(),
     }
+}
+
+/// Appends `entry` as one JSON line to the history file at `path`, creating
+/// the file (and its parent data dir, on a fresh install) if this is the
+/// first write. Field names match whspr-cli's own `save_to_history`
+/// (`crates/whspr-cli/src/transcribe_cmd.rs`) so both tools keep reading
+/// the same file as one format rather than two -- extra fields either
+/// reader doesn't recognize are simply ignored (see this module's doc
+/// comment and `stats_cmd.rs`'s `#[serde(default)]` fields).
+fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = serde_json::json!({
+        "text": entry.text,
+        "duration_secs": entry.duration_secs,
+        "timestamp": timestamp,
+        "source": "app",
+    });
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{line}")
+}
+
+/// Adds one completed transcription to history: pushes it into
+/// `state.history` (so RECENT and the History screen update immediately)
+/// and appends it to the on-disk JSONL file at the real platform path (so
+/// it survives a restart) -- used by the record-button/file-transcribe
+/// completion path, which previously did neither (see `crate::app`'s
+/// `Message::FileTranscribed` arm). Delegates to [`record_completed_at`],
+/// which takes the path explicitly so tests can exercise the disk-write
+/// behavior against a tempdir instead of the user's real history file.
+pub fn record_completed(state: &mut crate::state::State, text: String, duration_secs: Option<f32>) {
+    record_completed_at(state, text, duration_secs, history_file_path().as_deref());
+}
+
+/// [`record_completed`]'s logic, writing to `path` (or skipping the disk
+/// write entirely if `None`, e.g. the platform data dir couldn't be
+/// determined) instead of always resolving the real platform history file.
+/// A blank/whitespace-only transcript (e.g. silence) is skipped entirely,
+/// in memory and on disk, rather than adding an empty row. A write failure
+/// is logged, not fatal -- the entry still lands in `state.history` so the
+/// session doesn't lose it.
+fn record_completed_at(
+    state: &mut crate::state::State,
+    text: String,
+    duration_secs: Option<f32>,
+    path: Option<&Path>,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let entry = HistoryEntry {
+        text,
+        duration_secs,
+    };
+    if let Some(path) = path {
+        if let Err(e) = append_history_entry(path, &entry) {
+            eprintln!("whspr: failed to save history entry: {e}");
+        }
+    }
+    state.history.push(entry);
 }
 
 #[cfg(test)]
@@ -132,5 +201,63 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "from disk");
+    }
+
+    #[test]
+    fn append_history_entry_round_trips_through_read_history_file() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("nested").join("history.jsonl");
+        let entry = HistoryEntry {
+            text: "hello from the app".to_string(),
+            duration_secs: Some(1.5),
+        };
+
+        append_history_entry(&path, &entry).expect("append should create the file and its parent");
+        append_history_entry(&path, &entry).expect("a second append should append, not overwrite");
+
+        let entries = read_history_file(&path);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].text, "hello from the app");
+        assert_eq!(entries[0].duration_secs, Some(1.5));
+    }
+
+    /// The record/file-transcribe completion path (`crate::app`'s
+    /// `Message::FileTranscribed` arm) must push into `state.history` *and*
+    /// persist to disk -- this is the fix for the bug where dictating via
+    /// the Record button never showed up in RECENT/History.
+    #[test]
+    fn record_completed_at_appends_to_state_history_and_disk() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+
+        record_completed_at(
+            &mut state,
+            "a real transcript".to_string(),
+            Some(3.0),
+            Some(&path),
+        );
+
+        assert_eq!(state.history.len(), 1);
+        assert_eq!(state.history[0].text, "a real transcript");
+        assert_eq!(state.history[0].duration_secs, Some(3.0));
+
+        let on_disk = read_history_file(&path);
+        assert_eq!(on_disk.len(), 1);
+        assert_eq!(on_disk[0].text, "a real transcript");
+    }
+
+    /// A blank/silent transcript must not add a phantom history row, in
+    /// memory or on disk.
+    #[test]
+    fn record_completed_at_skips_blank_transcripts() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+
+        record_completed_at(&mut state, "   ".to_string(), None, Some(&path));
+
+        assert!(state.history.is_empty());
+        assert!(!path.exists());
     }
 }
