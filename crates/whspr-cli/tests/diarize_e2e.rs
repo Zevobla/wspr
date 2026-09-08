@@ -45,15 +45,26 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
         2,
         "MockDiarizer should return exactly 2 turns"
     );
-    assert_eq!(
-        parsed[0].get("speaker").and_then(|v| v.as_str()),
-        Some("Speaker 1"),
-        "first turn should be labeled Speaker 1"
-    );
-    assert_eq!(
-        parsed[1].get("speaker").and_then(|v| v.as_str()),
-        Some("Speaker 2"),
-        "second turn should be labeled Speaker 2"
+
+    // Speaker ids are v4 UUIDs assigned at enrollment (36-char hyphenated
+    // strings), not the old sequential "Speaker N" labels. The two turns are
+    // distinct speakers, so they enroll as two distinct ids.
+    let speaker_0 = parsed[0]
+        .get("speaker")
+        .and_then(|v| v.as_str())
+        .expect("first turn should have a speaker id");
+    let speaker_1 = parsed[1]
+        .get("speaker")
+        .and_then(|v| v.as_str())
+        .expect("second turn should have a speaker id");
+
+    for id in [speaker_0, speaker_1] {
+        assert_eq!(id.len(), 36, "speaker id should be a 36-char UUID: {id}");
+        assert!(id.contains('-'), "speaker id should be hyphenated: {id}");
+    }
+    assert_ne!(
+        speaker_0, speaker_1,
+        "the two distinct turns should enroll as two distinct speaker ids"
     );
 }
 
