@@ -91,7 +91,7 @@ pub struct State {
     pub history_search: String,
     /// The dictation pipeline's current state, driven by
     /// `crate::worker::pipeline_worker`'s `WorkerEvent::StateChanged` and
-    /// shown by the Flow Bar overlay.
+    /// reflected by the menu-bar tray icon (see `crate::tray`).
     pub pipeline_state: whspr_core::PipelineState,
     /// The most recent error reported by the pipeline worker (hotkey
     /// listener startup, mic capture, or a pipeline run), if any.

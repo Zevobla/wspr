@@ -1,10 +1,12 @@
-//! Wires up the iced `Program`: `boot` opens the Hub window, `update` handles
-//! messages, and `view` renders the right content for each open window.
+//! Wires up the iced `Program`: `boot` opens the Hub window, `update`
+//! handles messages, and `view` renders the Hub.
 //!
-//! Built on `iced::daemon` (rather than the simpler `iced::application`)
-//! from the start, since the Flow Bar overlay needs a second, independently
-//! styled window and `daemon`'s `view`/`theme`/`title` all take a
-//! `window::Id` so each window can render its own content.
+//! Built on `iced::daemon` (rather than the simpler `iced::application`):
+//! unlike `application`, `daemon` doesn't tie the process lifetime to a
+//! single window, which suits a menu-bar app whose tray icon and "Show
+//! Hub" action need to outlive the Hub window. Its `view`/`theme`/`title`
+//! all take a `window::Id`; `view` ignores it here since the Hub is the
+//! only window.
 //!
 //! ## Settings persistence
 //! Every Hub setting is written straight back to the config file the moment
@@ -40,8 +42,8 @@ pub fn run() -> iced::Result {
     iced::daemon(boot, update, view)
         .title(HUB_TITLE)
         // Load the three static Archivo faces and make Regular the default,
-        // so every Hub/Flow Bar surface renders in the Modernist type
-        // family and each weight resolves to its own crisp static face
+        // so every Hub surface renders in the Modernist type family and each
+        // weight resolves to its own crisp static face
         // (see `crate::theme::fonts`).
         .font(crate::theme::fonts::ARCHIVO_REGULAR)
         .font(crate::theme::fonts::ARCHIVO_SEMIBOLD)
