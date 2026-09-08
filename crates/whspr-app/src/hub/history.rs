@@ -2,7 +2,7 @@
 //! average speed), and a filtered table of past transcriptions -- restyled
 //! onto the Modernist widgets.
 
-use iced::widget::{column, row, text, text_input, Space};
+use iced::widget::{column, container, row, text, text_input, Space};
 use iced::{Alignment, Element, Length};
 
 use crate::history::HistoryEntry;
@@ -50,14 +50,37 @@ fn short_uuid(id: &str) -> String {
 
 /// Renders the History screen.
 pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    column![
-        search_row(state, scheme),
-        stat_strip(state, scheme),
-        widgets::hr(scheme),
-        history_table(state, scheme),
-    ]
-    .spacing(spacing::XL)
+    let mut root = column![search_row(state, scheme)]
+        .spacing(spacing::XL)
+        .width(Length::Fill);
+
+    // A non-blocking nudge, only while attribution can't run for lack of a
+    // model -- so the empty Speaker cells read as "not set up yet".
+    if state.needs_speaker_model {
+        root = root.push(install_model_prompt(scheme));
+    }
+
+    root = root
+        .push(stat_strip(state, scheme))
+        .push(widgets::hr(scheme))
+        .push(history_table(state, scheme));
+
+    root.into()
+}
+
+/// A modest mono-accent notice prompting the user to install a
+/// speaker-embedding model so dictations can be attributed. Reuses the
+/// Hub's `error_banner` role (Modernist keeps notices mono/red, never a
+/// dark snackbar); rendered only when `state.needs_speaker_model`.
+fn install_model_prompt<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+    container(
+        text("Install a speaker model in Models to label speakers.")
+            .size(type_scale::BODY_MEDIUM.size)
+            .font(type_scale::BODY_MEDIUM.font()),
+    )
+    .padding(spacing::MD)
     .width(Length::Fill)
+    .style(move |_theme| styles::container::error_banner(scheme))
     .into()
 }
 
