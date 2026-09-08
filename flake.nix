@@ -51,6 +51,38 @@
         bindgenExtraClangArgs = lib.optionalString pkgs.stdenv.isDarwin
           "-isysroot ${pkgs.apple-sdk}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
 
+        # The three static Archivo faces whspr-app embeds (see
+        # crates/whspr-app/src/theme/fonts.rs and build.rs, which rasterizes
+        # the app icon with ExtraBold). Archivo is a general-purpose OFL
+        # font, not whspr's own source, so it's pinned by content hash from
+        # the designer's upstream repo and fetched hermetically here rather
+        # than vendored as .ttf files in git. Bytes verified identical to
+        # what was previously vendored.
+        archivoRegular = pkgs.fetchurl {
+          url = "https://raw.githubusercontent.com/Omnibus-Type/Archivo/master/fonts/ttf/Archivo-Regular.ttf";
+          sha256 = "sha256-Wfv9ipu0EwG/6VDnsJf9QtUq8iSgd2HiwbLJWaTJz5o=";
+        };
+        archivoSemiBold = pkgs.fetchurl {
+          url = "https://raw.githubusercontent.com/Omnibus-Type/Archivo/master/fonts/ttf/Archivo-SemiBold.ttf";
+          sha256 = "sha256-ZZi27YFhWHZ6djO9+wHXja9UyrTNTZ08wM/ZlfRyMIM=";
+        };
+        archivoExtraBold = pkgs.fetchurl {
+          url = "https://raw.githubusercontent.com/Omnibus-Type/Archivo/master/fonts/ttf/Archivo-ExtraBold.ttf";
+          sha256 = "sha256-n/9nkirivDdqnlxtZE7r+MWxf2Kg845fAW5LfjkDZi8=";
+        };
+
+        # Single directory holding all three faces under the exact
+        # filenames crates/whspr-app/build.rs expects, so ARCHIVO_DIR can
+        # point straight at it -- same shape as the model-dir env vars
+        # (WHISPER_MODEL_PATH/SPEAKER_MODEL_DIR) used to work before this
+        # repo moved models to bring-your-own.
+        archivoDir = pkgs.runCommand "archivo-fonts" { } ''
+          mkdir -p $out
+          cp ${archivoRegular} $out/Archivo-Regular.ttf
+          cp ${archivoSemiBold} $out/Archivo-SemiBold.ttf
+          cp ${archivoExtraBold} $out/Archivo-ExtraBold.ttf
+        '';
+
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -75,6 +107,12 @@
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
+
+          # crates/whspr-app/build.rs reads this at `cargo build` time (to
+          # copy the three faces into OUT_DIR for `include_bytes!` and to
+          # load ExtraBold into usvg's fontdb for icon rasterization), so it
+          # has to be visible to the crane build itself, not just devShell.
+          ARCHIVO_DIR = "${archivoDir}";
         };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -123,6 +161,11 @@
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
+
+          # inputsFrom doesn't carry over commonArgs' env vars either, so
+          # ARCHIVO_DIR is repeated here the same way LIBCLANG_PATH/
+          # BINDGEN_EXTRA_CLANG_ARGS are above.
+          ARCHIVO_DIR = "${archivoDir}";
         };
       });
 }
