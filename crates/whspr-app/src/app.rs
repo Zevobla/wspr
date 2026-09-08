@@ -208,16 +208,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                         text,
                         duration_secs: Some(duration_secs),
                     });
-                    // Show a lingering "Done" tray icon: the pipeline has
-                    // no state for "just finished" (see `StateChanged`'s
-                    // handling above and `crate::tray`'s module doc
-                    // comment), so this is timed app-side and reverted by
-                    // `Message::TrayDoneTick` once `TRAY_DONE_LINGER`
-                    // elapses.
-                    if let Some(tray) = &state.tray {
-                        tray.set_visual(crate::tray::TrayVisual::Done);
-                    }
-                    state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
+                    // The pipeline has no "just finished" state to glance at
+                    // (see `crate::tray`), so it's timed app-side here.
+                    begin_tray_done_linger(state);
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
@@ -423,6 +416,16 @@ fn tray_done_active(tray_done_until: Option<std::time::Instant>, now: std::time:
     tray_done_until.is_some_and(|until| now < until)
 }
 
+/// Starts the tray's lingering "Done" glance (the Done visual plus the
+/// `TRAY_DONE_LINGER` window `TrayDoneTick` reverts). Shared by the hotkey
+/// `WorkerEvent::Completed` arm and the button's `FileTranscribed(Ok)` arm.
+fn begin_tray_done_linger(state: &mut State) {
+    if let Some(tray) = &state.tray {
+        tray.set_visual(crate::tray::TrayVisual::Done);
+    }
+    state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
+}
+
 /// Saves `state.config` to the platform config directory immediately,
 /// surfacing a failure via `state.last_error` (the same field the pipeline
 /// worker uses) rather than silently dropping it -- a `pick_list` selection
@@ -554,5 +557,13 @@ mod tests {
     #[test]
     fn tray_done_active_false_when_nothing_pending() {
         assert!(!tray_done_active(None, std::time::Instant::now()));
+    }
+
+    #[test]
+    fn begin_tray_done_linger_arms_the_linger_window() {
+        let mut state = State::new(whspr_config::Config::default());
+        let before = std::time::Instant::now();
+        begin_tray_done_linger(&mut state);
+        assert!(state.tray_done_until.is_some_and(|until| until >= before));
     }
 }
