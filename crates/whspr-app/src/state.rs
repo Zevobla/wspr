@@ -65,8 +65,11 @@ pub struct State {
     pub captured_hotkey: Option<String>,
     /// Completed transcriptions: whatever was on disk at boot (see
     /// `crate::history::read_history_file`), plus any the pipeline
-    /// completes during this session (session-only, not written back to
-    /// disk -- see `crate::app`'s persistence note).
+    /// completes during this session. The record-button/file-transcribe
+    /// path also appends each one back to the on-disk JSONL file (see
+    /// `crate::history::record_completed`), so those survive a restart;
+    /// the live hotkey path only pushes here in-memory for now (see
+    /// `Message::Worker`'s `Completed` arm in `crate::app`).
     pub history: Vec<HistoryEntry>,
     /// The active iced theme. Set from the OS appearance at boot and
     /// re-synced whenever it changes (see `crate::system_theme`); the Hub's
@@ -359,9 +362,11 @@ pub enum Message {
     PickFileToTranscribe,
     /// The transcribe file picker resolved (`None` if the user cancelled).
     FileToTranscribePicked(Option<std::path::PathBuf>),
-    /// A background file-transcription run finished: the recognized text, or
-    /// an error message. Shown in the Hub's Transcribe section (no injection).
-    FileTranscribed(Result<String, String>),
+    /// A background file-transcription run finished: the recognized text and
+    /// the recorded audio's duration, or an error message. Shown in the
+    /// Hub's Transcribe section (no injection) and, on success, saved to
+    /// history (see `crate::history::record_completed`).
+    FileTranscribed(Result<(String, f32), String>),
     /// The user clicked the in-app Record button: starts capture if idle,
     /// stops + transcribes if already recording.
     ToggleRecording,
