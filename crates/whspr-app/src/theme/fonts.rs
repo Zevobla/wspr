@@ -1,11 +1,18 @@
-//! Vendored font assets and the iced `Font`s the app renders with.
+//! Font assets and the iced `Font`s the app renders with.
 //!
 //! Modernist is set entirely in Archivo (see `crate::theme`'s module doc).
-//! We vendor the OFL-licensed Archivo as **static per-weight faces** --
-//! Regular (400), SemiBold (600), ExtraBold (800) -- rather than the
+//! The app embeds the OFL-licensed Archivo as **static per-weight faces**
+//! -- Regular (400), SemiBold (600), ExtraBold (800) -- rather than the
 //! variable font: cosmic-text/glyphon miscomputed glyph advances for the
 //! Regular *instance* of the `wght`-axis variable TTF, ghosting body text.
 //! The static faces carry baked-in advances and render crisply.
+//!
+//! Archivo is a general-purpose external artifact, not whspr's own source,
+//! so the three faces aren't vendored in git: `flake.nix` fetches them
+//! hermetically by content hash (`pkgs.fetchurl`) into a directory exposed
+//! as `ARCHIVO_DIR`, and `build.rs` copies them into `OUT_DIR` for the
+//! `include_bytes!` calls below to embed at compile time. The binary is
+//! still fully self-contained -- only git no longer stores the bytes.
 //!
 //! All three share the typographic family name "Archivo" (name ID 16) and
 //! differ by their OS/2 weight class, so `Font { family: Name("Archivo"),
@@ -18,11 +25,13 @@ use iced::font::{Family, Stretch, Style, Weight};
 use iced::Font;
 
 /// Archivo Regular (400) -- body text, captions, table cells.
-pub const ARCHIVO_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Archivo-Regular.ttf");
+pub const ARCHIVO_REGULAR: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Archivo-Regular.ttf"));
 /// Archivo SemiBold (600) -- control/row labels and button text.
-pub const ARCHIVO_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/Archivo-SemiBold.ttf");
+pub const ARCHIVO_SEMIBOLD: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/Archivo-SemiBold.ttf"));
 /// Archivo ExtraBold (800) -- screen titles, section heads, the wordmark.
-pub const ARCHIVO_EXTRABOLD: &[u8] = include_bytes!("../../assets/fonts/Archivo-ExtraBold.ttf");
+pub const ARCHIVO_EXTRABOLD: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/Archivo-ExtraBold.ttf"));
 
 /// The shared typographic family name all three faces register under.
 pub const ARCHIVO: &str = "Archivo";
