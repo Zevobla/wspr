@@ -81,14 +81,8 @@ fn boot() -> (State, Task<Message>) {
     crate::system_theme::boot(&mut state);
 
     let (_id, open_hub) = window::open(crate::hub::window_settings());
-    let (_id, open_flow_bar) = window::open(crate::flow_bar::window_settings());
 
-    let open = Task::batch([
-        open_hub.map(Message::HubOpened),
-        open_flow_bar.map(Message::FlowBarOpened),
-    ]);
-
-    (state, open)
+    (state, open_hub.map(Message::HubOpened))
 }
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
