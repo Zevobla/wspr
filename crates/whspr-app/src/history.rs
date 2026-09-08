@@ -123,8 +123,19 @@ fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()
 /// `Message::FileTranscribed` arm). Delegates to [`record_completed_at`],
 /// which takes the path explicitly so tests can exercise the disk-write
 /// behavior against a tempdir instead of the user's real history file.
-pub fn record_completed(state: &mut crate::state::State, text: String, duration_secs: Option<f32>) {
-    record_completed_at(state, text, duration_secs, history_file_path().as_deref());
+pub fn record_completed(
+    state: &mut crate::state::State,
+    text: String,
+    duration_secs: Option<f32>,
+    speaker_id: Option<String>,
+) {
+    record_completed_at(
+        state,
+        text,
+        duration_secs,
+        speaker_id,
+        history_file_path().as_deref(),
+    );
 }
 
 /// [`record_completed`]'s logic, writing to `path` (or skipping the disk
@@ -138,6 +149,7 @@ fn record_completed_at(
     state: &mut crate::state::State,
     text: String,
     duration_secs: Option<f32>,
+    speaker_id: Option<String>,
     path: Option<&Path>,
 ) {
     if text.trim().is_empty() {
@@ -146,7 +158,7 @@ fn record_completed_at(
     let entry = HistoryEntry {
         text,
         duration_secs,
-        speaker_id: None,
+        speaker_id,
     };
     if let Some(path) = path {
         if let Err(e) = append_history_entry(path, &entry) {
@@ -287,16 +299,19 @@ mod tests {
             &mut state,
             "a real transcript".to_string(),
             Some(3.0),
+            Some("spk-abc".to_string()),
             Some(&path),
         );
 
         assert_eq!(state.history.len(), 1);
         assert_eq!(state.history[0].text, "a real transcript");
         assert_eq!(state.history[0].duration_secs, Some(3.0));
+        assert_eq!(state.history[0].speaker_id, Some("spk-abc".to_string()));
 
         let on_disk = read_history_file(&path);
         assert_eq!(on_disk.len(), 1);
         assert_eq!(on_disk[0].text, "a real transcript");
+        assert_eq!(on_disk[0].speaker_id, Some("spk-abc".to_string()));
     }
 
     /// A blank/silent transcript must not add a phantom history row, in
@@ -307,7 +322,7 @@ mod tests {
         let path = dir.path().join("history.jsonl");
         let mut state = crate::state::State::new(whspr_config::Config::default());
 
-        record_completed_at(&mut state, "   ".to_string(), None, Some(&path));
+        record_completed_at(&mut state, "   ".to_string(), None, None, Some(&path));
 
         assert!(state.history.is_empty());
         assert!(!path.exists());

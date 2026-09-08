@@ -283,7 +283,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::FileTranscribed(Ok((text, duration_secs))) => {
             state.transcribe_status = Some("Transcription complete".to_string());
             state.transcribed_text = Some(text.clone());
-            crate::history::record_completed(state, text, Some(duration_secs));
+            crate::history::record_completed(state, text, Some(duration_secs), None);
             // Back to Idle so the linger reverts to Idle, then show "Done".
             state.pipeline_state = whspr_core::PipelineState::Idle;
             begin_tray_done_linger(state);
