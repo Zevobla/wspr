@@ -372,12 +372,127 @@ rm -f "$ZIP" "$DMG"
 echo "==> zipping -> $ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
-echo "==> building dmg -> $DMG"
+# --- rasterize the dmg poster background -> PNGs via resvg -----------------
+# Same vector-in-git / pixels-at-bundle-time rule as the icon: the disk
+# image's poster art lives as crates/whspr-app/assets/dmg/background.svg and
+# only becomes PNGs here, rendered by the *same* resvg + pinned Archivo face
+# (so `--skip-system-fonts --use-font-file "$FONT_FILE"` is identical). The
+# SVG is authored on the @2x 1440x960 canvas, so we render it 1:1 for the
+# Retina `background@2x.png` and at half size for the 1x `background.png`;
+# Finder auto-picks the @2x variant from the same folder. The footer's build
+# string is a __WHSPR_VERSION__ placeholder we substitute into a temp copy.
+DMG_SVG="$REPO_ROOT/crates/whspr-app/assets/dmg/background.svg"
+if [ ! -f "$DMG_SVG" ]; then
+  echo "error: dmg background source not found at $DMG_SVG" >&2
+  exit 1
+fi
+DMG_SVG_TMP="$WORK_DIR/background.svg"
+sed "s/__WHSPR_VERSION__/${VERSION}/g" "$DMG_SVG" > "$DMG_SVG_TMP"
+
+BG_PNG="$WORK_DIR/background.png"
+BG_PNG_2X="$WORK_DIR/background@2x.png"
+echo "==> rasterizing dmg background -> background.png (720x480) + @2x (1440x960)"
+nix shell nixpkgs#resvg --command resvg \
+  --skip-system-fonts \
+  --use-font-file "$FONT_FILE" \
+  -w 1440 -h 960 \
+  "$DMG_SVG_TMP" "$BG_PNG_2X"
+nix shell nixpkgs#resvg --command resvg \
+  --skip-system-fonts \
+  --use-font-file "$FONT_FILE" \
+  -w 720 -h 480 \
+  "$DMG_SVG_TMP" "$BG_PNG"
+
+# --- styled drag-to-install dmg -------------------------------------------
+# Build a "poster" disk image: the app and an /Applications alias sit inside
+# two outlined wells drawn by the background, an arrow pointing from one to
+# the other. Per the design, the volume holds ONLY whspr.app + the alias +
+# the hidden .background/ (no README/license/uninstaller), so the arrow has a
+# single reading.
+#
+# The recipe is the classic three-step Finder dance: (1) stage the contents
+# and create a *read-write* image sized to fit; (2) attach it and drive Finder
+# over AppleScript to set the icon-view layout (window size, 128pt icons, the
+# background picture, and each icon's position inside its well), which Finder
+# persists into the volume's .DS_Store; (3) detach and `convert` to the final
+# compressed read-only .dmg.
+echo "==> building styled dmg -> $DMG"
+
+VOLNAME="whspr $VERSION"
+STAGE="$WORK_DIR/dmg-root"
+rm -rf "$STAGE"
+mkdir -p "$STAGE/.background"
+# ditto (not cp -R) so the ad-hoc signature + xattrs on the .app survive the
+# copy intact; a broken signature would make macOS refuse to launch it.
+ditto "$APP" "$STAGE/whspr.app"
+ln -s /Applications "$STAGE/Applications"
+cp "$BG_PNG" "$STAGE/.background/background.png"
+cp "$BG_PNG_2X" "$STAGE/.background/background@2x.png"
+
+# Read-write image, sized to the staged tree + slack for Finder's .DS_Store.
+STAGE_KB="$(du -sk "$STAGE" | awk '{print $1}')"
+SIZE_MB=$(( STAGE_KB / 1024 + 64 ))
+RW_DMG="$WORK_DIR/whspr-rw.dmg"
+rm -f "$RW_DMG"
 hdiutil create \
-  -volname "whspr" \
-  -srcfolder "$APP" \
-  -ov -format UDZO \
-  "$DMG" >/dev/null
+  -srcfolder "$STAGE" \
+  -volname "$VOLNAME" \
+  -fs HFS+ \
+  -format UDRW \
+  -size "${SIZE_MB}m" \
+  -ov "$RW_DMG" >/dev/null
+
+# Detach any stale mount of the same name, then attach fresh read-write.
+MOUNT="/Volumes/$VOLNAME"
+[ -d "$MOUNT" ] && hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true
+hdiutil attach "$RW_DMG" -readwrite -noautoopen >/dev/null
+
+# Drive Finder to lay out the window. On a headless runner with no Finder
+# this errors out fast; we swallow it (|| warn) and still ship a valid -- if
+# unstyled -- dmg from the convert below. Coordinates are 1x points in the
+# icon view: the wells' centres are (190,317) and (530,317), matching the
+# background's drawn wells so the real icons land inside them.
+osascript <<APPLESCRIPT || echo "warning: Finder layout skipped (no GUI session?); dmg will be unstyled"
+tell application "Finder"
+  tell disk "$VOLNAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    -- The path bar (a global View setting some users leave on) otherwise
+    -- draws over the poster's footer. The pathbar-visible property is newer
+    -- than toolbar/statusbar, so guard it: an older Finder that lacks it must
+    -- not abort the whole layout. (No backticks/$() here -- this heredoc is
+    -- unquoted for VOLNAME, so the shell would try to run them.)
+    try
+      set pathbar visible of container window to false
+    end try
+    set the bounds of container window to {200, 120, 920, 600}
+    set viewOptions to the icon view options of container window
+    set arrangement of viewOptions to not arranged
+    set icon size of viewOptions to 128
+    set background picture of viewOptions to file ".background:background.png"
+    set position of item "whspr.app" of container window to {190, 317}
+    set position of item "Applications" of container window to {530, 317}
+    update without registering applications
+    delay 2
+    close
+  end tell
+end tell
+APPLESCRIPT
+
+# Trim OS-generated cruft and flag the background folder hidden, so the mounted
+# volume presents ONLY whspr.app + the Applications alias (plus the required
+# hidden .DS_Store that stores this very layout). .fseventsd/.Trashes are
+# recreated by macOS on write; removing them just before detach keeps the
+# volume clean for anyone browsing with hidden files shown.
+rm -rf "$MOUNT/.fseventsd" "$MOUNT/.Trashes"
+chflags -h hidden "$MOUNT/.background" 2>/dev/null || true
+
+# Flush the layout to disk, detach, and compress into the final read-only dmg.
+sync
+hdiutil detach "$MOUNT" >/dev/null 2>&1 || hdiutil detach "$MOUNT" -force >/dev/null
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -ov -o "$DMG" >/dev/null
 
 echo ""
 echo "==> done. Outputs:"
