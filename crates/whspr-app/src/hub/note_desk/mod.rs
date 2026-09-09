@@ -94,7 +94,12 @@ fn rail_brand<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
         .height(Length::Fixed(spacing::layout::RAIL_HEADER_H))
         .align_x(Alignment::Center)
         .align_y(Alignment::End)
-        .padding([0.0, 0.0, spacing::LG, 0.0])
+        .padding(iced::Padding {
+            top: 0.0,
+            right: 0.0,
+            bottom: spacing::LG,
+            left: 0.0,
+        })
         .into()
 }
 

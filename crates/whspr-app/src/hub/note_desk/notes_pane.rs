@@ -78,7 +78,12 @@ fn inert_button<'a>(
 fn preview<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
     let page = container(page_body(nd))
         .width(Length::Fixed(PAGE_W))
-        .padding([spacing::XL, spacing::XL, 0.0, spacing::XL])
+        .padding(iced::Padding {
+            top: spacing::XL,
+            right: spacing::XL,
+            bottom: 0.0,
+            left: spacing::XL,
+        })
         .style(|_theme| container::Style {
             background: Some(Background::Color(Color::WHITE)),
             ..container::Style::default()
@@ -87,7 +92,12 @@ fn preview<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element
     container(page)
         .center_x(Length::Fill)
         .height(Length::Fill)
-        .padding([spacing::LG, 0.0, 0.0, 0.0])
+        .padding(iced::Padding {
+            top: spacing::LG,
+            right: 0.0,
+            bottom: 0.0,
+            left: 0.0,
+        })
         .style(move |_theme| container::Style {
             background: Some(Background::Color(color::wash(scheme.on_surface, 0.09))),
             ..container::Style::default()
