@@ -403,12 +403,80 @@ nix shell nixpkgs#resvg --command resvg \
   -w 720 -h 480 \
   "$DMG_SVG_TMP" "$BG_PNG"
 
-echo "==> building dmg -> $DMG"
+# --- styled drag-to-install dmg -------------------------------------------
+# Build a "poster" disk image: the app and an /Applications alias sit inside
+# two outlined wells drawn by the background, an arrow pointing from one to
+# the other. Per the design, the volume holds ONLY whspr.app + the alias +
+# the hidden .background/ (no README/license/uninstaller), so the arrow has a
+# single reading.
+#
+# The recipe is the classic three-step Finder dance: (1) stage the contents
+# and create a *read-write* image sized to fit; (2) attach it and drive Finder
+# over AppleScript to set the icon-view layout (window size, 128pt icons, the
+# background picture, and each icon's position inside its well), which Finder
+# persists into the volume's .DS_Store; (3) detach and `convert` to the final
+# compressed read-only .dmg.
+echo "==> building styled dmg -> $DMG"
+
+VOLNAME="whspr $VERSION"
+STAGE="$WORK_DIR/dmg-root"
+rm -rf "$STAGE"
+mkdir -p "$STAGE/.background"
+# ditto (not cp -R) so the ad-hoc signature + xattrs on the .app survive the
+# copy intact; a broken signature would make macOS refuse to launch it.
+ditto "$APP" "$STAGE/whspr.app"
+ln -s /Applications "$STAGE/Applications"
+cp "$BG_PNG" "$STAGE/.background/background.png"
+cp "$BG_PNG_2X" "$STAGE/.background/background@2x.png"
+
+# Read-write image, sized to the staged tree + slack for Finder's .DS_Store.
+STAGE_KB="$(du -sk "$STAGE" | awk '{print $1}')"
+SIZE_MB=$(( STAGE_KB / 1024 + 64 ))
+RW_DMG="$WORK_DIR/whspr-rw.dmg"
+rm -f "$RW_DMG"
 hdiutil create \
-  -volname "whspr" \
-  -srcfolder "$APP" \
-  -ov -format UDZO \
-  "$DMG" >/dev/null
+  -srcfolder "$STAGE" \
+  -volname "$VOLNAME" \
+  -fs HFS+ \
+  -format UDRW \
+  -size "${SIZE_MB}m" \
+  -ov "$RW_DMG" >/dev/null
+
+# Detach any stale mount of the same name, then attach fresh read-write.
+MOUNT="/Volumes/$VOLNAME"
+[ -d "$MOUNT" ] && hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true
+hdiutil attach "$RW_DMG" -readwrite -noautoopen >/dev/null
+
+# Drive Finder to lay out the window. On a headless runner with no Finder
+# this errors out fast; we swallow it (|| warn) and still ship a valid -- if
+# unstyled -- dmg from the convert below. Coordinates are 1x points in the
+# icon view: the wells' centres are (190,317) and (530,317), matching the
+# background's drawn wells so the real icons land inside them.
+osascript <<APPLESCRIPT || echo "warning: Finder layout skipped (no GUI session?); dmg will be unstyled"
+tell application "Finder"
+  tell disk "$VOLNAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 120, 920, 600}
+    set viewOptions to the icon view options of container window
+    set arrangement of viewOptions to not arranged
+    set icon size of viewOptions to 128
+    set background picture of viewOptions to file ".background:background.png"
+    set position of item "whspr.app" of container window to {190, 317}
+    set position of item "Applications" of container window to {530, 317}
+    update without registering applications
+    delay 2
+    close
+  end tell
+end tell
+APPLESCRIPT
+
+# Flush the layout to disk, detach, and compress into the final read-only dmg.
+sync
+hdiutil detach "$MOUNT" >/dev/null 2>&1 || hdiutil detach "$MOUNT" -force >/dev/null
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -ov -o "$DMG" >/dev/null
 
 echo ""
 echo "==> done. Outputs:"
