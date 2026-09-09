@@ -182,6 +182,13 @@ pub struct State {
     /// task) reads this to raise an "install a speaker model" prompt; it
     /// stays `false` whenever attribution is disabled or a model is present.
     pub needs_speaker_model: bool,
+    /// When `Some`, the Hub is in the full-screen longform "note desk" mode
+    /// (see `crate::note_desk`): its view (`crate::hub::note_desk`)
+    /// short-circuits the normal nav-rail + header shell wholesale. `None` is
+    /// the normal Hub. Entered/left manually for now via
+    /// `Message::EnterNoteDesk` / `Message::BackToDictate`; the auto-morph is
+    /// a later phase.
+    pub note_desk: Option<crate::note_desk::NoteDeskState>,
 }
 
 impl State {
@@ -232,6 +239,7 @@ impl State {
             screenshot_path: None,
             screenshot_taken: false,
             needs_speaker_model: false,
+            note_desk: None,
         }
     }
 }
@@ -259,6 +267,7 @@ mod tests {
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
         assert!(state.tray_done_until.is_none());
+        assert!(state.note_desk.is_none());
     }
 
     #[test]
@@ -331,6 +340,13 @@ pub enum Message {
     /// The user clicked a nav-rail entry: switches which screen renders to
     /// the right of the rail (see `Screen`).
     TabSelected(Screen),
+    /// The user asked to open the full-screen longform "note desk" mode (see
+    /// `crate::note_desk`). Manual entry scaffolding for now -- a later phase
+    /// replaces it with an automatic morph. Handled by `crate::note_desk`.
+    EnterNoteDesk,
+    /// The user asked to leave the note desk and return to the normal Hub
+    /// (see `crate::note_desk`). Handled by `crate::note_desk`.
+    BackToDictate,
     /// The user clicked a Settings sub-nav entry: switches which section's
     /// form renders (see `SettingsSection`).
     SettingsSectionSelected(SettingsSection),

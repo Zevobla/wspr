@@ -23,13 +23,31 @@ pub fn path_from_env() -> Option<PathBuf> {
     std::env::var_os("WHSPR_SCREENSHOT").map(PathBuf::from)
 }
 
-/// When a capture was requested, switches to the screen
-/// `WHSPR_SCREENSHOT_SCREEN` asks for so any surface can be shot headlessly;
-/// a no-op in normal runs.
+/// When a capture was requested, selects the surface `WHSPR_SCREENSHOT_SCREEN`
+/// asks for so any surface can be shot headlessly; a no-op in normal runs. The
+/// note desk isn't a `Screen` variant (it replaces the whole shell), so
+/// `note-desk` seeds `State::note_desk` instead, which the Hub view
+/// short-circuits into (see `crate::hub::view`).
 pub fn apply_to_screen(state: &mut State) {
     if state.screenshot_path.is_some() {
-        state.screen = screen_from_env();
+        if screen_is_note_desk() {
+            state.note_desk = Some(crate::note_desk::NoteDeskState::sample());
+        } else {
+            state.screen = screen_from_env();
+        }
     }
+}
+
+/// Whether `WHSPR_SCREENSHOT_SCREEN` asks for the note desk.
+fn screen_is_note_desk() -> bool {
+    matches!(
+        std::env::var("WHSPR_SCREENSHOT_SCREEN")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "note-desk" | "notedesk" | "note_desk"
+    )
 }
 
 /// Which screen to show in the capture, from `WHSPR_SCREENSHOT_SCREEN`

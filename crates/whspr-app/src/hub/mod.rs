@@ -17,6 +17,7 @@ mod common;
 mod dictate;
 mod history;
 mod models;
+pub mod note_desk;
 pub(crate) mod settings;
 mod speakers;
 
@@ -116,6 +117,12 @@ pub fn window_settings() -> iced::window::Settings {
 /// Renders the Hub window's content for the current state.
 pub fn view(state: &State) -> Element<'_, Message> {
     let scheme = crate::theme::scheme(&state.theme);
+
+    // The note desk replaces the whole nav-rail + header shell, so short-
+    // circuit into its own full-screen view before assembling any of it.
+    if let Some(nd) = &state.note_desk {
+        return note_desk::view(state, nd, scheme);
+    }
 
     let screen_content = match state.screen {
         Screen::Dictate => dictate::view(state, scheme),

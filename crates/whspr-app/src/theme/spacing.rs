@@ -23,6 +23,10 @@ pub const XXL: f32 = 32.0;
 pub mod layout {
     /// Width of the left numbered nav rail.
     pub const RAIL_W: f32 = 208.0;
+    /// Width of the note desk's collapsed nav rail -- narrower than `RAIL_W`
+    /// so the longform workspace gives the width back to the transcript and
+    /// Typst columns (see `crate::hub::note_desk`).
+    pub const RAIL_W_COLLAPSED: f32 = 82.0;
     /// Width of the Settings screen's middle sub-nav column.
     pub const SETTINGS_SUBNAV_W: f32 = 176.0;
     /// Height of a screen's header band (title + trailing actions).
