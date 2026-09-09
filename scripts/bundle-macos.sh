@@ -459,6 +459,14 @@ tell application "Finder"
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
+    -- The path bar (a global View setting some users leave on) otherwise
+    -- draws over the poster's footer. The pathbar-visible property is newer
+    -- than toolbar/statusbar, so guard it: an older Finder that lacks it must
+    -- not abort the whole layout. (No backticks/$() here -- this heredoc is
+    -- unquoted for VOLNAME, so the shell would try to run them.)
+    try
+      set pathbar visible of container window to false
+    end try
     set the bounds of container window to {200, 120, 920, 600}
     set viewOptions to the icon view options of container window
     set arrangement of viewOptions to not arranged
