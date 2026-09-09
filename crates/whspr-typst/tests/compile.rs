@@ -43,9 +43,15 @@ fn all_three_templates_compile_to_nonempty_svg_pages() {
             .unwrap_or_else(|e| panic!("template {template:?} failed to compile: {e}"));
         assert!(!pages.is_empty(), "template {template:?} produced no pages");
         for (i, page) in pages.iter().enumerate() {
-            assert!(!page.is_empty(), "template {template:?} page {i} SVG was empty");
+            assert!(
+                !page.is_empty(),
+                "template {template:?} page {i} SVG was empty"
+            );
             let svg = std::str::from_utf8(page).expect("svg is utf-8");
-            assert!(svg.contains("<svg"), "template {template:?} page {i} is not SVG");
+            assert!(
+                svg.contains("<svg"),
+                "template {template:?} page {i} is not SVG"
+            );
         }
     }
 }
