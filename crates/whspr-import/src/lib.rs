@@ -38,9 +38,11 @@
 //! policy is enforced at the app layer, not here, so the library stays a pure
 //! "URL in, path out" function.
 
+mod captions;
 mod resolve;
 mod tools;
 
+pub use captions::{parse_captions, CaptionFormat};
 pub use resolve::{
     parse_media_info, resolve, Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry,
 };
