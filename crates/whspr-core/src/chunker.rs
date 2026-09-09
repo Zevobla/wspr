@@ -18,7 +18,9 @@
 //! (matched by overlapping time range plus equal/near-equal text) rather than
 //! emitting the words twice.
 
-use crate::types::TranscriptSegment;
+use crate::error::Result;
+use crate::traits::AsrBackend;
+use crate::types::{AsrOptions, AudioBuffer, TranscriptSegment};
 
 /// Default window length, in seconds — how much audio each ASR call sees.
 pub const DEFAULT_WINDOW_SECS: f32 = 20.0;
@@ -148,6 +150,44 @@ impl RollingTranscriber {
     /// The stitched segments accumulated so far.
     pub fn segments(&self) -> &[TranscriptSegment] {
         &self.accumulated
+    }
+
+    /// Carves the samples covering `[window_start_secs, window_start_secs +
+    /// window_secs)` out of `audio` into a fresh sub-buffer at the same sample
+    /// rate. Indices are clamped to the buffer, so a start past the end yields
+    /// an empty buffer and a window running off the end is simply truncated.
+    fn slice_window(&self, audio: &AudioBuffer, window_start_secs: f32) -> AudioBuffer {
+        let sample_rate = audio.sample_rate;
+        if sample_rate == 0 {
+            return AudioBuffer::new(Vec::new(), sample_rate);
+        }
+        let rate = sample_rate as f32;
+        let total = audio.samples.len();
+        let start = ((window_start_secs.max(0.0) * rate).round() as usize).min(total);
+        let len = (self.window_secs.max(0.0) * rate).round() as usize;
+        let end = start.saturating_add(len).min(total);
+        AudioBuffer::new(audio.samples[start..end].to_vec(), sample_rate)
+    }
+
+    /// Transcribes the window starting at `window_start_secs` and folds it into
+    /// the running transcript, returning the updated accumulated segments.
+    ///
+    /// Slices the matching samples out of `audio`, hands the sub-buffer to
+    /// `asr`, then [`stitch`]es the backend's segments in at their absolute
+    /// offset (deduping the overlap seam). An empty slice still calls the
+    /// backend; a backend that returns no segments for it leaves the
+    /// accumulator unchanged.
+    pub async fn push_window(
+        &mut self,
+        asr: &dyn AsrBackend,
+        audio: &AudioBuffer,
+        window_start_secs: f32,
+        opts: &AsrOptions,
+    ) -> Result<&[TranscriptSegment]> {
+        let sub = self.slice_window(audio, window_start_secs);
+        let transcript = asr.transcribe(&sub, opts).await?;
+        self.accumulated = stitch(&self.accumulated, &transcript.segments, window_start_secs);
+        Ok(&self.accumulated)
     }
 }
 
