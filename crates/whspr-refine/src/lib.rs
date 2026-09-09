@@ -2,8 +2,10 @@
 //! `whspr_core::TextRefiner`. `NoopRefiner` is real and always available
 //! (it's the "no LLM cleanup" choice, not just a test double). `OpenAiRefiner`
 //! and `AnthropicRefiner` are real, cloud-backed implementations.
-//! `LlamaLocal` (in `llama_local.rs`) is real too, but local: it runs a GGUF
-//! model through llama-cpp-2 instead of calling out to an API.
+//! `LlamaLocal` (in `llama_local.rs`) is real too, but local: it builds the
+//! cleanup prompt and runs it through `LocalLlm` (in `local_llm.rs`), a
+//! reusable, model-cached, prompt-agnostic llama-cpp-2 inference primitive,
+//! instead of calling out to an API.
 //! `NormalizingRefiner` (in `normalize/`) wraps any of the above and applies
 //! rule-based number/date/time normalization to its output.
 
