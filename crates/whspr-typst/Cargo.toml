@@ -1,0 +1,30 @@
+[package]
+name = "whspr-typst"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+whspr-core.workspace = true
+
+# The Typst compiler ecosystem is pure Rust, so -- following the sherpa-rs /
+# rfd precedent (see the root Cargo.toml protocol) -- these are declared
+# crate-local here rather than in the shared `[workspace.dependencies]`. They
+# are pinned to one exact release (`=0.15.1`): the `typst*` crates share a
+# single internal ABI and MUST all match, so an exact pin keeps the whole set
+# in lockstep.
+#   - typst:        the compiler, the `World` trait, the standard library.
+#   - typst-layout: `PagedDocument`/`Page` (not re-exported by `typst`).
+#   - typst-svg:    per-page SVG export for the live preview.
+#   - typst-pdf:    PDF export.
+#   - typst-assets: a base font set (`fonts` feature) so notes render even
+#                   before the app hands us its own embedded faces.
+typst = "=0.15.1"
+typst-layout = "=0.15.1"
+typst-svg = "=0.15.1"
+typst-pdf = "=0.15.1"
+typst-assets = { version = "=0.15.1", features = ["fonts"] }
+
+[dev-dependencies]
+tempfile.workspace = true
