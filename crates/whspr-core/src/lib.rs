@@ -2,6 +2,7 @@
 //! one for the shared domain types and traits — it must never depend back on
 //! a leaf crate (asr/refine/audio/inject/config).
 
+pub mod chunker;
 mod error;
 mod pipeline;
 mod similarity;
@@ -11,6 +12,7 @@ mod types;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 
+pub use chunker::stitch;
 pub use error::{Result, WhsprError};
 pub use pipeline::{Pipeline, StateCallback};
 pub use similarity::cosine_similarity;
