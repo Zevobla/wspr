@@ -102,6 +102,55 @@ fn enforce_monotonic_starts(segments: &mut [TranscriptSegment]) {
     }
 }
 
+/// Transcribes a long [`AudioBuffer`] as a sequence of overlapping windows,
+/// accumulating one stitched, absolutely-timestamped transcript.
+///
+/// The caller drives it one window at a time via [`push_window`], supplying
+/// each window's absolute start; the transcriber slices the matching samples,
+/// runs the backend, and folds the result in with [`stitch`]. Stepping by
+/// [`step_secs`] (window minus overlap) walks a buffer end to end.
+///
+/// [`push_window`]: RollingTranscriber::push_window
+/// [`step_secs`]: RollingTranscriber::step_secs
+pub struct RollingTranscriber {
+    window_secs: f32,
+    overlap_secs: f32,
+    accumulated: Vec<TranscriptSegment>,
+}
+
+impl Default for RollingTranscriber {
+    /// A transcriber with the [`DEFAULT_WINDOW_SECS`] / [`DEFAULT_OVERLAP_SECS`]
+    /// window shape.
+    fn default() -> Self {
+        Self::new(DEFAULT_WINDOW_SECS, DEFAULT_OVERLAP_SECS)
+    }
+}
+
+impl RollingTranscriber {
+    /// Builds a transcriber with a custom window length and overlap (both in
+    /// seconds). See [`RollingTranscriber::default`] for the usual values.
+    pub fn new(window_secs: f32, overlap_secs: f32) -> Self {
+        Self {
+            window_secs,
+            overlap_secs,
+            accumulated: Vec::new(),
+        }
+    }
+
+    /// How far the window's start advances between consecutive calls: the
+    /// window length minus the overlap, floored at `0.0`. Callers iterating a
+    /// buffer should step by this and must ensure it is positive (an overlap
+    /// at least as long as the window would otherwise never make progress).
+    pub fn step_secs(&self) -> f32 {
+        (self.window_secs - self.overlap_secs).max(0.0)
+    }
+
+    /// The stitched segments accumulated so far.
+    pub fn segments(&self) -> &[TranscriptSegment] {
+        &self.accumulated
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

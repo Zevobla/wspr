@@ -12,7 +12,7 @@ mod types;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 
-pub use chunker::stitch;
+pub use chunker::{stitch, RollingTranscriber};
 pub use error::{Result, WhsprError};
 pub use pipeline::{Pipeline, StateCallback};
 pub use similarity::cosine_similarity;
