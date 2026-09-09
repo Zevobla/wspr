@@ -372,6 +372,37 @@ rm -f "$ZIP" "$DMG"
 echo "==> zipping -> $ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
+# --- rasterize the dmg poster background -> PNGs via resvg -----------------
+# Same vector-in-git / pixels-at-bundle-time rule as the icon: the disk
+# image's poster art lives as crates/whspr-app/assets/dmg/background.svg and
+# only becomes PNGs here, rendered by the *same* resvg + pinned Archivo face
+# (so `--skip-system-fonts --use-font-file "$FONT_FILE"` is identical). The
+# SVG is authored on the @2x 1440x960 canvas, so we render it 1:1 for the
+# Retina `background@2x.png` and at half size for the 1x `background.png`;
+# Finder auto-picks the @2x variant from the same folder. The footer's build
+# string is a __WHSPR_VERSION__ placeholder we substitute into a temp copy.
+DMG_SVG="$REPO_ROOT/crates/whspr-app/assets/dmg/background.svg"
+if [ ! -f "$DMG_SVG" ]; then
+  echo "error: dmg background source not found at $DMG_SVG" >&2
+  exit 1
+fi
+DMG_SVG_TMP="$WORK_DIR/background.svg"
+sed "s/__WHSPR_VERSION__/${VERSION}/g" "$DMG_SVG" > "$DMG_SVG_TMP"
+
+BG_PNG="$WORK_DIR/background.png"
+BG_PNG_2X="$WORK_DIR/background@2x.png"
+echo "==> rasterizing dmg background -> background.png (720x480) + @2x (1440x960)"
+nix shell nixpkgs#resvg --command resvg \
+  --skip-system-fonts \
+  --use-font-file "$FONT_FILE" \
+  -w 1440 -h 960 \
+  "$DMG_SVG_TMP" "$BG_PNG_2X"
+nix shell nixpkgs#resvg --command resvg \
+  --skip-system-fonts \
+  --use-font-file "$FONT_FILE" \
+  -w 720 -h 480 \
+  "$DMG_SVG_TMP" "$BG_PNG"
+
 echo "==> building dmg -> $DMG"
 hdiutil create \
   -volname "whspr" \
