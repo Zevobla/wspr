@@ -41,7 +41,7 @@ pub use privacy::PrivacySettings;
 pub use refine::RefineSettings;
 pub use reload::{api_key_for, config_reload};
 pub use sound::SoundSettings;
-pub use speaker::{SpeakerDb, SpeakerProfile};
+pub use speaker::{SpeakerDb, SpeakerProfile, TurnEmbedding, TurnRef};
 pub use whisper::WhisperConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

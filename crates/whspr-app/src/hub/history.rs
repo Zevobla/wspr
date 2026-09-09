@@ -220,6 +220,7 @@ mod tests {
             centroid: Vec::new(),
             samples: 0,
             scans: Vec::new(),
+            turns: Vec::new(),
             first_seen: 0,
             last_seen: 0,
         }
@@ -243,6 +244,7 @@ mod tests {
     fn speaker_label_uses_the_profile_name_when_set() {
         let db = SpeakerDb {
             profiles: vec![profile(UUID, Some("Ada"))],
+            ..Default::default()
         };
         assert_eq!(speaker_label(&entry(Some(UUID)), &db), "Ada");
     }
@@ -251,6 +253,7 @@ mod tests {
     fn speaker_label_falls_back_to_the_short_uuid_when_unnamed() {
         let db = SpeakerDb {
             profiles: vec![profile(UUID, None)],
+            ..Default::default()
         };
         assert_eq!(speaker_label(&entry(Some(UUID)), &db), "1a2b3c4d");
     }
