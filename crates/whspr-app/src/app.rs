@@ -408,13 +408,16 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             iced::exit()
         }
-        // The Models-tab (HuggingFace) messages are handled in
-        // `crate::hf::update`; any message it doesn't recognize is handed
-        // back and forwarded to the Settings handler. Both handlers live
-        // outside this file so it stays under the 600-line cap (AA-06).
-        other => match crate::hf::update(state, other) {
-            Ok(task) => task,
-            Err(other) => crate::hub::settings::update(state, other),
+        // Note-desk enter/leave is handled by `crate::note_desk`; anything it
+        // doesn't own falls through to the Models-tab (HuggingFace) handler
+        // and then the Settings handler. All three live outside this file so
+        // it stays under the 600-line cap (AA-06).
+        other => match crate::note_desk::update(state, &other) {
+            Some(task) => task,
+            None => match crate::hf::update(state, other) {
+                Ok(task) => task,
+                Err(other) => crate::hub::settings::update(state, other),
+            },
         },
     }
 }
