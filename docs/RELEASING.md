@@ -70,6 +70,32 @@ The headless gate (`cargo build` / `cargo test` / `nix flake check`) never
 launches the GUI, so it does not catch this — hence the vendoring lives in the
 bundle step.
 
+## The styled disk image
+
+The `.dmg` opens as a "poster" drag-to-install window rather than a bare list
+of files. Its background is a red field with the whspr wordmark, a
+`Drag whspr into Applications.` headline, two outlined icon wells joined by an
+arrow, and a footer — the same Modernist treatment as the app icon.
+
+Like the icon, the background is **vector-in-git, pixels-at-bundle-time**: the
+only committed source is `crates/whspr-app/assets/dmg/background.svg` (authored
+on the @2x 1440×960 canvas so the disk image's absolute coordinates map 1:1).
+At bundle time `bundle-macos.sh` renders it with the same `resvg` + pinned
+Archivo ExtraBold face used for the icon into `background.png` (720×480) and
+`background@2x.png` (1440×960) under the scratch dir — no raster image is ever
+committed. The footer's build string is a `__WHSPR_VERSION__` placeholder the
+script substitutes with the release version before rendering.
+
+The volume deliberately contains **only** `whspr.app`, an `Applications`
+symlink, and the hidden `.background/` — no README, license, or uninstaller —
+so the arrow reads one way. `bundle-macos.sh` stages those, builds a read-write
+image, and drives Finder over AppleScript into icon view (no toolbar/status
+bar, a 720×480 window, 128 pt icons, the background picture, and the two icons
+positioned at 1x points `(190, 317)` and `(530, 317)` so they land inside the
+drawn wells), then detaches and `hdiutil convert`s to the final compressed
+`.dmg`. The Finder step is best-effort: on a headless session with no Finder it
+is skipped and a valid — if unstyled — `.dmg` still ships.
+
 ## The unsigned-app caveat
 
 By default the release is **unsigned and un-notarized**. macOS Gatekeeper
