@@ -20,7 +20,7 @@
 
 use crate::error::Result;
 use crate::traits::AsrBackend;
-use crate::types::{AsrOptions, AudioBuffer, TranscriptSegment};
+use crate::types::{AsrOptions, AudioBuffer, Transcript, TranscriptSegment};
 
 /// Default window length, in seconds — how much audio each ASR call sees.
 pub const DEFAULT_WINDOW_SECS: f32 = 20.0;
@@ -150,6 +150,25 @@ impl RollingTranscriber {
     /// The stitched segments accumulated so far.
     pub fn segments(&self) -> &[TranscriptSegment] {
         &self.accumulated
+    }
+
+    /// The accumulated segments assembled into a [`Transcript`]: each
+    /// segment's trimmed text joined with single spaces, alongside a clone of
+    /// the segments themselves. Language is left unset — windowing says
+    /// nothing about it.
+    pub fn transcript(&self) -> Transcript {
+        let text = self
+            .accumulated
+            .iter()
+            .map(|s| s.text.trim())
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        Transcript {
+            text,
+            language: None,
+            segments: self.accumulated.clone(),
+        }
     }
 
     /// Carves the samples covering `[window_start_secs, window_start_secs +
