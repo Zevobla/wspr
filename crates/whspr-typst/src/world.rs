@@ -10,6 +10,8 @@
 //! All failure paths map into [`whspr_core::WhsprError`]; nothing here panics
 //! on caller input.
 
+use std::path::PathBuf;
+
 use typst::diag::{FileError, FileResult, SourceDiagnostic};
 use typst::ecow::EcoVec;
 use typst::foundations::{Bytes, Datetime, Duration};
@@ -115,19 +117,19 @@ impl WhsprWorld {
 
 /// Does `id` point at the file named `name` inside our `@local/whspr` package?
 fn is_pkg_file(id: FileId, name: &str) -> bool {
-    match id.package() {
-        Some(spec) => {
+    match id.root() {
+        VirtualRoot::Package(spec) => {
             spec.namespace.as_str() == PKG_NAMESPACE
                 && spec.name.as_str() == PKG_NAME
                 && id.vpath().file_name() == Some(name)
         }
-        None => false,
+        _ => false,
     }
 }
 
 /// The path a `NotFound` error reports for an unresolvable `id`.
 fn not_found(id: FileId) -> FileError {
-    FileError::NotFound(id.vpath().as_rootless_path().to_path_buf())
+    FileError::NotFound(PathBuf::from(id.vpath().get_without_slash()))
 }
 
 impl World for WhsprWorld {
