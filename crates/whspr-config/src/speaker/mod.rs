@@ -1,10 +1,19 @@
 //! Persisted speaker-enrollment database: every distinct speaker discovered
 //! across past diarization scans, matched by cosine similarity against a
-//! running centroid embedding. Lives in its own `speakers.json` in the
-//! platform data dir (see `whspr-app/src/history.rs` and `whspr-cli`'s
+//! centroid embedding. Lives in its own `speakers.json` in the platform
+//! data dir (see `whspr-app/src/history.rs` and `whspr-cli`'s
 //! `save_to_history` for the sibling pattern this follows — JSONL there,
 //! for an append-only log; a single JSON document here, since this is one
 //! evolving collection that gets rewritten in place, not appended to).
+//!
+//! Each profile's `centroid` is a *recomputed cache* over the individual
+//! per-turn embeddings retained in `turns`, not a lossy one-way running
+//! mean. Keeping every contributing turn is what makes attribution
+//! *reversible*: a mis-assigned turn can be moved to the right speaker (see
+//! [`SpeakerDb::reassign`] in the `retrain` submodule) and both centroids
+//! recomputed exactly, which a running mean can never undo. Corrections
+//! also teach an adaptive per-pair margin so confused speakers split more
+//! aggressively over time.
 
 use std::path::Path;
 
@@ -12,8 +21,30 @@ use serde::{Deserialize, Serialize};
 
 use whspr_core::cosine_similarity;
 
-/// One enrolled speaker: a running-average embedding centroid built up from
-/// every turn matched to them so far, plus display metadata.
+/// One retained per-turn embedding contributing to a speaker's voiceprint.
+///
+/// Turns are kept individually rather than folded into a lossy running mean
+/// so that a mis-attributed turn can be *moved* between speakers and both
+/// centroids recomputed exactly — the reversibility [`SpeakerDb::reassign`]
+/// depends on. `start_secs`/`end_secs` are optional because
+/// [`SpeakerDb::match_or_enroll`] (the live-dictation path) doesn't always
+/// know a turn's position within its source audio; diarization scans do.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TurnEmbedding {
+    #[serde(default)]
+    pub embedding: Vec<f32>,
+    /// The scan (source file path, or a per-dictation id) this turn came
+    /// from. Half of a turn's [`TurnRef`] identity.
+    #[serde(default)]
+    pub scan_id: String,
+    #[serde(default)]
+    pub start_secs: Option<f32>,
+    #[serde(default)]
+    pub end_secs: Option<f32>,
+}
+
+/// One enrolled speaker: a centroid embedding recomputed as the mean of the
+/// per-turn embeddings retained in `turns`, plus display metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpeakerProfile {
     /// Stable primary key: a v4 UUID assigned at enrollment, stable forever
@@ -24,15 +55,56 @@ pub struct SpeakerProfile {
     /// speaker via `SpeakerDb::rename`; until then, callers should fall
     /// back to displaying `id`.
     pub name: Option<String>,
+    /// Derived cache: the mean of every embedding in `turns`, kept in sync
+    /// by [`SpeakerProfile::recompute_centroid`]. When `turns` is empty —
+    /// a legacy `speakers.json` written before per-turn retention — this is
+    /// the last stored running-mean value and is used for matching as-is.
     pub centroid: Vec<f32>,
-    /// Number of turns folded into `centroid` so far (used to weight the
-    /// running average on the next match).
+    /// Number of turns contributing to `centroid`. Equal to `turns.len()`
+    /// once any turn has been retained; for a legacy profile (empty
+    /// `turns`) it's the stored running-average sample count.
     pub samples: u32,
     /// Identifiers of the scans (e.g. source file paths) this speaker has
     /// appeared in.
     pub scans: Vec<String>,
+    /// Every per-turn embedding attributed to this speaker. The centroid is
+    /// recomputed from these; retaining them is what makes reassignment
+    /// reversible. `#[serde(default)]` so legacy files (which lack this
+    /// field) still load.
+    #[serde(default)]
+    pub turns: Vec<TurnEmbedding>,
     pub first_seen: u64,
     pub last_seen: u64,
+}
+
+impl SpeakerProfile {
+    /// Recomputes `centroid` as the element-wise mean of every retained
+    /// `TurnEmbedding`, and syncs `samples` to the retained-turn count. This
+    /// is the derived-cache invariant: after any mutation of `turns`,
+    /// `centroid` is exactly the mean of what remains.
+    ///
+    /// When `turns` is empty — the case for a legacy `speakers.json` written
+    /// before per-turn embeddings were retained — the stored `centroid` and
+    /// `samples` are left untouched, so old databases keep matching against
+    /// their last running-mean value.
+    pub fn recompute_centroid(&mut self) {
+        if self.turns.is_empty() {
+            return;
+        }
+        let dim = self.turns.iter().map(|t| t.embedding.len()).max().unwrap_or(0);
+        let mut mean = vec![0.0f32; dim];
+        for turn in &self.turns {
+            for (m, e) in mean.iter_mut().zip(&turn.embedding) {
+                *m += *e;
+            }
+        }
+        let n = self.turns.len() as f32;
+        for m in &mut mean {
+            *m /= n;
+        }
+        self.centroid = mean;
+        self.samples = self.turns.len() as u32;
+    }
 }
 
 /// The persisted collection of every enrolled speaker discovered so far
@@ -86,6 +158,12 @@ impl SpeakerDb {
                 centroid: embedding.to_vec(),
                 samples: 1,
                 scans: vec![scan_id.to_string()],
+                turns: vec![TurnEmbedding {
+                    embedding: embedding.to_vec(),
+                    scan_id: scan_id.to_string(),
+                    start_secs: None,
+                    end_secs: None,
+                }],
                 first_seen: now,
                 last_seen: now,
             });
@@ -256,5 +334,70 @@ mod tests {
         assert_eq!(loaded.profiles[0].name, Some("Test Speaker".to_string()));
         assert_eq!(loaded.profiles[0].samples, 1);
         assert!(!loaded.profiles[0].centroid.is_empty());
+    }
+
+    fn turn(embedding: Vec<f32>, scan_id: &str) -> TurnEmbedding {
+        TurnEmbedding {
+            embedding,
+            scan_id: scan_id.to_string(),
+            start_secs: None,
+            end_secs: None,
+        }
+    }
+
+    #[test]
+    fn recompute_centroid_is_the_mean_of_the_retained_turns() {
+        let mut profile = SpeakerProfile {
+            id: "id".to_string(),
+            name: None,
+            centroid: Vec::new(),
+            samples: 0,
+            scans: Vec::new(),
+            turns: vec![
+                turn(vec![0.0, 0.0, 2.0], "a"),
+                turn(vec![2.0, 0.0, 0.0], "b"),
+            ],
+            first_seen: 0,
+            last_seen: 0,
+        };
+
+        profile.recompute_centroid();
+
+        assert_eq!(profile.centroid, vec![1.0, 0.0, 1.0]);
+        assert_eq!(profile.samples, 2, "samples tracks the retained-turn count");
+    }
+
+    #[test]
+    fn recompute_centroid_keeps_the_stored_centroid_when_turns_is_empty() {
+        // A legacy profile: a stored running-mean centroid but no retained
+        // turns. Recompute must leave it (and its sample count) untouched so
+        // old databases keep matching.
+        let mut profile = SpeakerProfile {
+            id: "legacy".to_string(),
+            name: None,
+            centroid: vec![0.5, 0.5, 0.0],
+            samples: 42,
+            scans: vec!["old".to_string()],
+            turns: Vec::new(),
+            first_seen: 0,
+            last_seen: 0,
+        };
+
+        profile.recompute_centroid();
+
+        assert_eq!(profile.centroid, vec![0.5, 0.5, 0.0]);
+        assert_eq!(profile.samples, 42);
+    }
+
+    #[test]
+    fn turn_embedding_fields_default_when_absent_from_json() {
+        // Only `embedding` present; the times and scan id fall back to their
+        // serde defaults.
+        let turn: TurnEmbedding =
+            serde_json::from_str(r#"{"embedding":[1.0,2.0]}"#).expect("should deserialize");
+        assert_eq!(turn.embedding, vec![1.0, 2.0]);
+        assert_eq!(turn.scan_id, "");
+        assert_eq!(turn.start_secs, None);
+        assert_eq!(turn.end_secs, None);
     }
 }

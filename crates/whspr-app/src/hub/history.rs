@@ -220,6 +220,7 @@ mod tests {
             centroid: Vec::new(),
             samples: 0,
             scans: Vec::new(),
+            turns: Vec::new(),
             first_seen: 0,
             last_seen: 0,
         }
