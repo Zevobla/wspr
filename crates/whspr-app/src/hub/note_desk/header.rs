@@ -14,7 +14,10 @@ use crate::theme::widgets::{self, meter};
 use crate::theme::{color, icons, spacing, type_scale};
 
 /// The header band, `HEADER_H` tall, closed by the system 2px rule.
-pub(super) fn view<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+pub(super) fn view<'a>(
+    nd: &'a NoteDeskState,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     let left = row![
         text(nd.title.clone())
             .size(type_scale::TITLE_LARGE.size)

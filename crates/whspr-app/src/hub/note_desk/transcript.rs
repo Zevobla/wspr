@@ -27,7 +27,10 @@ const MARK: f32 = 13.0;
 const RULE_W: f32 = 3.0;
 
 /// The transcript column: a fixed width, a header band, then the rows.
-pub(super) fn view<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+pub(super) fn view<'a>(
+    nd: &'a NoteDeskState,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     column![header(scheme), widgets::hr(scheme), rows(nd, scheme)]
         .width(Length::Fixed(TRANSCRIPT_W))
         .height(Length::Fill)
@@ -162,7 +165,10 @@ fn speaker_label<'a>(name: &str, scheme: &'static color::Scheme) -> Element<'a, 
 
 /// One transcript row: an inset accent rule (kept rows only) then the
 /// `[time | gutter | text | score]` grid.
-fn transcript_row<'a>(r: &'a TranscriptRow, scheme: &'static color::Scheme) -> Element<'a, Message> {
+fn transcript_row<'a>(
+    r: &'a TranscriptRow,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     let rule_color = if r.gutter == Gutter::Kept {
         scheme.primary
     } else {

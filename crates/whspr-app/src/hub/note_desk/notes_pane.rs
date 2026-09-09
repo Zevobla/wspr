@@ -20,7 +20,10 @@ use super::{PAGE_W, SUBHEADER_H};
 const PAGE_INK: Color = Color::from_rgb8(0x20, 0x1e, 0x1d);
 
 /// The Typst column: a header band, then the preview area.
-pub(super) fn view<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+pub(super) fn view<'a>(
+    nd: &'a NoteDeskState,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     column![header(scheme), widgets::hr(scheme), preview(nd, scheme)]
         .width(Length::Fill)
         .height(Length::Fill)
@@ -116,7 +119,10 @@ fn page_body<'a>(nd: &'a NoteDeskState) -> Element<'a, Message> {
             .font(type_scale::KICKER.font())
             .color(dim)
             .width(Length::Fill),
-        text("9 Sep 2026").size(8.0).font(type_scale::KICKER.font()).color(dim),
+        text("9 Sep 2026")
+            .size(8.0)
+            .font(type_scale::KICKER.font())
+            .color(dim),
     ]
     .align_y(Alignment::Center);
 
