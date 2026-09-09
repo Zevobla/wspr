@@ -28,13 +28,17 @@ pub const DEFAULT_WINDOW_SECS: f32 = 20.0;
 /// duplicate "seam" [`stitch`] dedupes).
 pub const DEFAULT_OVERLAP_SECS: f32 = 3.0;
 
-/// Offsets every `window` segment by `window_start_secs`, appends them to
-/// `existing`, and returns the combined, time-monotonic timeline.
+/// Offsets every `window` segment by `window_start_secs`, appends the ones
+/// that aren't already present at the overlap seam to `existing`, and returns
+/// the combined, time-monotonic timeline.
 ///
 /// Pure and deterministic — no async, no I/O. `window` segments carry times
-/// *relative to the start of their window*; each is shifted into absolute time
-/// by adding `window_start_secs`. The result's segment starts are guaranteed
-/// non-decreasing.
+/// *relative to the start of their window*; each is shifted into absolute
+/// time by adding `window_start_secs`. A shifted segment is dropped as a seam
+/// duplicate when it overlaps in time with an `existing` segment **and** their
+/// texts match once normalized (case/punctuation/whitespace folded away), so
+/// words shared across an overlapping boundary appear once, not twice. The
+/// result's segment starts are guaranteed non-decreasing.
 pub fn stitch(
     existing: &[TranscriptSegment],
     window: &[TranscriptSegment],
@@ -46,11 +50,42 @@ pub fn stitch(
         let mut shifted = seg.clone();
         shifted.start_secs += window_start_secs;
         shifted.end_secs += window_start_secs;
+
+        if is_seam_duplicate(existing, &shifted) {
+            continue;
+        }
         out.push(shifted);
     }
 
     enforce_monotonic_starts(&mut out);
     out
+}
+
+/// True when `candidate` re-states an `existing` segment across the overlap
+/// seam: it overlaps one in time *and* carries the same normalized text.
+fn is_seam_duplicate(existing: &[TranscriptSegment], candidate: &TranscriptSegment) -> bool {
+    let candidate_text = normalized(&candidate.text);
+    existing.iter().any(|prev| {
+        time_ranges_overlap(prev, candidate) && normalized(&prev.text) == candidate_text
+    })
+}
+
+/// Half-open time-range overlap: `true` unless the two segments are disjoint
+/// or merely touch at an endpoint (adjacent segments do not overlap).
+fn time_ranges_overlap(a: &TranscriptSegment, b: &TranscriptSegment) -> bool {
+    a.start_secs < b.end_secs && b.start_secs < a.end_secs
+}
+
+/// Folds a segment's text to its comparable core: lowercased, split on any
+/// non-alphanumeric character, re-joined with single spaces. Makes the seam
+/// dedupe robust to the punctuation/casing an ASR backend sprinkles
+/// differently on either side of an overlap (`"Hello,"` vs `"hello"`).
+fn normalized(text: &str) -> String {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Clamps each segment's start up to its predecessor's so the timeline never
