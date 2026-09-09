@@ -101,3 +101,68 @@ fn enforce_monotonic_starts(segments: &mut [TranscriptSegment]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seg(text: &str, start_secs: f32, end_secs: f32) -> TranscriptSegment {
+        TranscriptSegment {
+            text: text.to_string(),
+            start_secs,
+            end_secs,
+            speaker: None,
+        }
+    }
+
+    #[test]
+    fn stitch_offsets_window_segments_into_absolute_time() {
+        let window = [seg("hello", 0.0, 1.0), seg("world", 1.0, 2.0)];
+        let out = stitch(&[], &window, 10.0);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[0].start_secs, out[0].end_secs), (10.0, 11.0));
+        assert_eq!((out[1].start_secs, out[1].end_secs), (11.0, 12.0));
+    }
+
+    #[test]
+    fn stitch_drops_the_overlapping_seam_duplicate() {
+        let existing = [seg("hello", 0.0, 1.0), seg("world", 1.0, 2.0)];
+        // Window starts at 1.5s and re-transcribes the tail "world" (its own
+        // 0.0..0.5 -> absolute 1.5..2.0) before new content "again".
+        let window = [seg("World.", 0.0, 0.5), seg("again", 0.5, 1.5)];
+        let out = stitch(&existing, &window, 1.5);
+
+        let texts: Vec<&str> = out.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, vec!["hello", "world", "again"]);
+        // "again" landed at its absolute offset, not duplicated "world".
+        assert_eq!((out[2].start_secs, out[2].end_secs), (2.0, 3.0));
+    }
+
+    #[test]
+    fn stitch_result_is_monotonic_even_when_a_window_reaches_back() {
+        let existing = [seg("a", 0.0, 5.0)];
+        // A backwards-timed window segment must not make the timeline regress.
+        let window = [seg("b", -3.0, -1.0)];
+        let out = stitch(&existing, &window, 0.0);
+        assert!(out[1].start_secs >= out[0].start_secs);
+        assert!(out[1].end_secs >= out[1].start_secs);
+    }
+
+    #[test]
+    fn stitch_with_empty_window_returns_existing_unchanged() {
+        let existing = [seg("a", 0.0, 1.0)];
+        let out = stitch(&existing, &[], 4.0);
+        assert_eq!(out, existing);
+    }
+
+    #[test]
+    fn stitch_with_zero_overlap_keeps_adjacent_segments() {
+        let existing = [seg("a", 0.0, 2.0)];
+        // Window starts exactly where existing ends: adjacent, not overlapping,
+        // so nothing is deduped even though times touch.
+        let window = [seg("a", 0.0, 2.0)];
+        let out = stitch(&existing, &window, 2.0);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[1].start_secs, out[1].end_secs), (2.0, 4.0));
+    }
+}
