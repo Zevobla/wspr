@@ -467,7 +467,12 @@ tell application "Finder"
     try
       set pathbar visible of container window to false
     end try
-    set the bounds of container window to {200, 120, 920, 600}
+    -- Outer window bounds are {left, top, right, bottom} in screen points; the
+    -- title bar (~28pt, toolbar/statusbar/pathbar all hidden) eats into that,
+    -- so to get a 720x480pt icon-view CONTENT area (the exact background size,
+    -- footer included, no scroll) the outer height is 480 + 28 = 508pt:
+    -- bottom = top(120) + 508 = 628.
+    set the bounds of container window to {200, 120, 920, 628}
     set viewOptions to the icon view options of container window
     set arrangement of viewOptions to not arranged
     set icon size of viewOptions to 128
