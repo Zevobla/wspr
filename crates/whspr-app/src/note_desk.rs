@@ -9,6 +9,10 @@
 //! `crate::hub::settings::update` are) so app.rs stays under its line cap and
 //! carries no note-desk arms inline.
 
+use iced::Task;
+
+use crate::state::{Message, State};
+
 /// A transcript row's keep-gutter state -- the left-edge mark showing whether
 /// a line was kept into the notes, is a candidate awaiting a keep/dismiss
 /// decision, or is chatter left out.
@@ -123,9 +127,52 @@ impl NoteDeskState {
     }
 }
 
+/// Handles the note-desk messages, returning `Some(task)` when it owns the
+/// message and `None` otherwise so `crate::app::update`'s catch-all keeps
+/// forwarding to the other handlers. Entering seeds sample rows (real
+/// transcript is a later phase); leaving drops the mode entirely, restoring
+/// the normal Hub shell instantly (no animation this phase).
+pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
+    match message {
+        Message::EnterNoteDesk => {
+            state.note_desk = Some(NoteDeskState::sample());
+            Some(Task::none())
+        }
+        Message::BackToDictate => {
+            state.note_desk = None;
+            Some(Task::none())
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use whspr_config::Config;
+
+    #[test]
+    fn enter_note_desk_seeds_the_mode() {
+        let mut state = State::new(Config::default());
+        assert!(state.note_desk.is_none());
+        assert!(update(&mut state, &Message::EnterNoteDesk).is_some());
+        let nd = state.note_desk.as_ref().expect("note desk seeded");
+        assert!(!nd.rows.is_empty());
+    }
+
+    #[test]
+    fn back_to_dictate_clears_the_mode() {
+        let mut state = State::new(Config::default());
+        state.note_desk = Some(NoteDeskState::sample());
+        assert!(update(&mut state, &Message::BackToDictate).is_some());
+        assert!(state.note_desk.is_none());
+    }
+
+    #[test]
+    fn update_ignores_unrelated_messages() {
+        let mut state = State::new(Config::default());
+        assert!(update(&mut state, &Message::ThemeToggled).is_none());
+    }
 
     #[test]
     fn sample_keep_scores_are_in_range() {
