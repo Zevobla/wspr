@@ -17,6 +17,8 @@
 
 mod retrain;
 
+pub use retrain::TurnRef;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 
