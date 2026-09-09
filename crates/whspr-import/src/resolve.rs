@@ -1,7 +1,7 @@
 //! Resolving a URL to [`MediaInfo`] via `yt-dlp --dump-single-json`.
 //!
-//! [`parse_media_info`] is the pure, testable core that turns yt-dlp's JSON
-//! into typed metadata. Parsing is done defensively off a
+//! [`resolve`] runs the tool; [`parse_media_info`] is the pure, testable core
+//! that turns its JSON into typed metadata. Parsing is done defensively off a
 //! [`serde_json::Value`] rather than a rigid `#[derive(Deserialize)]` struct
 //! because yt-dlp's schema is loose — `uploader`/`duration`/`chapters` are
 //! routinely absent or `null`, and a playlist dump reshapes the top level
@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use whspr_core::{Result, WhsprError};
+
+use crate::tools::{resolve_tool, Tool};
 
 /// A caption/subtitle language advertised by yt-dlp, e.g. `en` ("English").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,7 +51,7 @@ pub struct Playlist {
     pub entries: Vec<PlaylistEntry>,
 }
 
-/// Everything a resolve learned about a URL without downloading any media.
+/// Everything [`resolve`] learned about a URL without downloading any media.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct MediaInfo {
     pub title: String,
@@ -73,6 +75,40 @@ pub enum CookiesFrom {
     /// Read cookies from an installed browser's profile, e.g. `"firefox"` or
     /// `"chrome"` — passed straight to `--cookies-from-browser`.
     Browser(String),
+}
+
+/// Resolves `url` to [`MediaInfo`] by running `yt-dlp --dump-single-json`.
+///
+/// With [`CookiesFrom::Browser`], adds `--cookies-from-browser <name>` so
+/// private/age-gated media resolves. Errors if yt-dlp can't be found (see
+/// [`resolve_tool`]), can't be spawned, or exits non-zero.
+pub async fn resolve(url: &str, cookies: CookiesFrom) -> Result<MediaInfo> {
+    let ytdlp = resolve_tool(Tool::YtDlp).ok_or_else(|| {
+        WhsprError::Other(
+            "yt-dlp not found: install it or point WHSPR_YTDLP at the binary".to_string(),
+        )
+    })?;
+
+    let mut cmd = tokio::process::Command::new(&ytdlp);
+    cmd.arg("--dump-single-json").arg("--no-warnings");
+    if let CookiesFrom::Browser(browser) = &cookies {
+        cmd.arg("--cookies-from-browser").arg(browser);
+    }
+    cmd.arg(url);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| WhsprError::Other(format!("failed to run yt-dlp: {e}")))?;
+
+    if !output.status.success() {
+        return Err(WhsprError::Other(format!(
+            "yt-dlp --dump-single-json failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    parse_media_info(&String::from_utf8_lossy(&output.stdout))
 }
 
 /// Parses one `yt-dlp --dump-single-json` document into [`MediaInfo`].
@@ -240,5 +276,32 @@ mod tests {
     #[test]
     fn invalid_json_is_an_error() {
         assert!(parse_media_info("not json at all").is_err());
+    }
+
+    /// Real end-to-end resolve against a public URL with the actual `yt-dlp`
+    /// binary. `#[ignore]`d — it needs network and yt-dlp installed, so it
+    /// never runs in the offline gate (mirroring whspr-asr's real-model
+    /// test). Run it explicitly:
+    ///
+    /// ```sh
+    /// cargo test -p whspr-import -- --ignored
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn resolves_a_real_public_url() {
+        if resolve_tool(Tool::YtDlp).is_none() {
+            eprintln!("skipping resolves_a_real_public_url: yt-dlp not found (set WHSPR_YTDLP)");
+            return;
+        }
+        // A short, stable, Creative-Commons public clip.
+        let url = "https://www.youtube.com/watch?v=aqz-KE-bpKQ";
+        let info = resolve(url, CookiesFrom::None)
+            .await
+            .expect("resolve should succeed against a public URL");
+        assert!(!info.title.is_empty(), "resolved media should have a title");
+        assert!(
+            info.duration_secs.is_some(),
+            "resolved media should report a duration"
+        );
     }
 }
