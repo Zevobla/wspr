@@ -6,3 +6,6 @@
 //! the Typst [`World`](world) that renders them.
 
 mod package;
+mod templates;
+
+pub use templates::Template;
