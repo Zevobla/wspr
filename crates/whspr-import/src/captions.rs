@@ -209,15 +209,41 @@ fn parse_json3(text: &str) -> Vec<TranscriptSegment> {
 mod tests {
     use super::*;
 
-    fn fixture(name: &str) -> String {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/");
-        std::fs::read_to_string(format!("{path}{name}"))
-            .unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"))
-    }
+    // Embedded as string constants (not read from tests/fixtures/*) so they
+    // survive crane's hermetic-build source filter, which strips non-Rust
+    // files (see flake.nix). Each mirrors a real yt-dlp caption track.
+    const CAPTIONS_VTT: &str = "WEBVTT\n\n\
+        1\n\
+        00:00:01.000 --> 00:00:04.000\n\
+        Welcome to the lecture.\n\n\
+        2\n\
+        00:00:04.500 --> 00:00:08.000\n\
+        Today we talk\n\
+        about <c>ownership</c>.\n\n\
+        3\n\
+        00:01:04.500 --> 00:01:08.000\n\
+        Third cue here.\n";
+
+    const CAPTIONS_SRV: &str = concat!(
+        r#"<?xml version="1.0" encoding="utf-8"?><transcript>"#,
+        r#"<text start="0" dur="4.5">Hello there</text>"#,
+        r#"<text start="4.5" dur="3">general listener</text>"#,
+        r#"<text start="7.5" dur="2.5">Rust &amp; friends</text>"#,
+        r#"</transcript>"#,
+    );
+
+    const CAPTIONS_JSON3: &str = r#"{
+      "events": [
+        { "tStartMs": 0, "dDurationMs": 2500, "segs": [{ "utf8": "Hello" }, { "utf8": " world" }] },
+        { "tStartMs": 2500, "dDurationMs": 1500, "segs": [{ "utf8": "second cue" }] },
+        { "tStartMs": 5000, "dDurationMs": 100, "segs": [{ "utf8": "\n" }] },
+        { "tStartMs": 9999, "wWinId": 1 }
+      ]
+    }"#;
 
     #[test]
     fn parses_webvtt_segments() {
-        let t = parse_captions(&fixture("captions.vtt"), CaptionFormat::WebVtt);
+        let t = parse_captions(CAPTIONS_VTT, CaptionFormat::WebVtt);
 
         assert_eq!(t.segments.len(), 3);
         assert_eq!(t.segments[0].text, "Welcome to the lecture.");
@@ -232,7 +258,7 @@ mod tests {
 
     #[test]
     fn parses_srv_xml_segments() {
-        let t = parse_captions(&fixture("captions.srv"), CaptionFormat::Srv);
+        let t = parse_captions(CAPTIONS_SRV, CaptionFormat::Srv);
 
         assert_eq!(t.segments.len(), 3);
         assert_eq!(t.segments[0].text, "Hello there");
@@ -244,7 +270,7 @@ mod tests {
 
     #[test]
     fn parses_json3_segments_skipping_windowed_events() {
-        let t = parse_captions(&fixture("captions.json3"), CaptionFormat::Json3);
+        let t = parse_captions(CAPTIONS_JSON3, CaptionFormat::Json3);
 
         assert_eq!(t.segments.len(), 2);
         assert_eq!(t.segments[0].text, "Hello world");

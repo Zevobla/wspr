@@ -205,15 +205,53 @@ fn playlist_entry_from_value(v: &Value) -> PlaylistEntry {
 mod tests {
     use super::*;
 
-    fn fixture(name: &str) -> String {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/");
-        std::fs::read_to_string(format!("{path}{name}"))
-            .unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"))
-    }
+    // Fixtures are embedded as string constants (not read from
+    // tests/fixtures/*.json) so they survive the crane hermetic-build source
+    // filter, which keeps only Rust/Cargo sources (+ .svg) and would strip
+    // external .json files (see flake.nix). This mirrors the exact shape of a
+    // real `yt-dlp --dump-single-json` document.
+    const SINGLE_VIDEO_JSON: &str = r#"{
+      "_type": "video",
+      "id": "abc123",
+      "title": "Intro to Rust Ownership",
+      "duration": 754,
+      "uploader": "Rust Academy",
+      "channel": "Rust Academy",
+      "webpage_url": "https://example.com/watch?v=abc123",
+      "chapters": [
+        { "start_time": 0, "end_time": 90, "title": "Introduction" },
+        { "start_time": 90, "end_time": 300, "title": "Move Semantics" },
+        { "start_time": 300, "end_time": 754, "title": "Borrowing" }
+      ],
+      "subtitles": {
+        "en": [{ "ext": "vtt", "url": "https://example.com/en.vtt", "name": "English" }],
+        "es": [{ "ext": "vtt", "url": "https://example.com/es.vtt", "name": "Spanish" }]
+      },
+      "automatic_captions": {
+        "en": [{ "ext": "json3", "name": "English (auto-generated)" }],
+        "de": [{ "ext": "json3", "name": "German (auto-generated)" }],
+        "fr": [{ "ext": "json3", "name": "French (auto-generated)" }]
+      }
+    }"#;
+
+    const PLAYLIST_JSON: &str = r#"{
+      "_type": "playlist",
+      "id": "PL123",
+      "title": "Rust Course",
+      "playlist_count": 3,
+      "entries": [
+        { "title": "Lecture 1 — Variables", "id": "aaa111",
+          "webpage_url": "https://example.com/watch?v=aaa111", "duration": 540 },
+        { "title": "Lecture 2 — Functions", "id": "bbb222",
+          "webpage_url": "https://example.com/watch?v=bbb222", "duration": 612 },
+        { "title": "Lecture 3 — Ownership", "id": "ccc333",
+          "webpage_url": "https://example.com/watch?v=ccc333", "duration": 700 }
+      ]
+    }"#;
 
     #[test]
     fn parses_single_video_metadata() {
-        let info = parse_media_info(&fixture("single_video.json")).expect("parse");
+        let info = parse_media_info(SINGLE_VIDEO_JSON).expect("parse");
 
         assert_eq!(info.title, "Intro to Rust Ownership");
         assert_eq!(info.duration_secs, Some(754.0));
@@ -223,7 +261,7 @@ mod tests {
 
     #[test]
     fn parses_chapters_in_order() {
-        let info = parse_media_info(&fixture("single_video.json")).expect("parse");
+        let info = parse_media_info(SINGLE_VIDEO_JSON).expect("parse");
 
         assert_eq!(info.chapters.len(), 3);
         assert_eq!(info.chapters[0].title, "Introduction");
@@ -235,7 +273,7 @@ mod tests {
 
     #[test]
     fn separates_human_and_auto_caption_langs() {
-        let info = parse_media_info(&fixture("single_video.json")).expect("parse");
+        let info = parse_media_info(SINGLE_VIDEO_JSON).expect("parse");
 
         // BTreeMap-backed => alphabetical, deterministic.
         let human: Vec<&str> = info
@@ -252,7 +290,7 @@ mod tests {
 
     #[test]
     fn parses_playlist_entries_and_count() {
-        let info = parse_media_info(&fixture("playlist.json")).expect("parse");
+        let info = parse_media_info(PLAYLIST_JSON).expect("parse");
 
         let playlist = info.playlist.expect("should be a playlist");
         assert_eq!(playlist.count, 3);

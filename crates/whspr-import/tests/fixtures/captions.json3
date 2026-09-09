@@ -1,8 +1,0 @@
-{
-  "events": [
-    { "tStartMs": 0, "dDurationMs": 2500, "segs": [{ "utf8": "Hello" }, { "utf8": " world" }] },
-    { "tStartMs": 2500, "dDurationMs": 1500, "segs": [{ "utf8": "second cue" }] },
-    { "tStartMs": 5000, "dDurationMs": 100, "segs": [{ "utf8": "\n" }] },
-    { "tStartMs": 9999, "wWinId": 1 }
-  ]
-}
