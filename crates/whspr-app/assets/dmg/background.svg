@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960">
+  <!-- whspr .dmg drag-to-install background, direction "Poster": accent red
+       ground, white marks. Authored on the @2x 1440x960 canvas so the disk
+       image's absolute coordinates map 1:1 (background.png is this at 720x480,
+       background@2x.png at 1440x960). Rasterized at bundle time by resvg with
+       the pinned Archivo ExtraBold face; font-family="Archivo" mirrors
+       icon.svg. Finder draws the real whspr.app + Applications icons (and their
+       labels) INTO the two empty wells; this art draws only the wells, the
+       headline, the rules and the footer, never the icons or their labels. -->
+  <rect x="0" y="0" width="1440" height="960" fill="#ec3013"/>
+
+  <!-- Header: wordmark glyph + "whspr" on the left, "Install / Local voice
+       capture" on the right, over a 2px white-40% rule. -->
+  <rect x="72" y="64" width="44" height="44" fill="#f3f2f2"/>
+  <rect x="81" y="77" width="22" height="3" fill="#ec3013"/>
+  <rect x="81" y="85" width="15" height="3" fill="#ec3013"/>
+  <rect x="81" y="93" width="18" height="3" fill="#ec3013"/>
+  <text x="134" y="97" font-family="Archivo" font-weight="700" font-size="30"
+        letter-spacing="-0.3" fill="#f3f2f2">whspr</text>
+  <text x="1368" y="80" text-anchor="end" font-family="Archivo" font-weight="600"
+        font-size="15" letter-spacing="2.1" fill="#ffffff">INSTALL</text>
+  <text x="1368" y="104" text-anchor="end" font-family="Archivo" font-weight="600"
+        font-size="15" letter-spacing="2.1" fill="#ffffff">LOCAL VOICE CAPTURE</text>
+  <rect x="72" y="140" width="1296" height="2" fill="#ffffff" fill-opacity="0.4"/>
+
+  <!-- Headline. -->
+  <text x="72" y="276" font-family="Archivo" font-weight="700" font-size="68"
+        letter-spacing="-1" fill="#ffffff">Drag whspr into</text>
+  <text x="72" y="341" font-family="Archivo" font-weight="700" font-size="68"
+        letter-spacing="-1" fill="#ffffff">Applications.</text>
+
+  <!-- Two empty icon wells (Finder drops the real icons inside). -->
+  <rect x="252" y="506" width="256" height="256" fill="none"
+        stroke="#ffffff" stroke-opacity="0.45" stroke-width="2"/>
+  <rect x="932" y="506" width="256" height="256" fill="none"
+        stroke="#ffffff" stroke-opacity="0.45" stroke-width="2"/>
+
+  <!-- Arrow from the app well to the Applications well. -->
+  <rect x="560" y="632" width="284" height="4" fill="#ffffff"/>
+  <polygon points="844,620 880,634 844,648" fill="#ffffff"/>
+
+  <!-- Footer: 2px white-40% rule over three uppercase items. -->
+  <rect x="72" y="860" width="1296" height="2" fill="#ffffff" fill-opacity="0.4"/>
+  <text x="72" y="900" font-family="Archivo" font-weight="600" font-size="15"
+        letter-spacing="2.1" fill="#ffffff">WHSPR.APP</text>
+  <text x="720" y="900" text-anchor="middle" font-family="Archivo" font-weight="600"
+        font-size="15" letter-spacing="2.1" fill="#ffffff" fill-opacity="0.75">MACOS 14+ &#183; APPLE SILICON</text>
+  <text x="1368" y="900" text-anchor="end" font-family="Archivo" font-weight="600"
+        font-size="15" letter-spacing="2.1" fill="#ffffff" fill-opacity="0.75">BUILD __WHSPR_VERSION__</text>
+</svg>
