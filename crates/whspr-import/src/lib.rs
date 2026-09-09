@@ -41,5 +41,7 @@
 mod resolve;
 mod tools;
 
-pub use resolve::{Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry};
+pub use resolve::{
+    parse_media_info, Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry,
+};
 pub use tools::{resolve_tool, Tool};

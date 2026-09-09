@@ -1,0 +1,27 @@
+{
+  "_type": "video",
+  "id": "abc123",
+  "title": "Intro to Rust Ownership",
+  "duration": 754,
+  "uploader": "Rust Academy",
+  "channel": "Rust Academy",
+  "webpage_url": "https://example.com/watch?v=abc123",
+  "chapters": [
+    { "start_time": 0, "end_time": 90, "title": "Introduction" },
+    { "start_time": 90, "end_time": 300, "title": "Move Semantics" },
+    { "start_time": 300, "end_time": 754, "title": "Borrowing" }
+  ],
+  "subtitles": {
+    "en": [
+      { "ext": "vtt", "url": "https://example.com/en.vtt", "name": "English" }
+    ],
+    "es": [
+      { "ext": "vtt", "url": "https://example.com/es.vtt", "name": "Spanish" }
+    ]
+  },
+  "automatic_captions": {
+    "en": [{ "ext": "json3", "url": "https://example.com/en.json3", "name": "English (auto-generated)" }],
+    "de": [{ "ext": "json3", "url": "https://example.com/de.json3", "name": "German (auto-generated)" }],
+    "fr": [{ "ext": "json3", "url": "https://example.com/fr.json3", "name": "French (auto-generated)" }]
+  }
+}

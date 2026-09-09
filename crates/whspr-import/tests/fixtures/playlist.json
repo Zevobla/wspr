@@ -1,0 +1,26 @@
+{
+  "_type": "playlist",
+  "id": "PL123",
+  "title": "Rust Course",
+  "playlist_count": 3,
+  "entries": [
+    {
+      "title": "Lecture 1 — Variables",
+      "id": "aaa111",
+      "webpage_url": "https://example.com/watch?v=aaa111",
+      "duration": 540
+    },
+    {
+      "title": "Lecture 2 — Functions",
+      "id": "bbb222",
+      "webpage_url": "https://example.com/watch?v=bbb222",
+      "duration": 612
+    },
+    {
+      "title": "Lecture 3 — Ownership",
+      "id": "ccc333",
+      "webpage_url": "https://example.com/watch?v=ccc333",
+      "duration": 700
+    }
+  ]
+}
