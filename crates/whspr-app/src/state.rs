@@ -340,6 +340,13 @@ pub enum Message {
     /// The user clicked a nav-rail entry: switches which screen renders to
     /// the right of the rail (see `Screen`).
     TabSelected(Screen),
+    /// The user asked to open the full-screen longform "note desk" mode (see
+    /// `crate::note_desk`). Manual entry scaffolding for now -- a later phase
+    /// replaces it with an automatic morph. Handled by `crate::note_desk`.
+    EnterNoteDesk,
+    /// The user asked to leave the note desk and return to the normal Hub
+    /// (see `crate::note_desk`). Handled by `crate::note_desk`.
+    BackToDictate,
     /// The user clicked a Settings sub-nav entry: switches which section's
     /// form renders (see `SettingsSection`).
     SettingsSectionSelected(SettingsSection),
