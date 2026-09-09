@@ -17,6 +17,7 @@ mod common;
 mod dictate;
 mod history;
 mod models;
+pub mod note_desk;
 pub(crate) mod settings;
 mod speakers;
 
