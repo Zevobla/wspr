@@ -96,7 +96,12 @@ impl SpeakerProfile {
         if self.turns.is_empty() {
             return;
         }
-        let dim = self.turns.iter().map(|t| t.embedding.len()).max().unwrap_or(0);
+        let dim = self
+            .turns
+            .iter()
+            .map(|t| t.embedding.len())
+            .max()
+            .unwrap_or(0);
         let mut mean = vec![0.0f32; dim];
         for turn in &self.turns {
             for (m, e) in mean.iter_mut().zip(&turn.embedding) {

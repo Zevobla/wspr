@@ -142,7 +142,10 @@ mod tests {
         let (b, _) = db.match_or_enroll(&[0.0, 1.0, 0.0], thr, "sb");
         // A near-A turn cross-matches onto A, so A now holds two turns.
         db.match_or_enroll(&[0.9, 0.1, 0.0], thr, "mix");
-        assert_eq!(db.profiles.iter().find(|p| p.id == a).unwrap().turns.len(), 2);
+        assert_eq!(
+            db.profiles.iter().find(|p| p.id == a).unwrap().turns.len(),
+            2
+        );
 
         // Correct: the "mix" turn actually belonged to B.
         assert!(db.reassign(&a, &b, &tref("mix", 0)));
@@ -153,7 +156,10 @@ mod tests {
         assert_close(&a_prof.centroid, &[1.0, 0.0, 0.0]);
         assert_eq!(b_prof.turns.len(), 2);
         assert_close(&b_prof.centroid, &[0.45, 0.55, 0.0]);
-        assert!(db.margin_between(&a, &b) > 0.0, "the correction records a margin");
+        assert!(
+            db.margin_between(&a, &b) > 0.0,
+            "the correction records a margin"
+        );
     }
 
     #[test]
@@ -163,10 +169,19 @@ mod tests {
         let (a, _) = db.match_or_enroll(&[1.0, 0.0], thr, "sa");
         let (b, _) = db.match_or_enroll(&[0.0, 1.0], thr, "sb");
 
-        assert!(!db.reassign(&a, &a, &tref("sa", 0)), "self-reassignment is rejected");
-        assert!(!db.reassign(&a, "nope", &tref("sa", 0)), "unknown destination");
+        assert!(
+            !db.reassign(&a, &a, &tref("sa", 0)),
+            "self-reassignment is rejected"
+        );
+        assert!(
+            !db.reassign(&a, "nope", &tref("sa", 0)),
+            "unknown destination"
+        );
         assert!(!db.reassign("nope", &b, &tref("sa", 0)), "unknown source");
-        assert!(!db.reassign(&a, &b, &tref("no-such-scan", 0)), "unknown turn");
+        assert!(
+            !db.reassign(&a, &b, &tref("no-such-scan", 0)),
+            "unknown turn"
+        );
         assert!(!db.reassign(&a, &b, &tref("sa", 9)), "index past the end");
         assert!(db.margins.is_empty(), "no failed attempt recorded a margin");
     }
@@ -191,17 +206,26 @@ mod tests {
         // Before any correction, e_dup cross-matches onto A.
         let (matched, is_new) = db.clone().match_or_enroll(&e_dup, thr, "sc");
         assert_eq!(matched, a);
-        assert!(!is_new, "before correction the near-duplicate merges into A");
+        assert!(
+            !is_new,
+            "before correction the near-duplicate merges into A"
+        );
 
         // The user corrects: those two turns were actually speaker B.
         assert!(db.reassign(&a, &b, &tref("sa1", 0)));
         assert!(db.reassign(&a, &b, &tref("sa2", 0)));
-        assert!(db.margin_between(&a, &b) > 0.0, "corrections raised the pair's margin");
+        assert!(
+            db.margin_between(&a, &b) > 0.0,
+            "corrections raised the pair's margin"
+        );
 
         // Now the learned margin lifts A's bar above e_dup's score, so it
         // enrolls as a distinct speaker instead of merging into A.
         let (_, is_new2) = db.match_or_enroll(&e_dup, thr, "sc2");
-        assert!(is_new2, "after correction the near-duplicate no longer merges into A");
+        assert!(
+            is_new2,
+            "after correction the near-duplicate no longer merges into A"
+        );
     }
 
     #[test]
@@ -272,7 +296,10 @@ mod tests {
         let (_b, _) = db.match_or_enroll(&e_b, thr, "sb");
         let (matched, is_new) = db.match_or_enroll(&e_dup, thr, "sc");
         assert_eq!(matched, a);
-        assert!(!is_new, "with no learned margin the near-duplicate merges into A");
+        assert!(
+            !is_new,
+            "with no learned margin the near-duplicate merges into A"
+        );
 
         // With a learned (A,B) margin the same embedding no longer clears the
         // raised bar for A, so it enrolls as a distinct speaker instead.
@@ -281,6 +308,9 @@ mod tests {
         let (b2, _) = db2.match_or_enroll(&e_b, thr, "sb");
         db2.margins.insert(margin_key(&a2, &b2), 0.1);
         let (_, is_new2) = db2.match_or_enroll(&e_dup, thr, "sc");
-        assert!(is_new2, "the learned margin raised the bar, splitting the pair");
+        assert!(
+            is_new2,
+            "the learned margin raised the bar, splitting the pair"
+        );
     }
 }
