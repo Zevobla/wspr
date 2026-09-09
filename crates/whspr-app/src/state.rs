@@ -182,6 +182,13 @@ pub struct State {
     /// task) reads this to raise an "install a speaker model" prompt; it
     /// stays `false` whenever attribution is disabled or a model is present.
     pub needs_speaker_model: bool,
+    /// When `Some`, the Hub is in the full-screen longform "note desk" mode
+    /// (see `crate::note_desk`): its view (`crate::hub::note_desk`)
+    /// short-circuits the normal nav-rail + header shell wholesale. `None` is
+    /// the normal Hub. Entered/left manually for now via
+    /// `Message::EnterNoteDesk` / `Message::BackToDictate`; the auto-morph is
+    /// a later phase.
+    pub note_desk: Option<crate::note_desk::NoteDeskState>,
 }
 
 impl State {
@@ -232,6 +239,7 @@ impl State {
             screenshot_path: None,
             screenshot_taken: false,
             needs_speaker_model: false,
+            note_desk: None,
         }
     }
 }
@@ -259,6 +267,7 @@ mod tests {
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
         assert!(state.tray_done_until.is_none());
+        assert!(state.note_desk.is_none());
     }
 
     #[test]
