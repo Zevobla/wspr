@@ -414,6 +414,45 @@ BG_TIFF="$WORK_DIR/background.tiff"
 echo "==> combining background.png + @2x -> HiDPI background.tiff (tiffutil)"
 tiffutil -cathidpicheck "$BG_PNG" "$BG_PNG_2X" -out "$BG_TIFF" >/dev/null
 
+# --- rasterize the dmg "Applications" folder mark -> whspr-applications.icns -
+# Same vector-in-git / pixels-at-bundle-time rule as the app icon: the custom
+# Applications drop-target icon lives as a committed SVG and only becomes an
+# .icns here, via the identical resvg -> sips -z iconset -> iconutil pipeline.
+# The mark is font-less, but we pass the same resvg flags for consistency.
+DMG_ICON_SVG="$REPO_ROOT/crates/whspr-app/assets/dmg/applications-icon.svg"
+if [ ! -f "$DMG_ICON_SVG" ]; then
+  echo "error: dmg applications icon source not found at $DMG_ICON_SVG" >&2
+  exit 1
+fi
+APPS_MASTER_PNG="$WORK_DIR/apps_1024.png"
+echo "==> rasterizing $DMG_ICON_SVG -> 1024px PNG (resvg)"
+nix shell nixpkgs#resvg --command resvg \
+  --skip-system-fonts \
+  --use-font-file "$FONT_FILE" \
+  -w 1024 -h 1024 \
+  "$DMG_ICON_SVG" "$APPS_MASTER_PNG"
+
+APPS_ICONSET="$WORK_DIR/whspr-applications.iconset"
+mkdir -p "$APPS_ICONSET"
+for entry in \
+  "icon_16x16.png:16" \
+  "icon_16x16@2x.png:32" \
+  "icon_32x32.png:32" \
+  "icon_32x32@2x.png:64" \
+  "icon_128x128.png:128" \
+  "icon_128x128@2x.png:256" \
+  "icon_256x256.png:256" \
+  "icon_256x256@2x.png:512" \
+  "icon_512x512.png:512" \
+  "icon_512x512@2x.png:1024"; do
+  name="${entry%:*}"
+  size="${entry##*:}"
+  sips -z "$size" "$size" "$APPS_MASTER_PNG" --out "$APPS_ICONSET/$name" >/dev/null
+done
+APPS_ICNS="$WORK_DIR/whspr-applications.icns"
+echo "==> packing iconset -> whspr-applications.icns (iconutil)"
+iconutil -c icns "$APPS_ICONSET" -o "$APPS_ICNS"
+
 # --- styled drag-to-install dmg -------------------------------------------
 # Build a "poster" disk image: the app and an /Applications alias sit inside
 # two outlined wells drawn by the background, an arrow pointing from one to
@@ -436,7 +475,11 @@ mkdir -p "$STAGE/.background"
 # ditto (not cp -R) so the ad-hoc signature + xattrs on the .app survive the
 # copy intact; a broken signature would make macOS refuse to launch it.
 ditto "$APP" "$STAGE/whspr.app"
-ln -s /Applications "$STAGE/Applications"
+# The "Applications" drop target is created AFTER mount (below) as a Finder
+# alias rather than staged here as a symlink: only a real file can carry a
+# custom icon (macOS forbids a resource fork on a symlink, and SetFile would
+# follow a symlink and touch the real /Applications). A folder alias is still
+# a valid drag-to-install target.
 cp "$BG_TIFF" "$STAGE/.background/background.tiff"
 
 # Read-write image, sized to the staged tree + slack for Finder's .DS_Store.
@@ -456,6 +499,32 @@ hdiutil create \
 MOUNT="/Volumes/$VOLNAME"
 [ -d "$MOUNT" ] && hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true
 hdiutil attach "$RW_DMG" -readwrite -noautoopen >/dev/null
+
+# Create the "Applications" drop target and give it the custom Modernist icon.
+# A symlink can't hold a custom icon (the kernel refuses a resource fork on a
+# symlink, and SetFile follows a symlink -- it would flip the custom-icon bit
+# on the *real* /Applications), so the target is a Finder alias: a real file
+# that (a) still resolves to /Applications for drag-to-install and (b) can
+# carry its own icon. We embed the icns as an icon resource, graft it onto the
+# alias file's resource fork, and flag it custom -- all on the alias file
+# inside the volume; the real /Applications is never followed or modified.
+# If Finder is unavailable (headless CI), fall back to a plain symlink so the
+# dmg still has a working drop target (with the default folder icon).
+if osascript >/dev/null 2>&1 <<APPLESCRIPT
+tell application "Finder" to make alias file to POSIX file "/Applications" at disk "$VOLNAME"
+APPLESCRIPT
+then
+  APPS_ALIAS="$MOUNT/Applications"
+  APPS_RSRC="$WORK_DIR/apps-icon.rsrc"
+  sips -i "$APPS_ICNS" >/dev/null
+  DeRez -only icns "$APPS_ICNS" > "$APPS_RSRC"
+  Rez -append "$APPS_RSRC" -o "$APPS_ALIAS"
+  SetFile -a C "$APPS_ALIAS"
+  echo "==> Applications alias created with custom icon"
+else
+  echo "warning: Finder alias unavailable; using a plain /Applications symlink"
+  ln -s /Applications "$MOUNT/Applications"
+fi
 
 # Drive Finder to lay out the window. On a headless runner with no Finder
 # this errors out fast; we swallow it (|| warn) and still ship a valid -- if
