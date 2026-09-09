@@ -105,6 +105,31 @@ impl SpeakerProfile {
         self.centroid = mean;
         self.samples = self.turns.len() as u32;
     }
+
+    /// Records a newly-matched turn, keeping `centroid` an exact mean cache.
+    ///
+    /// Legacy migration: if this profile predates per-turn retention (an old
+    /// `speakers.json` with an empty `turns` but a real stored `centroid`),
+    /// the stored centroid is first folded in as a single representative
+    /// seed turn, so the accumulated running-mean history isn't discarded
+    /// the first time a fresh turn lands on it.
+    fn push_turn(&mut self, embedding: &[f32], scan_id: &str) {
+        if self.turns.is_empty() && !self.centroid.is_empty() {
+            self.turns.push(TurnEmbedding {
+                embedding: self.centroid.clone(),
+                scan_id: String::new(),
+                start_secs: None,
+                end_secs: None,
+            });
+        }
+        self.turns.push(TurnEmbedding {
+            embedding: embedding.to_vec(),
+            scan_id: scan_id.to_string(),
+            start_secs: None,
+            end_secs: None,
+        });
+        self.recompute_centroid();
+    }
 }
 
 /// The persisted collection of every enrolled speaker discovered so far
@@ -117,9 +142,10 @@ pub struct SpeakerDb {
 
 impl SpeakerDb {
     /// Matches `embedding` against every enrolled profile's centroid by
-    /// cosine similarity. If the best match is `>= threshold`, folds this
-    /// embedding into that profile's running centroid (a running mean
-    /// weighted by its `samples` count so far), records `scan_id` if new,
+    /// cosine similarity. If the best match is `>= threshold`, retains this
+    /// embedding as a new turn on that profile and recomputes its centroid
+    /// as the mean of every retained turn (no longer a lossy running mean,
+    /// so the contribution stays reversible), records `scan_id` if new,
     /// bumps `last_seen`, and returns `(id, false)`. Otherwise enrolls a
     /// brand-new profile with a fresh v4 UUID id and returns `(id, true)`.
     pub fn match_or_enroll(
@@ -140,11 +166,7 @@ impl SpeakerDb {
 
         if let Some((i, _score)) = best {
             let profile = &mut self.profiles[i];
-            let n = profile.samples as f32;
-            for (c, e) in profile.centroid.iter_mut().zip(embedding) {
-                *c = (*c * n + e) / (n + 1.0);
-            }
-            profile.samples += 1;
+            profile.push_turn(embedding, scan_id);
             profile.last_seen = now;
             if !profile.scans.iter().any(|s| s == scan_id) {
                 profile.scans.push(scan_id.to_string());
@@ -387,6 +409,54 @@ mod tests {
 
         assert_eq!(profile.centroid, vec![0.5, 0.5, 0.0]);
         assert_eq!(profile.samples, 42);
+    }
+
+    /// A `speakers.json` shaped like the pre-retrain format (profiles with a
+    /// stored centroid but no `turns`, and a db with no `margins`).
+    const LEGACY_JSON: &str = r#"{
+        "profiles": [
+            {
+                "id": "11111111-1111-4111-8111-111111111111",
+                "name": "Ada",
+                "centroid": [1.0, 0.0, 0.0],
+                "samples": 9,
+                "scans": ["old-scan"],
+                "first_seen": 100,
+                "last_seen": 200
+            }
+        ]
+    }"#;
+
+    #[test]
+    fn legacy_speakers_json_without_turns_still_matches_via_stored_centroid() {
+        let mut db: SpeakerDb = serde_json::from_str(LEGACY_JSON).expect("legacy json should load");
+        assert_eq!(db.profiles.len(), 1);
+        assert!(
+            db.profiles[0].turns.is_empty(),
+            "legacy profile carries no retained turns"
+        );
+
+        // An embedding near the stored centroid matches the legacy profile
+        // rather than enrolling a fresh one.
+        let (id, is_new) = db.match_or_enroll(&[0.98, 0.02, 0.0], 0.7, "new-scan");
+        assert_eq!(id, "11111111-1111-4111-8111-111111111111");
+        assert!(
+            !is_new,
+            "should match the legacy profile via its stored centroid"
+        );
+    }
+
+    #[test]
+    fn matching_a_legacy_profile_seeds_its_stored_centroid_as_a_turn() {
+        let mut db: SpeakerDb = serde_json::from_str(LEGACY_JSON).expect("legacy json should load");
+
+        db.match_or_enroll(&[1.0, 0.0, 0.0], 0.7, "new-scan");
+
+        // The stored centroid was folded in as a seed turn, then the new
+        // turn added -- the running-mean history isn't thrown away.
+        assert_eq!(db.profiles[0].turns.len(), 2);
+        assert_eq!(db.profiles[0].turns[0].embedding, vec![1.0, 0.0, 0.0]);
+        assert_eq!(db.profiles[0].centroid, vec![1.0, 0.0, 0.0]);
     }
 
     #[test]
