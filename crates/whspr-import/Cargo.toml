@@ -1,0 +1,22 @@
+[package]
+name = "whspr-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Shared domain types (Transcript/TranscriptSegment) + Result/WhsprError.
+whspr-core.workspace = true
+# WAV decode + 16kHz-mono resample for the downloaded audio path.
+whspr-audio.workspace = true
+# Parse yt-dlp's `--dump-single-json` output and json3 captions. Declared
+# crate-locally (not opted in from a heavy backend) since parsing subprocess
+# output is this crate's whole job. `derive` lets the app serialize the
+# resolved MediaInfo for its own caching.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# Async subprocess spawns for yt-dlp/ffmpeg. `process` is added on top of the
+# workspace default features (rt-multi-thread/macros/sync) rather than
+# editing the workspace dependency.
+tokio = { workspace = true, features = ["process"] }
