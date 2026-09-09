@@ -38,6 +38,8 @@
 //! policy is enforced at the app layer, not here, so the library stays a pure
 //! "URL in, path out" function.
 
+mod resolve;
 mod tools;
 
+pub use resolve::{Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry};
 pub use tools::{resolve_tool, Tool};
