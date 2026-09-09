@@ -481,6 +481,14 @@ tell application "Finder"
 end tell
 APPLESCRIPT
 
+# Trim OS-generated cruft and flag the background folder hidden, so the mounted
+# volume presents ONLY whspr.app + the Applications alias (plus the required
+# hidden .DS_Store that stores this very layout). .fseventsd/.Trashes are
+# recreated by macOS on write; removing them just before detach keeps the
+# volume clean for anyone browsing with hidden files shown.
+rm -rf "$MOUNT/.fseventsd" "$MOUNT/.Trashes"
+chflags -h hidden "$MOUNT/.background" 2>/dev/null || true
+
 # Flush the layout to disk, detach, and compress into the final read-only dmg.
 sync
 hdiutil detach "$MOUNT" >/dev/null 2>&1 || hdiutil detach "$MOUNT" -force >/dev/null
