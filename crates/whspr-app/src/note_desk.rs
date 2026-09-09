@@ -54,3 +54,90 @@ pub struct NoteDeskState {
     /// When the session started -- the header timer reads `elapsed()`.
     pub timer_start: std::time::Instant,
 }
+
+impl NoteDeskState {
+    /// A seeded note desk with sample rows so the layout renders before live
+    /// transcription exists (that arrives in a later phase). Mirrors the
+    /// design comp's "Statistical Mechanics · 7 / Microstates" excerpt.
+    pub fn sample() -> Self {
+        let halden = Some("Dr. E. Halden".to_string());
+        let student = Some("Student".to_string());
+        Self {
+            title: "Statistical Mechanics · 7".to_string(),
+            timer_start: std::time::Instant::now(),
+            rows: vec![
+                TranscriptRow {
+                    time_label: "11:52".to_string(),
+                    text: "Entropy is not a measure of disorder — that word does \
+                           more harm than good here."
+                        .to_string(),
+                    speaker_id: halden.clone(),
+                    gutter: Gutter::Kept,
+                    keep_score: 3,
+                },
+                TranscriptRow {
+                    time_label: "12:04".to_string(),
+                    text: "It counts the number of microstates consistent with \
+                           what you can actually measure."
+                        .to_string(),
+                    speaker_id: halden.clone(),
+                    gutter: Gutter::Kept,
+                    keep_score: 3,
+                },
+                TranscriptRow {
+                    time_label: "12:19".to_string(),
+                    text: "So the same glass of water has a different entropy \
+                           depending on what you claim to know about it."
+                        .to_string(),
+                    speaker_id: halden.clone(),
+                    gutter: Gutter::Candidate,
+                    keep_score: 2,
+                },
+                TranscriptRow {
+                    time_label: "12:31".to_string(),
+                    text: "Write that down, because that sentence is the whole \
+                           of the second law."
+                        .to_string(),
+                    speaker_id: halden.clone(),
+                    gutter: Gutter::Candidate,
+                    keep_score: 3,
+                },
+                TranscriptRow {
+                    time_label: "12:44".to_string(),
+                    text: "Does that mean entropy is subjective?".to_string(),
+                    speaker_id: student,
+                    gutter: Gutter::Chatter,
+                    keep_score: 1,
+                },
+                TranscriptRow {
+                    time_label: "12:58".to_string(),
+                    text: "It means it is a statement about what you know, and \
+                           the second law is a statement about probability"
+                        .to_string(),
+                    speaker_id: halden,
+                    gutter: Gutter::Chatter,
+                    keep_score: 0,
+                },
+            ],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_keep_scores_are_in_range() {
+        for row in NoteDeskState::sample().rows {
+            assert!(row.keep_score <= 3);
+        }
+    }
+
+    #[test]
+    fn sample_has_a_title_and_rows() {
+        let nd = NoteDeskState::sample();
+        assert!(!nd.title.is_empty());
+        assert!(!nd.rows.is_empty());
+    }
+}
