@@ -213,6 +213,7 @@ impl RollingTranscriber {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testkit::MockAsr;
 
     fn seg(text: &str, start_secs: f32, end_secs: f32) -> TranscriptSegment {
         TranscriptSegment {
@@ -272,5 +273,108 @@ mod tests {
         let out = stitch(&existing, &window, 2.0);
         assert_eq!(out.len(), 2);
         assert_eq!((out[1].start_secs, out[1].end_secs), (2.0, 4.0));
+    }
+
+    #[tokio::test]
+    async fn rolling_transcriber_stitches_multiple_windows_with_absolute_times() {
+        // MockAsr returns the same canned segment for every window; a segment
+        // short relative to the step keeps consecutive placements disjoint so
+        // each window contributes exactly one, at its own absolute offset.
+        let asr = MockAsr {
+            canned: Transcript {
+                text: "chunk".to_string(),
+                segments: vec![seg("chunk", 0.0, 1.0)],
+                ..Default::default()
+            },
+        };
+        let mut rolling = RollingTranscriber::new(10.0, 2.0);
+        assert_eq!(rolling.step_secs(), 8.0);
+
+        // 24s buffer -> windows at 0, 8, 16.
+        let audio = AudioBuffer::new(vec![0.0; 16_000 * 24], 16_000);
+        let step = rolling.step_secs();
+        let mut start = 0.0;
+        while start < audio.duration_secs() {
+            rolling
+                .push_window(&asr, &audio, start, &AsrOptions::default())
+                .await
+                .unwrap();
+            start += step;
+        }
+
+        let segments = rolling.segments();
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].start_secs, 0.0);
+        assert_eq!(segments[1].start_secs, 8.0);
+        assert_eq!(segments[2].start_secs, 16.0);
+
+        let transcript = rolling.transcript();
+        assert_eq!(transcript.text, "chunk chunk chunk");
+        assert_eq!(transcript.segments.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn rolling_transcriber_handles_a_window_past_the_end() {
+        let asr = MockAsr {
+            canned: Transcript {
+                text: "tail".to_string(),
+                segments: vec![seg("tail", 0.0, 0.5)],
+                ..Default::default()
+            },
+        };
+        let mut rolling = RollingTranscriber::new(10.0, 0.0);
+        // Buffer is only 1s but the window asks for 10s: the slice truncates,
+        // and a start beyond the buffer would slice empty.
+        let audio = AudioBuffer::new(vec![0.0; 16_000], 16_000);
+        rolling
+            .push_window(&asr, &audio, 0.0, &AsrOptions::default())
+            .await
+            .unwrap();
+        assert_eq!(rolling.segments().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rolling_transcriber_window_start_past_end_slices_empty() {
+        // A backend that echoes how many samples it was actually handed, so we
+        // can assert the slice was empty without reaching into the private fn.
+        struct LenAsr;
+        #[async_trait::async_trait]
+        impl AsrBackend for LenAsr {
+            async fn transcribe(
+                &self,
+                audio: &AudioBuffer,
+                _opts: &AsrOptions,
+            ) -> Result<Transcript> {
+                Ok(Transcript {
+                    text: audio.samples.len().to_string(),
+                    ..Default::default()
+                })
+            }
+            fn id(&self) -> &'static str {
+                "len"
+            }
+        }
+
+        let mut rolling = RollingTranscriber::new(5.0, 0.0);
+        let audio = AudioBuffer::new(vec![0.0; 16_000], 16_000);
+        // Start at 100s, far past the 1s buffer.
+        let sub_len = {
+            let out = rolling
+                .push_window(&LenAsr, &audio, 100.0, &AsrOptions::default())
+                .await
+                .unwrap();
+            // No segments accumulated from the empty slice.
+            out.len()
+        };
+        assert_eq!(sub_len, 0);
+    }
+
+    #[test]
+    fn default_uses_the_documented_window_shape() {
+        let rolling = RollingTranscriber::default();
+        assert_eq!(
+            rolling.step_secs(),
+            DEFAULT_WINDOW_SECS - DEFAULT_OVERLAP_SECS
+        );
     }
 }
