@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- whspr .dmg custom app mark: the bare "w." reduced from icon.svg to a flat
+       paper-white mark on transparent. No red field, no app-tile squircle, no
+       shadow or elevation: it reads as a clean white mark sitting directly on
+       the red poster (unlike the standard tiled app icon Finder shows from
+       whspr.icns). Reuses icon.svg's geometry (the Archivo ExtraBold "w", the
+       underline rule, the signature square dot), recoloured to #f3f2f2 with the
+       red ground removed; the rule is inset to the mark's width so the whole
+       "w." sits centred inside the 128pt well. Rasterized to an .icns at bundle
+       time by the same resvg pipeline as icon.svg (font-family="Archivo"
+       mirrors it) and applied as the whspr.app item's icon INSIDE the dmg only;
+       the installed app keeps its own Contents/Resources/whspr.icns. -->
+  <text x="96" y="712" font-family="Archivo" font-weight="800" font-size="800" fill="#f3f2f2">w</text>
+  <rect x="784" y="552" width="152" height="152" fill="#f3f2f2"/>
+  <rect x="96" y="704" width="840" height="40" fill="#f3f2f2"/>
+</svg>
