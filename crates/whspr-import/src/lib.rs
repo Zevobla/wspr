@@ -37,3 +37,7 @@
 //! transcribing — this crate does not track or reap it. That delete-after-use
 //! policy is enforced at the app layer, not here, so the library stays a pure
 //! "URL in, path out" function.
+
+mod tools;
+
+pub use tools::{resolve_tool, Tool};
