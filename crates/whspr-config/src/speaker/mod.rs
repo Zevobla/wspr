@@ -15,6 +15,9 @@
 //! also teach an adaptive per-pair margin so confused speakers split more
 //! aggressively over time.
 
+mod retrain;
+
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -138,6 +141,16 @@ impl SpeakerProfile {
 pub struct SpeakerDb {
     #[serde(default)]
     pub profiles: Vec<SpeakerProfile>,
+    /// Learned adaptive separation margins, keyed by a normalized ordered
+    /// pair of speaker ids (`"idA|idB"`, ids sorted so the key is
+    /// order-independent). Each correction (see [`SpeakerDb::reassign`])
+    /// nudges the confused pair's margin up; `match_or_enroll` then raises
+    /// the acceptance threshold between the top-2 candidate speakers by the
+    /// learned amount, so a corrected near-duplicate pair splits more
+    /// aggressively over time. `#[serde(default)]` so legacy files without
+    /// it still load.
+    #[serde(default)]
+    pub margins: BTreeMap<String, f32>,
 }
 
 impl SpeakerDb {
@@ -156,41 +169,57 @@ impl SpeakerDb {
     ) -> (String, bool) {
         let now = now_unix();
 
-        let best = self
+        // Score every profile, then take the top-2 candidates. The
+        // acceptance threshold for the best candidate is raised by any
+        // learned margin between it and the runner-up, so a corrected
+        // (confused) pair splits more aggressively over time.
+        let mut scored: Vec<(usize, f32)> = self
             .profiles
             .iter()
             .enumerate()
             .map(|(i, p)| (i, cosine_similarity(embedding, &p.centroid)))
-            .filter(|(_, score)| *score >= threshold)
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        if let Some((i, _score)) = best {
-            let profile = &mut self.profiles[i];
-            profile.push_turn(embedding, scan_id);
-            profile.last_seen = now;
-            if !profile.scans.iter().any(|s| s == scan_id) {
-                profile.scans.push(scan_id.to_string());
+        if let Some(&(best_i, best_score)) = scored.first() {
+            let best_id = self.profiles[best_i].id.clone();
+            let effective_threshold = match scored.get(1) {
+                Some(&(second_i, _)) => {
+                    let second_id = self.profiles[second_i].id.clone();
+                    threshold + self.margin_between(&best_id, &second_id)
+                }
+                None => threshold,
+            };
+            if best_score >= effective_threshold {
+                let profile = &mut self.profiles[best_i];
+                profile.push_turn(embedding, scan_id);
+                profile.last_seen = now;
+                if !profile.scans.iter().any(|s| s == scan_id) {
+                    profile.scans.push(scan_id.to_string());
+                }
+                return (best_id, false);
             }
-            (profile.id.clone(), false)
-        } else {
-            let id = uuid::Uuid::new_v4().to_string();
-            self.profiles.push(SpeakerProfile {
-                id: id.clone(),
-                name: None,
-                centroid: embedding.to_vec(),
-                samples: 1,
-                scans: vec![scan_id.to_string()],
-                turns: vec![TurnEmbedding {
-                    embedding: embedding.to_vec(),
-                    scan_id: scan_id.to_string(),
-                    start_secs: None,
-                    end_secs: None,
-                }],
-                first_seen: now,
-                last_seen: now,
-            });
-            (id, true)
         }
+
+        // No candidate cleared its (possibly margin-raised) threshold: enroll
+        // a brand-new profile, seeded with this embedding as its first turn.
+        let id = uuid::Uuid::new_v4().to_string();
+        self.profiles.push(SpeakerProfile {
+            id: id.clone(),
+            name: None,
+            centroid: embedding.to_vec(),
+            samples: 1,
+            scans: vec![scan_id.to_string()],
+            turns: vec![TurnEmbedding {
+                embedding: embedding.to_vec(),
+                scan_id: scan_id.to_string(),
+                start_secs: None,
+                end_secs: None,
+            }],
+            first_seen: now,
+            last_seen: now,
+        });
+        (id, true)
     }
 
     /// Renames the profile with the given `id`. Returns `false` if no
