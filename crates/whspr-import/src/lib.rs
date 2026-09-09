@@ -11,20 +11,20 @@
 //!
 //! # The two import paths
 //!
-//! - **Captions (instant).** `resolve` runs `yt-dlp --dump-single-json` and
-//!   reports what's available via `MediaInfo` — title, duration, chapters,
-//!   and which human / auto-generated caption languages exist. If a caption
-//!   track is present, `parse_captions` turns a downloaded WebVTT / srv /
-//!   json3 track into a `whspr_core::Transcript` with per-segment
-//!   timestamps, *without running any ASR model*.
-//! - **Audio (whisper).** When there are no usable captions, `download_audio`
+//! - **Captions (instant).** [`resolve`] runs `yt-dlp --dump-single-json`
+//!   and reports what's available via [`MediaInfo`] — title, duration,
+//!   chapters, and which human / auto-generated caption languages exist. If
+//!   a caption track is present, [`parse_captions`] turns a downloaded
+//!   WebVTT / srv / json3 track into a [`whspr_core::Transcript`] with
+//!   per-segment timestamps, *without running any ASR model*.
+//! - **Audio (whisper).** When there are no usable captions, [`download_audio`]
 //!   extracts the audio-only stream and transcodes it to a 16kHz mono WAV.
-//!   `download_to_audio` ties that to `whspr-audio`'s decode/resample so the
-//!   caller gets a `whspr_core::AudioBuffer` to hand to whisper.
+//!   [`download_to_audio`] ties that to `whspr-audio`'s decode/resample so
+//!   the caller gets an [`whspr_core::AudioBuffer`] to hand to whisper.
 //!
 //! # Tool discovery
 //!
-//! `resolve_tool` locates `yt-dlp`/`ffmpeg` with a fixed precedence — an
+//! [`resolve_tool`] locates `yt-dlp`/`ffmpeg` with a fixed precedence — an
 //! explicit env override, then a bundled copy inside the macOS `.app`
 //! (`<exe_dir>/../Resources/<tool>`), then `PATH` — mirroring the spirit of
 //! `whspr_asr::WhisperLocal::resolve_model_path`. The bundled location is
@@ -32,11 +32,11 @@
 //!
 //! # Temp-file ownership
 //!
-//! `download_audio` returns the path to a freshly written WAV in a temporary
-//! directory. **The caller owns that file and must delete it** after
-//! transcribing — this crate does not track or reap it. That delete-after-use
-//! policy is enforced at the app layer, not here, so the library stays a pure
-//! "URL in, path out" function.
+//! [`download_audio`] returns the path to a freshly written WAV in a
+//! temporary directory. **The caller owns that file and must delete it**
+//! after transcribing — this crate does not track or reap it. That
+//! delete-after-use policy is enforced at the app layer, not here, so the
+//! library stays a pure "URL in, path out" function.
 
 mod captions;
 mod download;
@@ -44,7 +44,7 @@ mod resolve;
 mod tools;
 
 pub use captions::{parse_captions, CaptionFormat};
-pub use download::ClipRange;
+pub use download::{download_audio, download_to_audio, ClipRange};
 pub use resolve::{
     parse_media_info, resolve, Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry,
 };
