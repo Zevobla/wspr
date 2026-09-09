@@ -379,8 +379,9 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 # (so `--skip-system-fonts --use-font-file "$FONT_FILE"` is identical). The
 # SVG is authored on the @2x 1440x960 canvas, so we render it 1:1 for the
 # Retina `background@2x.png` and at half size for the 1x `background.png`;
-# Finder auto-picks the @2x variant from the same folder. The footer's build
-# string is a __WHSPR_VERSION__ placeholder we substitute into a temp copy.
+# the two are then paired into one HiDPI TIFF (below) that Finder samples per
+# display scale. The footer's build string is a __WHSPR_VERSION__ placeholder
+# we substitute into a temp copy.
 DMG_SVG="$REPO_ROOT/crates/whspr-app/assets/dmg/background.svg"
 if [ ! -f "$DMG_SVG" ]; then
   echo "error: dmg background source not found at $DMG_SVG" >&2
@@ -402,6 +403,16 @@ nix shell nixpkgs#resvg --command resvg \
   --use-font-file "$FONT_FILE" \
   -w 720 -h 480 \
   "$DMG_SVG_TMP" "$BG_PNG"
+
+# Combine the 1x + 2x PNGs into a single multi-representation (HiDPI) TIFF.
+# Finder scales the background picture to fill the icon-view content rect; with
+# a lone 720x480 PNG it upscales that on a Retina display and the poster looks
+# soft/pixelated. A multi-rep TIFF lets Finder pick the 1440x960 @2x rep on a
+# 2x display, mapping 1:1 to physical pixels -> crisp. `-cathidpicheck` verifies
+# the second image is exactly 2x the first before pairing them.
+BG_TIFF="$WORK_DIR/background.tiff"
+echo "==> combining background.png + @2x -> HiDPI background.tiff (tiffutil)"
+tiffutil -cathidpicheck "$BG_PNG" "$BG_PNG_2X" -out "$BG_TIFF" >/dev/null
 
 # --- styled drag-to-install dmg -------------------------------------------
 # Build a "poster" disk image: the app and an /Applications alias sit inside
@@ -426,8 +437,7 @@ mkdir -p "$STAGE/.background"
 # copy intact; a broken signature would make macOS refuse to launch it.
 ditto "$APP" "$STAGE/whspr.app"
 ln -s /Applications "$STAGE/Applications"
-cp "$BG_PNG" "$STAGE/.background/background.png"
-cp "$BG_PNG_2X" "$STAGE/.background/background@2x.png"
+cp "$BG_TIFF" "$STAGE/.background/background.tiff"
 
 # Read-write image, sized to the staged tree + slack for Finder's .DS_Store.
 STAGE_KB="$(du -sk "$STAGE" | awk '{print $1}')"
@@ -476,7 +486,7 @@ tell application "Finder"
     set viewOptions to the icon view options of container window
     set arrangement of viewOptions to not arranged
     set icon size of viewOptions to 128
-    set background picture of viewOptions to file ".background:background.png"
+    set background picture of viewOptions to file ".background:background.tiff"
     set position of item "whspr.app" of container window to {190, 317}
     set position of item "Applications" of container window to {530, 317}
     update without registering applications
