@@ -39,10 +39,12 @@
 //! "URL in, path out" function.
 
 mod captions;
+mod download;
 mod resolve;
 mod tools;
 
 pub use captions::{parse_captions, CaptionFormat};
+pub use download::ClipRange;
 pub use resolve::{
     parse_media_info, resolve, Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry,
 };
