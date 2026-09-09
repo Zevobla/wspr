@@ -4,3 +4,5 @@
 //! The crate is built up module by module: the in-memory `@local/whspr`
 //! package ([`crate::package`]), the note templates, the source generator, and
 //! the Typst [`World`](world) that renders them.
+
+mod package;
