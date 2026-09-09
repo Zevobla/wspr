@@ -8,6 +8,7 @@
 //! rule-based number/date/time normalization to its output.
 
 mod llama_local;
+mod local_llm;
 mod normalize;
 mod tokens;
 
@@ -15,6 +16,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use llama_local::LlamaLocal;
+pub use local_llm::{GenOpts, LocalLlm};
 pub use normalize::NormalizingRefiner;
 use tokens::strip_special_tokens;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
