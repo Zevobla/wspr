@@ -5,7 +5,9 @@
 //! package ([`crate::package`]), the note templates, the source generator, and
 //! the Typst [`World`](world) that renders them.
 
+mod generate;
 mod package;
 mod templates;
 
+pub use generate::{export_typ, export_typ_to_path, generate_notes_typ, NotePoint, NotesMeta};
 pub use templates::Template;
