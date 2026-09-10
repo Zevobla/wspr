@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- whspr .dmg custom "Applications" mark, direction "Poster": a Modernist
+       folder silhouette in paper-white on transparent, matching the poster's
+       Applications well (see the comp). Flush 0-radius corners, straight edges,
+       no text: a single filled folder outline (landscape body + top-left tab)
+       that reads unmistakably as the install drop target on the red field.
+       Committed as a vector; rasterized to whspr-applications.icns at bundle
+       time by the same resvg pipeline as icon.svg, then applied as the custom
+       icon of the Applications symlink INSIDE the disk image only. Paper-white
+       (#f3f2f2) mirrors icon.svg's ground "w". -->
+  <path d="M112,232 L432,232 L432,312 L912,312 L912,792 L112,792 Z"
+        fill="#f3f2f2"/>
+</svg>
