@@ -27,14 +27,34 @@ pub struct GlobalHotkeyListener {
     hotkey: HotKey,
 }
 
+/// The fresh-install default global-hotkey modifiers.
+///
+/// On Windows `Ctrl+Space` collides with the IME language toggle, so the
+/// Windows default is `Ctrl+Shift+Space`; macOS and Linux keep the plain
+/// `Ctrl+Space`. The key stays [`Code::Space`] on every platform. This is
+/// only the default a fresh install starts with -- a persisted user hotkey
+/// still overrides it.
+///
+/// Written as a `cfg!` expression rather than a `#[cfg]` const pair so both
+/// arms are type-checked on every host (the Windows arm compiles on macOS
+/// too), then constant-folded to the host's value at build time.
+fn default_hotkey_modifiers() -> Modifiers {
+    if cfg!(target_os = "windows") {
+        Modifiers::CONTROL | Modifiers::SHIFT
+    } else {
+        Modifiers::CONTROL
+    }
+}
+
 impl GlobalHotkeyListener {
-    /// Creates a new global hotkey listener with a default hotkey (Ctrl+Space).
+    /// Creates a new global hotkey listener with the platform default hotkey
+    /// (`Ctrl+Space`, or `Ctrl+Shift+Space` on Windows).
     pub fn new() -> Result<Self> {
         let manager = GlobalHotKeyManager::new().map_err(|e| {
             WhsprError::Inject(format!("failed to create global hotkey manager: {}", e))
         })?;
 
-        let hotkey = HotKey::new(Some(Modifiers::CONTROL), Code::Space);
+        let hotkey = HotKey::new(Some(default_hotkey_modifiers()), Code::Space);
 
         manager
             .register(hotkey)
