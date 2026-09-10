@@ -401,6 +401,17 @@ mod tests {
     }
 
     #[test]
+    fn default_hotkey_modifiers_are_platform_specific() {
+        let mods = default_hotkey_modifiers();
+        // Windows defaults to Ctrl+Shift+Space (Ctrl+Space collides with the
+        // IME language toggle); macOS/Linux keep plain Ctrl+Space.
+        #[cfg(target_os = "windows")]
+        assert_eq!(mods, Modifiers::CONTROL | Modifiers::SHIFT);
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(mods, Modifiers::CONTROL);
+    }
+
+    #[test]
     fn pre_paste_delay_maps_millis_to_duration() {
         // 0 ms means no pause.
         assert_eq!(pre_paste_delay(0), Duration::ZERO);
