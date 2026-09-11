@@ -8,6 +8,7 @@
 mod asr;
 mod common;
 mod dirs;
+mod llm_search;
 mod refine;
 
 use iced::widget::{button, column, text_input};
