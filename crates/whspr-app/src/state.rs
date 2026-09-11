@@ -516,6 +516,22 @@ pub enum Message {
     /// the title bar (the window has no system title bar -- see
     /// `crate::hub::window_settings`).
     DragHubWindow,
+    /// Windows only: the custom caption's minimize button was pressed. The
+    /// OS min/maximize/close buttons don't exist on the borderless Windows
+    /// window (`decorations:false`), so the app draws its own and drives them
+    /// through iced's window commands (see `crate::hub::caption_windows` and
+    /// the handlers in `crate::app`). macOS/Linux keep the system title bar's
+    /// controls, so these variants are cfg-gated off there.
+    #[cfg(target_os = "windows")]
+    MinimizeHubWindow,
+    /// Windows only: the custom caption's maximize/restore button was pressed.
+    #[cfg(target_os = "windows")]
+    ToggleMaximizeHubWindow,
+    /// Windows only: the custom caption's close button was pressed. Routes
+    /// through the app's clean-exit path (`iced::exit`), the same one the
+    /// tray "Quit" action uses.
+    #[cfg(target_os = "windows")]
+    CloseHubWindow,
     /// Fired shortly after the Hub first renders when `WHSPR_SCREENSHOT` is
     /// set: triggers the one-shot window capture (see `crate::screenshot`).
     TakeScreenshot,

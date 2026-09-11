@@ -393,6 +393,22 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(id) => window::drag(id),
             None => Task::none(),
         },
+        // The Windows caption controls (the borderless window has no system
+        // title bar -- see `crate::hub::window_settings`). Each drives an
+        // iced 0.14 window command; `close` routes through the same clean
+        // `iced::exit` the tray "Quit" action uses.
+        #[cfg(target_os = "windows")]
+        Message::MinimizeHubWindow => match state.hub_window {
+            Some(id) => window::minimize(id, true),
+            None => Task::none(),
+        },
+        #[cfg(target_os = "windows")]
+        Message::ToggleMaximizeHubWindow => match state.hub_window {
+            Some(id) => window::toggle_maximize(id),
+            None => Task::none(),
+        },
+        #[cfg(target_os = "windows")]
+        Message::CloseHubWindow => iced::exit(),
         Message::TakeScreenshot => match state.hub_window {
             Some(id) if !state.screenshot_taken => {
                 state.screenshot_taken = true;
