@@ -94,31 +94,42 @@ fn map_hotkey_state(state: HotKeyState) -> HotkeyEvent {
     }
 }
 
+/// Spawns the background thread that forwards process-global hotkey events
+/// onto a fresh channel, returning its receiving end.
+///
+/// Shared by every platform's [`HotkeyListener`] impl: events are read from
+/// the process-global [`GlobalHotKeyEvent::receiver()`] regardless of how (or
+/// on which thread) the underlying hotkey was registered, so the forwarding
+/// logic doesn't depend on the platform's registration strategy.
+fn subscribe_global_events() -> mpsc::Receiver<HotkeyEvent> {
+    let (tx, rx) = mpsc::channel(10);
+
+    // Spawn a background thread that listens to global hotkey events
+    // We use a separate thread because global_hotkey uses crossbeam channels
+    thread::spawn(move || {
+        let receiver = GlobalHotKeyEvent::receiver();
+
+        while let Ok(event) = receiver.recv() {
+            let hk_event = map_hotkey_state(event.state);
+
+            // `blocking_send` is designed exactly for sending from a
+            // synchronous, non-async thread into a tokio mpsc channel —
+            // it doesn't require any ambient tokio runtime context on
+            // this thread (unlike `Handle::try_current` + `block_on`,
+            // which fails here since this is a plain `std::thread`).
+            if tx.blocking_send(hk_event).is_err() {
+                // Receiver dropped, stop listening
+                break;
+            }
+        }
+    });
+
+    rx
+}
+
 impl HotkeyListener for GlobalHotkeyListener {
     fn subscribe(&self) -> mpsc::Receiver<HotkeyEvent> {
-        let (tx, rx) = mpsc::channel(10);
-
-        // Spawn a background thread that listens to global hotkey events
-        // We use a separate thread because global_hotkey uses crossbeam channels
-        thread::spawn(move || {
-            let receiver = GlobalHotKeyEvent::receiver();
-
-            while let Ok(event) = receiver.recv() {
-                let hk_event = map_hotkey_state(event.state);
-
-                // `blocking_send` is designed exactly for sending from a
-                // synchronous, non-async thread into a tokio mpsc channel —
-                // it doesn't require any ambient tokio runtime context on
-                // this thread (unlike `Handle::try_current` + `block_on`,
-                // which fails here since this is a plain `std::thread`).
-                if tx.blocking_send(hk_event).is_err() {
-                    // Receiver dropped, stop listening
-                    break;
-                }
-            }
-        });
-
-        rx
+        subscribe_global_events()
     }
 }
 
