@@ -160,6 +160,12 @@ pub struct State {
     /// Whether a HuggingFace login or model download is in flight -- disables
     /// the Models tab's action buttons so a second one can't be kicked off.
     pub hf_busy: bool,
+    /// Live contents of the Models tab's "sign in with a token" field: a
+    /// HuggingFace access token the user pastes in place of the browser OAuth
+    /// flow. Held here (never logged) only until `Message::HfTokenSubmit`
+    /// validates it via `whspr_hf::oauth::whoami` and hands it to the existing
+    /// `HfSignedIn` persistence path; cleared the moment submit fires.
+    pub hf_token_input: String,
     /// Every model file found across the effective model directories at boot
     /// / after a download or delete (see `crate::hf::scan`), split into ASR
     /// (whisper) and LLM (GGUF refiner) buckets. Populates both unified
@@ -234,6 +240,7 @@ impl State {
             hf_username: None,
             hf_status,
             hf_busy: false,
+            hf_token_input: String::new(),
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
             screenshot_path: None,
@@ -477,6 +484,15 @@ pub enum Message {
     /// message. On success the token is saved to config and installed models
     /// are rescanned.
     HfSignedIn(Result<(String, String), String>),
+    /// The user edited the Models tab's "sign in with a token" field: updates
+    /// `State::hf_token_input` (the pasted HuggingFace access token). Never
+    /// logged -- treated as a credential.
+    HfTokenInput(String),
+    /// The user submitted the pasted token: validates it via
+    /// `whspr_hf::oauth::whoami` and, on success, routes into the existing
+    /// `HfSignedIn(Ok((username, token)))` path so the token is persisted the
+    /// same way the OAuth flow persists it.
+    HfTokenSubmit,
     /// The user clicked "Sign out": clears the saved token from config.
     HfSignOut,
     /// The user clicked "Download" for the curated whisper model with this id

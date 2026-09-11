@@ -10,7 +10,7 @@ mod common;
 mod dirs;
 mod refine;
 
-use iced::widget::{button, column};
+use iced::widget::{button, column, text_input};
 use iced::Element;
 
 use crate::hub::common::section;
@@ -74,13 +74,16 @@ fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                 .style(move |_theme, status| styles::button::filled(scheme, status))
                 .on_press_maybe((!state.hf_busy).then_some(Message::HfSignIn)),
         );
+        body = body.push(token_login(state, scheme));
     } else {
         body = body.push(body_text(
-            "Set [huggingface].oauth-client-id in your config to enable sign-in. You can still \
-             download the public models below without signing in."
+            "Sign in to download gated models and use your account. No OAuth app required -- \
+             paste a HuggingFace access token below. (You can also enable browser sign-in by \
+             setting [huggingface].oauth-client-id in your config.)"
                 .to_string(),
             scheme,
         ));
+        body = body.push(token_login(state, scheme));
     }
 
     if let Some(status) = &state.hf_status {
@@ -88,6 +91,44 @@ fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     }
 
     section(scheme, "HuggingFace account", body.into())
+}
+
+/// The token-paste sign-in control shown in BOTH not-signed-in states: a
+/// masked input for a HuggingFace access token plus a submit button, above a
+/// hint pointing at the token settings page. This is the primary sign-in path
+/// when no OAuth client id is configured, and sits alongside the browser
+/// "Sign in with HuggingFace" button when one is. The token is masked
+/// (`.secure(true)`) and never leaves `hf_token_input` until `HfTokenSubmit`
+/// validates it (see `crate::hf`), which then reuses the OAuth flow's
+/// `HfSignedIn` persistence path.
+fn token_login<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let input = text_input("hf_...", &state.hf_token_input)
+        .secure(true)
+        .on_input(Message::HfTokenInput)
+        .on_submit(Message::HfTokenSubmit)
+        .style(move |_theme, status| styles::text_input::outlined(scheme, status));
+
+    let can_submit = !state.hf_busy && !state.hf_token_input.trim().is_empty();
+    let submit_label = if state.hf_busy {
+        "Checking..."
+    } else {
+        "Sign in with token"
+    };
+    let submit = button(label_text(submit_label))
+        .style(move |_theme, status| styles::button::filled(scheme, status))
+        .on_press_maybe(can_submit.then_some(Message::HfTokenSubmit));
+
+    column![
+        input,
+        submit,
+        body_text(
+            "Paste an access token from huggingface.co/settings/tokens (a read token is enough)."
+                .to_string(),
+            scheme,
+        ),
+    ]
+    .spacing(spacing::SM)
+    .into()
 }
 
 /// A one-line note reporting total RAM and the usable GPU/unified-memory
