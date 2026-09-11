@@ -13,6 +13,11 @@
 use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
 use iced::{Alignment, Background, Border, Element, Length};
 
+// Windows-only custom caption/resize chrome for the borderless window (see
+// `window_settings`). Compiled only on Windows so macOS/Linux chrome is
+// untouched.
+#[cfg(target_os = "windows")]
+mod caption_windows;
 mod common;
 mod dictate;
 mod history;
@@ -106,7 +111,29 @@ pub fn window_settings() -> iced::window::Settings {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// On Windows the OS title bar -- and with it the system min/maximize/close
+/// buttons and the resize border -- is removed with `decorations: false`, so
+/// the Modernist paper header runs clean to the window's top edge, matching
+/// the borderless macOS look. The app then draws its own caption controls
+/// and wires window drag + edge resize itself (see `caption_windows`).
+/// `CornerPreference::Round` keeps the Win11 rounded corners the removed
+/// frame would otherwise have provided. The undecorated drop shadow is left
+/// off deliberately: enabling it draws a thin 1px line across the top of the
+/// window (documented winit behavior) that would break the seamless header.
+#[cfg(target_os = "windows")]
+pub fn window_settings() -> iced::window::Settings {
+    iced::window::Settings {
+        decorations: false,
+        platform_specific: iced::window::settings::PlatformSpecific {
+            corner_preference: iced::window::settings::platform::CornerPreference::Round,
+            ..iced::window::settings::PlatformSpecific::default()
+        },
+        icon: window_icon(),
+        ..iced::window::Settings::default()
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
         icon: window_icon(),
@@ -155,7 +182,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-    container(
+    let hub: Element<'_, Message> = container(
         row![
             nav_rail(state, scheme),
             widgets::vrule(spacing::layout::RULE, scheme),
@@ -165,7 +192,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .height(Length::Fill),
     )
     .style(move |_theme| styles::container::surface(scheme))
-    .into()
+    .into();
+
+    // On Windows the borderless window (see `window_settings`) has no system
+    // title bar, so overlay our own caption controls and resize hit-test
+    // zones. macOS/Linux keep the OS chrome and return `hub` untouched.
+    #[cfg(target_os = "windows")]
+    let hub = caption_windows::chrome(hub, scheme);
+
+    hub
 }
 
 /// The rail's label for a screen -- pure so the wording stays testable.
