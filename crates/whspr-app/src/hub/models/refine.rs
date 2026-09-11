@@ -67,6 +67,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                 scheme,
             ),
             catalog_table(scheme, rows),
+            super::llm_search::view(state, scheme),
         ]
         .spacing(spacing::MD)
         .into(),

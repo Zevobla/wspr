@@ -13,6 +13,32 @@ use whspr_hf::{HfIdentity, OauthConfig, ScanResult};
 
 use crate::state::{Message, State};
 
+/// GUI state for the refiner section's live HuggingFace GGUF search: the query
+/// text, the latest repo hits, which repo (if any) is expanded and its `.gguf`
+/// file listing, plus busy/error/searched flags. Kept here (with the rest of
+/// the Models-tab glue) rather than in `state.rs` so that file stays under the
+/// AA-06 line cap. A search download reuses the existing LLM download + rescan
+/// path (see the `LlmSearchDownload` arm in [`update`]), so a searched model
+/// appears in the refiner selector exactly like a curated one.
+#[derive(Debug, Default)]
+pub struct LlmSearchState {
+    /// Live contents of the search text input.
+    pub query: String,
+    /// The most recent search's repo hits (empty before any search).
+    pub results: Vec<whspr_hf::GgufRepoHit>,
+    /// The repo whose `.gguf` file list is currently expanded, if any.
+    pub selected_repo: Option<String>,
+    /// The expanded repo's `.gguf` files (path + size), once fetched.
+    pub files: Vec<whspr_hf::GgufFile>,
+    /// True while a search or file-listing request is in flight.
+    pub busy: bool,
+    /// The last search/list error to surface to the user, if any.
+    pub error: Option<String>,
+    /// True once at least one search has completed, so the view can tell an
+    /// empty result set ("no results") apart from the initial blank state.
+    pub searched: bool,
+}
+
 /// Handles the Models-tab (HuggingFace) messages, mutating `state` and
 /// returning `Ok(task)`. Any other message is handed straight back as
 /// `Err(message)` so `crate::app::update`'s catch-all can forward it to the
@@ -123,6 +149,71 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
             state.hf_status = Some(format!("Delete failed: {error}"));
             Task::none()
         }
+        Message::LlmSearchInput(query) => {
+            state.llm_search.query = query;
+            Task::none()
+        }
+        Message::LlmSearchSubmit => {
+            let query = state.llm_search.query.trim().to_string();
+            if query.is_empty() {
+                Task::none()
+            } else {
+                state.llm_search.busy = true;
+                state.llm_search.error = None;
+                state.llm_search.selected_repo = None;
+                state.llm_search.files.clear();
+                let token = state.config.huggingface.token.clone();
+                Task::perform(run_search_llm(query, token), Message::LlmSearchResults)
+            }
+        }
+        Message::LlmSearchResults(Ok(results)) => {
+            state.llm_search.busy = false;
+            state.llm_search.searched = true;
+            state.llm_search.results = results;
+            Task::none()
+        }
+        Message::LlmSearchResults(Err(error)) => {
+            state.llm_search.busy = false;
+            state.llm_search.searched = true;
+            state.llm_search.results.clear();
+            state.llm_search.error = Some(format!("Search failed: {error}"));
+            Task::none()
+        }
+        Message::LlmSearchSelectRepo(repo) => {
+            // Toggle: clicking the already-open repo collapses its file list.
+            if state.llm_search.selected_repo.as_deref() == Some(repo.as_str()) {
+                state.llm_search.selected_repo = None;
+                state.llm_search.files.clear();
+                Task::none()
+            } else {
+                state.llm_search.selected_repo = Some(repo.clone());
+                state.llm_search.files.clear();
+                state.llm_search.busy = true;
+                state.llm_search.error = None;
+                let token = state.config.huggingface.token.clone();
+                Task::perform(run_list_gguf_files(repo, token), Message::LlmSearchFiles)
+            }
+        }
+        Message::LlmSearchFiles(Ok(files)) => {
+            state.llm_search.busy = false;
+            state.llm_search.files = files;
+            Task::none()
+        }
+        Message::LlmSearchFiles(Err(error)) => {
+            state.llm_search.busy = false;
+            state.llm_search.error = Some(format!("Could not list files: {error}"));
+            Task::none()
+        }
+        Message::LlmSearchDownload(repo, filename) => match start_download(state, &filename) {
+            Some(dir) => {
+                let token = state.config.huggingface.token.clone();
+                Task::perform(
+                    run_download_gguf(repo, filename, token, dir),
+                    Message::HfLlmDownloaded,
+                )
+            }
+            None => Task::none(),
+        },
         Message::HfAddModelDir => Task::perform(pick_model_dir(), Message::HfModelDirPicked),
         Message::HfModelDirPicked(None) => Task::none(),
         Message::HfModelDirPicked(Some(dir)) => {
@@ -285,6 +376,45 @@ pub async fn run_download_llm(
     let model = whspr_hf::llm_model_by_id(model_id)
         .ok_or_else(|| format!("unknown llm model id: {model_id}"))?;
     whspr_hf::download_llm(model, token, &dir, None)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Searches HuggingFace for GGUF refiner repos matching `query`, using the
+/// saved `token` (if any) as the bearer. Errors are stringified for the search
+/// section's error line.
+pub async fn run_search_llm(
+    query: String,
+    token: Option<String>,
+) -> Result<Vec<whspr_hf::GgufRepoHit>, String> {
+    whspr_hf::search_gguf(&query, token.as_deref(), whspr_hf::DEFAULT_SEARCH_LIMIT)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Lists the `.gguf` files in `repo` (with sizes, including subfolders), using
+/// the saved `token` if present. Errors are stringified for the search
+/// section's error line.
+pub async fn run_list_gguf_files(
+    repo: String,
+    token: Option<String>,
+) -> Result<Vec<whspr_hf::GgufFile>, String> {
+    whspr_hf::list_gguf_files(&repo, token.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Downloads a searched GGUF `filename` from `repo` into `dir`, reusing the
+/// same flat-file download path the curated LLMs use so the result flows
+/// through the existing rescan (`HfLlmDownloaded`). Same token/return semantics
+/// as [`run_download_llm`].
+pub async fn run_download_gguf(
+    repo: String,
+    filename: String,
+    token: Option<String>,
+    dir: PathBuf,
+) -> Result<PathBuf, String> {
+    whspr_hf::download_gguf(&repo, &filename, token, &dir, None)
         .await
         .map_err(|e| e.to_string())
 }

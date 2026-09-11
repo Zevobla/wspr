@@ -174,6 +174,11 @@ pub struct State {
     /// This machine's RAM snapshot, probed once at boot, used for the
     /// per-model "fits your machine" badge (see `whspr_hf::HardwareSpecs`).
     pub hf_specs: whspr_hf::HardwareSpecs,
+    /// Live HuggingFace GGUF search state for the refiner section (query,
+    /// results, the expanded repo's file list, busy/error flags). Held in one
+    /// struct so `state.rs` stays under the AA-06 line cap -- see
+    /// `crate::hf::LlmSearchState`.
+    pub llm_search: crate::hf::LlmSearchState,
     /// When set (from the `WHSPR_SCREENSHOT` env var at boot), the Hub
     /// window is captured to this PNG path shortly after it first renders,
     /// then the app exits -- a permission-free headless UI-verification path
@@ -243,6 +248,7 @@ impl State {
             hf_token_input: String::new(),
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
+            llm_search: crate::hf::LlmSearchState::default(),
             screenshot_path: None,
             screenshot_taken: false,
             needs_speaker_model: false,
@@ -519,6 +525,22 @@ pub enum Message {
     /// A model delete finished: the deleted path on success, or an error
     /// message. On success the model dirs are rescanned.
     HfModelDeleted(Result<std::path::PathBuf, String>),
+    /// The user typed in the refiner section's HuggingFace GGUF search box.
+    LlmSearchInput(String),
+    /// The user submitted the GGUF search (Enter or the Search button); an
+    /// empty/whitespace query is ignored (see `crate::hf`).
+    LlmSearchSubmit,
+    /// A GGUF repo search finished: the repo hits, or an error message.
+    LlmSearchResults(Result<Vec<whspr_hf::GgufRepoHit>, String>),
+    /// The user expanded a search-result repo to list its `.gguf` files
+    /// (carries the repo id); clicking the open one again collapses it.
+    LlmSearchSelectRepo(String),
+    /// A repo's GGUF file listing finished: the files, or an error message.
+    LlmSearchFiles(Result<Vec<whspr_hf::GgufFile>, String>),
+    /// The user clicked Download on a searched GGUF file: `(repo, repo-relative
+    /// filename)`. Routes into the existing LLM download -> rescan path so the
+    /// model then appears in the refiner selector.
+    LlmSearchDownload(String, String),
     /// The user clicked "Add directory": opens a native folder picker.
     HfAddModelDir,
     /// The folder picker resolved (`None` if the user cancelled). A new dir is
