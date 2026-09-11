@@ -166,7 +166,14 @@ pub(crate) async fn download_file(
     }
     .map_err(|e| WhsprError::Other(format!("failed to download {filename}: {e}")))?;
 
-    let dest = models_dir.join(filename);
+    // Store flat: a subfolder-qualified repo path (community GGUFs sometimes
+    // nest the quant in a folder, e.g. `Q4_K_M/model.gguf`) still lands as a
+    // single `models_dir/<basename>` file the flat `scan` finds. Curated
+    // filenames have no slash, so this is a no-op for them.
+    let dest_name = Path::new(filename)
+        .file_name()
+        .ok_or_else(|| WhsprError::Other(format!("model path has no file name: {filename}")))?;
+    let dest = models_dir.join(dest_name);
     std::fs::copy(&cached, &dest).map_err(|e| {
         WhsprError::Other(format!("failed to place model in {}: {e}", dest.display()))
     })?;
