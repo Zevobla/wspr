@@ -149,6 +149,71 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
             state.hf_status = Some(format!("Delete failed: {error}"));
             Task::none()
         }
+        Message::LlmSearchInput(query) => {
+            state.llm_search.query = query;
+            Task::none()
+        }
+        Message::LlmSearchSubmit => {
+            let query = state.llm_search.query.trim().to_string();
+            if query.is_empty() {
+                Task::none()
+            } else {
+                state.llm_search.busy = true;
+                state.llm_search.error = None;
+                state.llm_search.selected_repo = None;
+                state.llm_search.files.clear();
+                let token = state.config.huggingface.token.clone();
+                Task::perform(run_search_llm(query, token), Message::LlmSearchResults)
+            }
+        }
+        Message::LlmSearchResults(Ok(results)) => {
+            state.llm_search.busy = false;
+            state.llm_search.searched = true;
+            state.llm_search.results = results;
+            Task::none()
+        }
+        Message::LlmSearchResults(Err(error)) => {
+            state.llm_search.busy = false;
+            state.llm_search.searched = true;
+            state.llm_search.results.clear();
+            state.llm_search.error = Some(format!("Search failed: {error}"));
+            Task::none()
+        }
+        Message::LlmSearchSelectRepo(repo) => {
+            // Toggle: clicking the already-open repo collapses its file list.
+            if state.llm_search.selected_repo.as_deref() == Some(repo.as_str()) {
+                state.llm_search.selected_repo = None;
+                state.llm_search.files.clear();
+                Task::none()
+            } else {
+                state.llm_search.selected_repo = Some(repo.clone());
+                state.llm_search.files.clear();
+                state.llm_search.busy = true;
+                state.llm_search.error = None;
+                let token = state.config.huggingface.token.clone();
+                Task::perform(run_list_gguf_files(repo, token), Message::LlmSearchFiles)
+            }
+        }
+        Message::LlmSearchFiles(Ok(files)) => {
+            state.llm_search.busy = false;
+            state.llm_search.files = files;
+            Task::none()
+        }
+        Message::LlmSearchFiles(Err(error)) => {
+            state.llm_search.busy = false;
+            state.llm_search.error = Some(format!("Could not list files: {error}"));
+            Task::none()
+        }
+        Message::LlmSearchDownload(repo, filename) => match start_download(state, &filename) {
+            Some(dir) => {
+                let token = state.config.huggingface.token.clone();
+                Task::perform(
+                    run_download_gguf(repo, filename, token, dir),
+                    Message::HfLlmDownloaded,
+                )
+            }
+            None => Task::none(),
+        },
         Message::HfAddModelDir => Task::perform(pick_model_dir(), Message::HfModelDirPicked),
         Message::HfModelDirPicked(None) => Task::none(),
         Message::HfModelDirPicked(Some(dir)) => {
