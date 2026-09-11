@@ -49,6 +49,7 @@ pub mod gguf;
 pub mod hardware;
 pub mod models;
 pub mod oauth;
+pub mod search;
 
 pub use gguf::{read_metadata as read_gguf_metadata, GgufMetadata};
 pub use hardware::{
@@ -64,3 +65,4 @@ pub use models::{
 pub use oauth::{
     run_login, AuthSession, HfIdentity, OauthConfig, DEFAULT_LOGIN_TIMEOUT, DEFAULT_REDIRECT_PORT,
 };
+pub use search::{GgufFile, GgufRepoHit};
