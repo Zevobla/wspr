@@ -89,6 +89,34 @@ pub fn parse_search_results(body: &str) -> Result<Vec<GgufRepoHit>> {
         .collect())
 }
 
+/// Parses a HuggingFace repo tree response (`/tree/main?recursive=true`, a
+/// JSON array of file/directory entries) into the `.gguf` files it contains,
+/// including any nested in subfolders. Directories and non-GGUF files are
+/// dropped; the result is sorted by path for a stable list order. Pure --
+/// unit-tested, never hits the network.
+pub fn parse_gguf_tree(body: &str) -> Result<Vec<GgufFile>> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| WhsprError::Other(format!("could not parse HF tree response: {e}")))?;
+    let array = value
+        .as_array()
+        .ok_or_else(|| WhsprError::Other("HF tree response was not a JSON array".to_string()))?;
+    let mut files: Vec<GgufFile> = array
+        .iter()
+        .filter_map(|item| {
+            let path = item.get("path").and_then(|v| v.as_str())?;
+            if !path.to_ascii_lowercase().ends_with(".gguf") {
+                return None;
+            }
+            Some(GgufFile {
+                path: path.to_string(),
+                size_bytes: item.get("size").map(json_u64).unwrap_or(0),
+            })
+        })
+        .collect();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,5 +165,42 @@ mod tests {
     fn parse_search_results_rejects_non_array_json() {
         assert!(parse_search_results(r#"{"error":"nope"}"#).is_err());
         assert!(parse_search_results("not json at all").is_err());
+    }
+
+    const TREE_SAMPLE: &str = r#"[
+      {"type":"directory","path":"assets","oid":"a"},
+      {"type":"file","path":"README.md","size":1024,"oid":"b"},
+      {"type":"file","path":"Llama-3.2-3B-Instruct-Q8_0.gguf","size":3421000000,"oid":"d"},
+      {"type":"file","path":"Llama-3.2-3B-Instruct-Q4_K_M.gguf","size":2019377664,"oid":"c"},
+      {"type":"file","path":"Q4_K_M/split-model.gguf","size":123456,"oid":"e"}
+    ]"#;
+
+    #[test]
+    fn parse_gguf_tree_keeps_only_gguf_files_including_subfolders() {
+        let files = parse_gguf_tree(TREE_SAMPLE).unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        // README.md and the `assets` directory are dropped; the subfolder GGUF
+        // is kept; the list is sorted by path.
+        assert_eq!(
+            paths,
+            vec![
+                "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+                "Llama-3.2-3B-Instruct-Q8_0.gguf",
+                "Q4_K_M/split-model.gguf",
+            ]
+        );
+        assert_eq!(files[0].size_bytes, 2_019_377_664);
+    }
+
+    #[test]
+    fn parse_gguf_tree_is_case_insensitive_on_extension() {
+        let files = parse_gguf_tree(r#"[{"type":"file","path":"Model.GGUF","size":7}]"#).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].size_bytes, 7);
+    }
+
+    #[test]
+    fn parse_gguf_tree_rejects_non_array_json() {
+        assert!(parse_gguf_tree(r#"{"error":"gated"}"#).is_err());
     }
 }
