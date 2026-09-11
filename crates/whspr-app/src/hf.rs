@@ -13,6 +13,32 @@ use whspr_hf::{HfIdentity, OauthConfig, ScanResult};
 
 use crate::state::{Message, State};
 
+/// GUI state for the refiner section's live HuggingFace GGUF search: the query
+/// text, the latest repo hits, which repo (if any) is expanded and its `.gguf`
+/// file listing, plus busy/error/searched flags. Kept here (with the rest of
+/// the Models-tab glue) rather than in `state.rs` so that file stays under the
+/// AA-06 line cap. A search download reuses the existing LLM download + rescan
+/// path (see the `LlmSearchDownload` arm in [`update`]), so a searched model
+/// appears in the refiner selector exactly like a curated one.
+#[derive(Debug, Default)]
+pub struct LlmSearchState {
+    /// Live contents of the search text input.
+    pub query: String,
+    /// The most recent search's repo hits (empty before any search).
+    pub results: Vec<whspr_hf::GgufRepoHit>,
+    /// The repo whose `.gguf` file list is currently expanded, if any.
+    pub selected_repo: Option<String>,
+    /// The expanded repo's `.gguf` files (path + size), once fetched.
+    pub files: Vec<whspr_hf::GgufFile>,
+    /// True while a search or file-listing request is in flight.
+    pub busy: bool,
+    /// The last search/list error to surface to the user, if any.
+    pub error: Option<String>,
+    /// True once at least one search has completed, so the view can tell an
+    /// empty result set ("no results") apart from the initial blank state.
+    pub searched: bool,
+}
+
 /// Handles the Models-tab (HuggingFace) messages, mutating `state` and
 /// returning `Ok(task)`. Any other message is handed straight back as
 /// `Err(message)` so `crate::app::update`'s catch-all can forward it to the
