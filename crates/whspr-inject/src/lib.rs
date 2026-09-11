@@ -2,10 +2,10 @@
 //! `whspr_core::HotkeyListener` and `whspr_core::TextSink`.
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use global_hotkey::hotkey::Modifiers;
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use tokio::sync::mpsc;
 
@@ -14,18 +14,24 @@ use whspr_core::{HotkeyEvent, HotkeyListener, Result, TextSink, WhsprError};
 mod clipboard;
 mod debounce;
 
+// The OS-level hotkey listener has one file per platform: off Windows the
+// manager is `Send + Sync` and owned directly; on Windows it's `!Send +
+// !Sync` and driven from a message-pump thread. Each file defines its own
+// `GlobalHotkeyListener`, re-exported here so the rest of the crate (and the
+// un-gated `impl HotkeyListener` below) sees a single type.
+#[cfg(not(windows))]
+mod hotkey_unix;
+#[cfg(not(windows))]
+pub use hotkey_unix::GlobalHotkeyListener;
+
+#[cfg(windows)]
+mod hotkey_windows;
+#[cfg(windows)]
+pub use hotkey_windows::GlobalHotkeyListener;
+
 use clipboard::{stage_and_paste, ArboardClipboard, PasteOutcome};
 
 pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
-
-/// Listens for the configured global hotkey via the OS-level hotkey APIs.
-pub struct GlobalHotkeyListener {
-    // Kept alive for the listener's lifetime, and used on drop to release
-    // the hotkey.
-    manager: Arc<GlobalHotKeyManager>,
-    // The registered combo, remembered so `Drop` can unregister exactly it.
-    hotkey: HotKey,
-}
 
 /// The fresh-install default global-hotkey modifiers.
 ///
@@ -38,49 +44,11 @@ pub struct GlobalHotkeyListener {
 /// Written as a `cfg!` expression rather than a `#[cfg]` const pair so both
 /// arms are type-checked on every host (the Windows arm compiles on macOS
 /// too), then constant-folded to the host's value at build time.
-fn default_hotkey_modifiers() -> Modifiers {
+pub(crate) fn default_hotkey_modifiers() -> Modifiers {
     if cfg!(target_os = "windows") {
         Modifiers::CONTROL | Modifiers::SHIFT
     } else {
         Modifiers::CONTROL
-    }
-}
-
-impl GlobalHotkeyListener {
-    /// Creates a new global hotkey listener with the platform default hotkey
-    /// (`Ctrl+Space`, or `Ctrl+Shift+Space` on Windows).
-    pub fn new() -> Result<Self> {
-        let manager = GlobalHotKeyManager::new().map_err(|e| {
-            WhsprError::Inject(format!("failed to create global hotkey manager: {}", e))
-        })?;
-
-        let hotkey = HotKey::new(Some(default_hotkey_modifiers()), Code::Space);
-
-        manager
-            .register(hotkey)
-            .map_err(|e| WhsprError::Inject(format!("failed to register global hotkey: {}", e)))?;
-
-        Ok(GlobalHotkeyListener {
-            manager: Arc::new(manager),
-            hotkey,
-        })
-    }
-}
-
-impl Default for GlobalHotkeyListener {
-    fn default() -> Self {
-        Self::new().expect("failed to initialize GlobalHotkeyListener")
-    }
-}
-
-impl Drop for GlobalHotkeyListener {
-    /// Releases the OS-level hotkey when the listener is dropped (app exit or
-    /// teardown), so the combo isn't left registered with the system after
-    /// the process goes away (D-13). Best-effort: a failure here isn't
-    /// actionable during teardown and `Drop` must never panic, so the result
-    /// is ignored.
-    fn drop(&mut self) {
-        let _ = self.manager.unregister(self.hotkey);
     }
 }
 
@@ -94,31 +62,42 @@ fn map_hotkey_state(state: HotKeyState) -> HotkeyEvent {
     }
 }
 
+/// Spawns the background thread that forwards process-global hotkey events
+/// onto a fresh channel, returning its receiving end.
+///
+/// Shared by every platform's [`HotkeyListener`] impl: events are read from
+/// the process-global [`GlobalHotKeyEvent::receiver()`] regardless of how (or
+/// on which thread) the underlying hotkey was registered, so the forwarding
+/// logic doesn't depend on the platform's registration strategy.
+fn subscribe_global_events() -> mpsc::Receiver<HotkeyEvent> {
+    let (tx, rx) = mpsc::channel(10);
+
+    // Spawn a background thread that listens to global hotkey events
+    // We use a separate thread because global_hotkey uses crossbeam channels
+    thread::spawn(move || {
+        let receiver = GlobalHotKeyEvent::receiver();
+
+        while let Ok(event) = receiver.recv() {
+            let hk_event = map_hotkey_state(event.state);
+
+            // `blocking_send` is designed exactly for sending from a
+            // synchronous, non-async thread into a tokio mpsc channel —
+            // it doesn't require any ambient tokio runtime context on
+            // this thread (unlike `Handle::try_current` + `block_on`,
+            // which fails here since this is a plain `std::thread`).
+            if tx.blocking_send(hk_event).is_err() {
+                // Receiver dropped, stop listening
+                break;
+            }
+        }
+    });
+
+    rx
+}
+
 impl HotkeyListener for GlobalHotkeyListener {
     fn subscribe(&self) -> mpsc::Receiver<HotkeyEvent> {
-        let (tx, rx) = mpsc::channel(10);
-
-        // Spawn a background thread that listens to global hotkey events
-        // We use a separate thread because global_hotkey uses crossbeam channels
-        thread::spawn(move || {
-            let receiver = GlobalHotKeyEvent::receiver();
-
-            while let Ok(event) = receiver.recv() {
-                let hk_event = map_hotkey_state(event.state);
-
-                // `blocking_send` is designed exactly for sending from a
-                // synchronous, non-async thread into a tokio mpsc channel —
-                // it doesn't require any ambient tokio runtime context on
-                // this thread (unlike `Handle::try_current` + `block_on`,
-                // which fails here since this is a plain `std::thread`).
-                if tx.blocking_send(hk_event).is_err() {
-                    // Receiver dropped, stop listening
-                    break;
-                }
-            }
-        });
-
-        rx
+        subscribe_global_events()
     }
 }
 
