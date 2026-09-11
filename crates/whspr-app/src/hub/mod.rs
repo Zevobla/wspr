@@ -106,7 +106,29 @@ pub fn window_settings() -> iced::window::Settings {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// On Windows the OS title bar -- and with it the system min/maximize/close
+/// buttons and the resize border -- is removed with `decorations: false`, so
+/// the Modernist paper header runs clean to the window's top edge, matching
+/// the borderless macOS look. The app then draws its own caption controls
+/// and wires window drag + edge resize itself (see `caption_windows`).
+/// `CornerPreference::Round` keeps the Win11 rounded corners the removed
+/// frame would otherwise have provided. The undecorated drop shadow is left
+/// off deliberately: enabling it draws a thin 1px line across the top of the
+/// window (documented winit behavior) that would break the seamless header.
+#[cfg(target_os = "windows")]
+pub fn window_settings() -> iced::window::Settings {
+    iced::window::Settings {
+        decorations: false,
+        platform_specific: iced::window::settings::PlatformSpecific {
+            corner_preference: iced::window::settings::platform::CornerPreference::Round,
+            ..iced::window::settings::PlatformSpecific::default()
+        },
+        icon: window_icon(),
+        ..iced::window::Settings::default()
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
         icon: window_icon(),
