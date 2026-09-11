@@ -315,6 +315,45 @@ pub async fn run_download_llm(
         .map_err(|e| e.to_string())
 }
 
+/// Searches HuggingFace for GGUF refiner repos matching `query`, using the
+/// saved `token` (if any) as the bearer. Errors are stringified for the search
+/// section's error line.
+pub async fn run_search_llm(
+    query: String,
+    token: Option<String>,
+) -> Result<Vec<whspr_hf::GgufRepoHit>, String> {
+    whspr_hf::search_gguf(&query, token.as_deref(), whspr_hf::DEFAULT_SEARCH_LIMIT)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Lists the `.gguf` files in `repo` (with sizes, including subfolders), using
+/// the saved `token` if present. Errors are stringified for the search
+/// section's error line.
+pub async fn run_list_gguf_files(
+    repo: String,
+    token: Option<String>,
+) -> Result<Vec<whspr_hf::GgufFile>, String> {
+    whspr_hf::list_gguf_files(&repo, token.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Downloads a searched GGUF `filename` from `repo` into `dir`, reusing the
+/// same flat-file download path the curated LLMs use so the result flows
+/// through the existing rescan (`HfLlmDownloaded`). Same token/return semantics
+/// as [`run_download_llm`].
+pub async fn run_download_gguf(
+    repo: String,
+    filename: String,
+    token: Option<String>,
+    dir: PathBuf,
+) -> Result<PathBuf, String> {
+    whspr_hf::download_gguf(&repo, &filename, token, &dir, None)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Deletes the model file at `path`, returning the path on success so the
 /// caller can name it in a status message before rescanning.
 pub async fn run_delete(path: PathBuf) -> Result<PathBuf, String> {
