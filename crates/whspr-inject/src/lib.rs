@@ -5,11 +5,18 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use tokio::sync::mpsc;
 
 use whspr_core::{HotkeyEvent, HotkeyListener, Result, TextSink, WhsprError};
+
+// `Arc` wraps the thread-affine hotkey manager only on the non-Windows path.
+// The Windows listener can't hold the manager at all (it's `!Send + !Sync`
+// there) and keeps a thread id + join handle instead, so `Arc` is unused —
+// and would warn under `-D warnings` — on that arm.
+#[cfg(not(windows))]
+use std::sync::Arc;
 
 mod clipboard;
 mod debounce;
@@ -19,6 +26,11 @@ use clipboard::{stage_and_paste, ArboardClipboard, PasteOutcome};
 pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
 
 /// Listens for the configured global hotkey via the OS-level hotkey APIs.
+///
+/// Off Windows, `GlobalHotKeyManager` is `Send + Sync`, so the listener can
+/// simply own it and unregister on drop. Windows needs a message-pump thread
+/// instead — see the `#[cfg(windows)]` variant below.
+#[cfg(not(windows))]
 pub struct GlobalHotkeyListener {
     // Kept alive for the listener's lifetime, and used on drop to release
     // the hotkey.
@@ -46,6 +58,7 @@ fn default_hotkey_modifiers() -> Modifiers {
     }
 }
 
+#[cfg(not(windows))]
 impl GlobalHotkeyListener {
     /// Creates a new global hotkey listener with the platform default hotkey
     /// (`Ctrl+Space`, or `Ctrl+Shift+Space` on Windows).
@@ -67,12 +80,14 @@ impl GlobalHotkeyListener {
     }
 }
 
+#[cfg(not(windows))]
 impl Default for GlobalHotkeyListener {
     fn default() -> Self {
         Self::new().expect("failed to initialize GlobalHotkeyListener")
     }
 }
 
+#[cfg(not(windows))]
 impl Drop for GlobalHotkeyListener {
     /// Releases the OS-level hotkey when the listener is dropped (app exit or
     /// teardown), so the combo isn't left registered with the system after
