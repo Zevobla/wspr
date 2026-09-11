@@ -144,7 +144,9 @@ fn files_view<'a>(
         .map(|file| CatalogRow {
             name: file.file_name().to_string(),
             size_bytes: file.size_bytes,
-            fit: state.hf_specs.fit(file.size_bytes, whspr_hf::ModelKind::Llm),
+            fit: state
+                .hf_specs
+                .fit(file.size_bytes, whspr_hf::ModelKind::Llm),
             action: download_button(
                 scheme,
                 state.hf_busy,
