@@ -2,8 +2,8 @@
 //! `whspr_core::HotkeyListener` and `whspr_core::TextSink`.
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use global_hotkey::hotkey::Modifiers;
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
@@ -11,15 +11,18 @@ use tokio::sync::mpsc;
 
 use whspr_core::{HotkeyEvent, HotkeyListener, Result, TextSink, WhsprError};
 
-// `Arc` wraps the thread-affine hotkey manager only on the non-Windows path.
-// The Windows listener can't hold the manager at all (it's `!Send + !Sync`
-// there) and keeps a thread id + join handle instead, so `Arc` is unused —
-// and would warn under `-D warnings` — on that arm.
-#[cfg(not(windows))]
-use std::sync::Arc;
-
 mod clipboard;
 mod debounce;
+
+// The OS-level hotkey listener has one file per platform: off Windows the
+// manager is `Send + Sync` and owned directly; on Windows it's `!Send +
+// !Sync` and driven from a message-pump thread. Each file defines its own
+// `GlobalHotkeyListener`, re-exported here so the rest of the crate (and the
+// un-gated `impl HotkeyListener` below) sees a single type.
+#[cfg(not(windows))]
+mod hotkey_unix;
+#[cfg(not(windows))]
+pub use hotkey_unix::GlobalHotkeyListener;
 
 #[cfg(windows)]
 mod hotkey_windows;
@@ -29,20 +32,6 @@ pub use hotkey_windows::GlobalHotkeyListener;
 use clipboard::{stage_and_paste, ArboardClipboard, PasteOutcome};
 
 pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
-
-/// Listens for the configured global hotkey via the OS-level hotkey APIs.
-///
-/// Off Windows, `GlobalHotKeyManager` is `Send + Sync`, so the listener can
-/// simply own it and unregister on drop. Windows needs a message-pump thread
-/// instead — see the `hotkey_windows` module.
-#[cfg(not(windows))]
-pub struct GlobalHotkeyListener {
-    // Kept alive for the listener's lifetime, and used on drop to release
-    // the hotkey.
-    manager: Arc<GlobalHotKeyManager>,
-    // The registered combo, remembered so `Drop` can unregister exactly it.
-    hotkey: HotKey,
-}
 
 /// The fresh-install default global-hotkey modifiers.
 ///
@@ -60,47 +49,6 @@ pub(crate) fn default_hotkey_modifiers() -> Modifiers {
         Modifiers::CONTROL | Modifiers::SHIFT
     } else {
         Modifiers::CONTROL
-    }
-}
-
-#[cfg(not(windows))]
-impl GlobalHotkeyListener {
-    /// Creates a new global hotkey listener with the platform default hotkey
-    /// (`Ctrl+Space`, or `Ctrl+Shift+Space` on Windows).
-    pub fn new() -> Result<Self> {
-        let manager = GlobalHotKeyManager::new().map_err(|e| {
-            WhsprError::Inject(format!("failed to create global hotkey manager: {}", e))
-        })?;
-
-        let hotkey = HotKey::new(Some(default_hotkey_modifiers()), Code::Space);
-
-        manager
-            .register(hotkey)
-            .map_err(|e| WhsprError::Inject(format!("failed to register global hotkey: {}", e)))?;
-
-        Ok(GlobalHotkeyListener {
-            manager: Arc::new(manager),
-            hotkey,
-        })
-    }
-}
-
-#[cfg(not(windows))]
-impl Default for GlobalHotkeyListener {
-    fn default() -> Self {
-        Self::new().expect("failed to initialize GlobalHotkeyListener")
-    }
-}
-
-#[cfg(not(windows))]
-impl Drop for GlobalHotkeyListener {
-    /// Releases the OS-level hotkey when the listener is dropped (app exit or
-    /// teardown), so the combo isn't left registered with the system after
-    /// the process goes away (D-13). Best-effort: a failure here isn't
-    /// actionable during teardown and `Drop` must never panic, so the result
-    /// is ignored.
-    fn drop(&mut self) {
-        let _ = self.manager.unregister(self.hotkey);
     }
 }
 
