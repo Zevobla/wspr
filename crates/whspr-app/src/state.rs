@@ -484,6 +484,15 @@ pub enum Message {
     /// message. On success the token is saved to config and installed models
     /// are rescanned.
     HfSignedIn(Result<(String, String), String>),
+    /// The user edited the Models tab's "sign in with a token" field: updates
+    /// `State::hf_token_input` (the pasted HuggingFace access token). Never
+    /// logged -- treated as a credential.
+    HfTokenInput(String),
+    /// The user submitted the pasted token: validates it via
+    /// `whspr_hf::oauth::whoami` and, on success, routes into the existing
+    /// `HfSignedIn(Ok((username, token)))` path so the token is persisted the
+    /// same way the OAuth flow persists it.
+    HfTokenSubmit,
     /// The user clicked "Sign out": clears the saved token from config.
     HfSignOut,
     /// The user clicked "Download" for the curated whisper model with this id
