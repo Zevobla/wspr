@@ -99,6 +99,114 @@ impl Drop for GlobalHotkeyListener {
     }
 }
 
+/// Minimal Win32 FFI for the hotkey pump thread's message loop.
+///
+/// `windows-sys` isn't a workspace dependency (and per CLAUDE.md this crate
+/// must not add one), so the handful of `user32`/`kernel32` entry points the
+/// pump needs are declared directly here rather than pulling in a new crate.
+/// Signatures mirror the Win32 headers exactly: `HWND` is an opaque pointer,
+/// `WPARAM`/`LPARAM`/`LRESULT` are pointer-sized, `BOOL` is a 32-bit int, and
+/// `MSG` is a `#[repr(C)]` struct the OS writes into.
+#[cfg(windows)]
+mod winapi {
+    #![allow(non_snake_case, dead_code)]
+
+    use std::ffi::c_void;
+
+    /// Win32 `HWND`: an opaque window handle (a pointer).
+    pub type Hwnd = *mut c_void;
+    /// Win32 `WPARAM`: pointer-sized unsigned message parameter.
+    pub type Wparam = usize;
+    /// Win32 `LPARAM`: pointer-sized signed message parameter.
+    pub type Lparam = isize;
+    /// Win32 `LRESULT`: pointer-sized signed message result.
+    pub type Lresult = isize;
+    /// Win32 `BOOL`: a 32-bit integer (`0` = false).
+    pub type Bool = i32;
+
+    /// Win32 `POINT`, embedded in [`Msg`].
+    #[repr(C)]
+    pub struct Point {
+        pub x: i32,
+        pub y: i32,
+    }
+
+    /// Win32 `MSG`, filled in by [`GetMessageW`]. The layout must match the
+    /// header exactly, since the OS writes through the pointer we hand it.
+    #[repr(C)]
+    pub struct Msg {
+        pub hwnd: Hwnd,
+        pub message: u32,
+        pub wParam: Wparam,
+        pub lParam: Lparam,
+        pub time: u32,
+        pub pt: Point,
+    }
+
+    /// `WM_QUIT`: posted to the pump thread to make [`GetMessageW`] return 0
+    /// and end the message loop.
+    pub const WM_QUIT: u32 = 0x0012;
+
+    #[link(name = "user32")]
+    extern "system" {
+        /// Blocks until a message is available for this thread, then removes
+        /// it from the queue and writes it into `lpMsg`. Returns 0 on
+        /// `WM_QUIT`, -1 on error, nonzero otherwise.
+        pub fn GetMessageW(
+            lpMsg: *mut Msg,
+            hWnd: Hwnd,
+            wMsgFilterMin: u32,
+            wMsgFilterMax: u32,
+        ) -> Bool;
+        /// Translates virtual-key messages into character messages. A no-op
+        /// for `WM_HOTKEY`, but part of the canonical pump.
+        pub fn TranslateMessage(lpMsg: *const Msg) -> Bool;
+        /// Dispatches a message to its window procedure — this is what runs
+        /// the hotkey manager's window proc for a `WM_HOTKEY`.
+        pub fn DispatchMessageW(lpMsg: *const Msg) -> Lresult;
+        /// Posts a message to the message queue of the thread `idThread`.
+        /// Used to deliver `WM_QUIT` to the pump thread on shutdown.
+        pub fn PostThreadMessageW(idThread: u32, msg: u32, wParam: Wparam, lParam: Lparam) -> Bool;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        /// Returns the calling thread's id, captured on the pump thread so
+        /// the listener can target it with [`PostThreadMessageW`].
+        pub fn GetCurrentThreadId() -> u32;
+    }
+}
+
+/// Runs a standard Win32 message loop until `WM_QUIT`, dispatching each
+/// message so the hotkey manager's window procedure runs (that proc is what
+/// turns a `WM_HOTKEY` into a `GlobalHotKeyEvent`). Must be called on the
+/// same thread that created the manager's window.
+#[cfg(windows)]
+fn run_message_loop() {
+    // A zeroed `MSG` is a valid empty buffer for the OS to fill in. Passing a
+    // null `hWnd` filter makes `GetMessageW` return every message for this
+    // thread — both the window's `WM_HOTKEY` and the thread-targeted
+    // `WM_QUIT` used to stop the loop.
+    let mut msg: winapi::Msg = unsafe { std::mem::zeroed() };
+    loop {
+        // Blocks until a message arrives; this thread does nothing else, so
+        // blocking (rather than spinning) is exactly what we want.
+        let ret = unsafe { winapi::GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) };
+
+        // `GetMessageW` returns 0 on `WM_QUIT` and -1 on error; either way
+        // there is nothing left to pump, so stop.
+        if ret <= 0 {
+            break;
+        }
+
+        // SAFETY: `msg` was just populated by a successful `GetMessageW`.
+        unsafe {
+            winapi::TranslateMessage(&msg);
+            winapi::DispatchMessageW(&msg);
+        }
+    }
+}
+
 /// Translates a `global-hotkey` press/release state into our own
 /// `HotkeyEvent`. Split out as a pure function so the translation can be
 /// unit tested without needing a real OS-level hotkey to fire.
