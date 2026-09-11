@@ -66,5 +66,5 @@ pub use oauth::{
     run_login, AuthSession, HfIdentity, OauthConfig, DEFAULT_LOGIN_TIMEOUT, DEFAULT_REDIRECT_PORT,
 };
 pub use search::{
-    list_gguf_files, search_gguf, GgufFile, GgufRepoHit, DEFAULT_SEARCH_LIMIT,
+    download_gguf, list_gguf_files, search_gguf, GgufFile, GgufRepoHit, DEFAULT_SEARCH_LIMIT,
 };

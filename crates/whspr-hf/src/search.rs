@@ -24,9 +24,13 @@
 //! unit-tested against captured sample payloads -- the tests never touch the
 //! network.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use tokio::sync::mpsc::UnboundedSender;
 use whspr_core::{Result, WhsprError};
+
+use crate::models::{download_file, DownloadProgress};
 
 /// The HuggingFace model-search endpoint (public; `filter=gguf` narrows to
 /// repos carrying GGUF weights).
@@ -204,6 +208,23 @@ pub async fn list_gguf_files(repo: &str, token: Option<&str>) -> Result<Vec<Gguf
     let request = http.get(url).query(&[("recursive", "true")]);
     let body = send_text(with_token(request, token), "tree").await?;
     parse_gguf_tree(&body)
+}
+
+/// Downloads an arbitrary GGUF `filename` from `repo` into `models_dir`,
+/// landing it as a flat `models_dir/<basename>` file exactly like the curated
+/// [`crate::download_llm`] does -- so a searched model flows through the same
+/// scan/selector path once fetched. `filename` may be a subfolder-qualified
+/// repo path (e.g. `"Q4_K_M/model.gguf"`): it's fetched by that path but stored
+/// flat (see [`download_file`]). `token` unlocks gated repos; `progress`
+/// streams byte-level updates when given.
+pub async fn download_gguf(
+    repo: &str,
+    filename: &str,
+    token: Option<String>,
+    models_dir: &Path,
+    progress: Option<UnboundedSender<DownloadProgress>>,
+) -> Result<PathBuf> {
+    download_file(repo, filename, token, models_dir, progress).await
 }
 
 #[cfg(test)]
