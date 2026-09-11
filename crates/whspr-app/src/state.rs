@@ -525,6 +525,22 @@ pub enum Message {
     /// A model delete finished: the deleted path on success, or an error
     /// message. On success the model dirs are rescanned.
     HfModelDeleted(Result<std::path::PathBuf, String>),
+    /// The user typed in the refiner section's HuggingFace GGUF search box.
+    LlmSearchInput(String),
+    /// The user submitted the GGUF search (Enter or the Search button); an
+    /// empty/whitespace query is ignored (see `crate::hf`).
+    LlmSearchSubmit,
+    /// A GGUF repo search finished: the repo hits, or an error message.
+    LlmSearchResults(Result<Vec<whspr_hf::GgufRepoHit>, String>),
+    /// The user expanded a search-result repo to list its `.gguf` files
+    /// (carries the repo id); clicking the open one again collapses it.
+    LlmSearchSelectRepo(String),
+    /// A repo's GGUF file listing finished: the files, or an error message.
+    LlmSearchFiles(Result<Vec<whspr_hf::GgufFile>, String>),
+    /// The user clicked Download on a searched GGUF file: `(repo, repo-relative
+    /// filename)`. Routes into the existing LLM download -> rescan path so the
+    /// model then appears in the refiner selector.
+    LlmSearchDownload(String, String),
     /// The user clicked "Add directory": opens a native folder picker.
     HfAddModelDir,
     /// The folder picker resolved (`None` if the user cancelled). A new dir is
