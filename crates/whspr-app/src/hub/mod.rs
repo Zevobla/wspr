@@ -13,6 +13,11 @@
 use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
 use iced::{Alignment, Background, Border, Element, Length};
 
+// Windows-only custom caption/resize chrome for the borderless window (see
+// `window_settings`). Compiled only on Windows so macOS/Linux chrome is
+// untouched.
+#[cfg(target_os = "windows")]
+mod caption_windows;
 mod common;
 mod dictate;
 mod history;
@@ -177,7 +182,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fill);
 
-    container(
+    let hub: Element<'_, Message> = container(
         row![
             nav_rail(state, scheme),
             widgets::vrule(spacing::layout::RULE, scheme),
@@ -187,7 +192,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .height(Length::Fill),
     )
     .style(move |_theme| styles::container::surface(scheme))
-    .into()
+    .into();
+
+    // On Windows the borderless window (see `window_settings`) has no system
+    // title bar, so overlay our own caption controls and resize hit-test
+    // zones. macOS/Linux keep the OS chrome and return `hub` untouched.
+    #[cfg(target_os = "windows")]
+    let hub = caption_windows::chrome(hub, scheme);
+
+    hub
 }
 
 /// The rail's label for a screen -- pure so the wording stays testable.
