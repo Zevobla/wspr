@@ -32,6 +32,25 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
                 Task::none()
             }
         },
+        Message::HfTokenInput(token) => {
+            state.hf_token_input = token;
+            Task::none()
+        }
+        Message::HfTokenSubmit => {
+            // Trim once, off the credential the field holds; if it's blank the
+            // submit is a no-op (the button is disabled in that case anyway).
+            let token = state.hf_token_input.trim().to_string();
+            if token.is_empty() {
+                Task::none()
+            } else {
+                state.hf_busy = true;
+                // Clear the field the moment we take the token -- it lives on
+                // only inside the validation task now, never re-rendered.
+                state.hf_token_input.clear();
+                state.hf_status = Some("Checking your token...".to_string());
+                Task::perform(run_token_login(token), Message::HfSignedIn)
+            }
+        }
         Message::HfSignedIn(Ok((username, token))) => {
             state.hf_busy = false;
             state.config.huggingface.token = Some(token);
@@ -225,6 +244,19 @@ pub async fn run_login(client_id: String) -> Result<(String, String), String> {
         whspr_hf::run_login(OauthConfig::new(client_id), whspr_hf::DEFAULT_LOGIN_TIMEOUT)
             .await
             .map_err(|e| e.to_string())?;
+    Ok((username, token))
+}
+
+/// Validates a pasted HuggingFace access `token` by resolving its account
+/// username via `whspr_hf::oauth::whoami`, returning `(username, token)` on
+/// success so the existing `Message::HfSignedIn(Ok(..))` handler persists the
+/// token exactly the way the OAuth flow does -- no separate persistence path.
+/// The token is treated as a credential and never logged. Errors are
+/// stringified for the Hub's status line.
+pub async fn run_token_login(token: String) -> Result<(String, String), String> {
+    let username = whspr_hf::oauth::whoami(&token)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok((username, token))
 }
 
