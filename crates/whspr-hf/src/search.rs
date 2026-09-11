@@ -24,6 +24,8 @@
 //! unit-tested against captured sample payloads -- the tests never touch the
 //! network.
 
+use whspr_core::{Result, WhsprError};
+
 /// One repository hit from a GGUF model search: its `org/name` id and the
 /// popularity counters the GUI sorts by / annotates with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +57,38 @@ impl GgufFile {
     }
 }
 
+/// Reads a JSON value as a `u64`, tolerating a float encoding (HF usually
+/// sends plain integers, but a `12345.0` still yields `12345`) and defaulting
+/// a missing/non-numeric field to `0`.
+fn json_u64(value: &serde_json::Value) -> u64 {
+    value
+        .as_u64()
+        .or_else(|| value.as_f64().map(|f| f as u64))
+        .unwrap_or(0)
+}
+
+/// Parses the HuggingFace `/api/models` search response (a JSON array of repo
+/// objects) into [`GgufRepoHit`]s, skipping any entry missing an `id`. Pure --
+/// unit-tested against captured payloads, never hits the network.
+pub fn parse_search_results(body: &str) -> Result<Vec<GgufRepoHit>> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| WhsprError::Other(format!("could not parse HF search response: {e}")))?;
+    let array = value
+        .as_array()
+        .ok_or_else(|| WhsprError::Other("HF search response was not a JSON array".to_string()))?;
+    Ok(array
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id").and_then(|v| v.as_str())?;
+            Some(GgufRepoHit {
+                id: id.to_string(),
+                downloads: item.get("downloads").map(json_u64).unwrap_or(0),
+                likes: item.get("likes").map(json_u64).unwrap_or(0),
+            })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,5 +106,36 @@ mod tests {
             size_bytes: 1,
         };
         assert_eq!(flat.file_name(), "flat.gguf");
+    }
+
+    const SEARCH_SAMPLE: &str = r#"[
+      {"_id":"1","id":"bartowski/Llama-3.2-3B-Instruct-GGUF","likes":321,"downloads":98765,"tags":["gguf"]},
+      {"_id":"2","id":"Qwen/Qwen2.5-3B-Instruct-GGUF","likes":210,"downloads":54321},
+      {"_id":"3","likes":5,"downloads":10}
+    ]"#;
+
+    #[test]
+    fn parse_search_results_reads_id_downloads_likes() {
+        let hits = parse_search_results(SEARCH_SAMPLE).unwrap();
+        // The third entry has no `id`, so it's skipped.
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].id, "bartowski/Llama-3.2-3B-Instruct-GGUF");
+        assert_eq!(hits[0].downloads, 98765);
+        assert_eq!(hits[0].likes, 321);
+        assert_eq!(hits[1].id, "Qwen/Qwen2.5-3B-Instruct-GGUF");
+    }
+
+    #[test]
+    fn parse_search_results_defaults_missing_counters_to_zero() {
+        let hits = parse_search_results(r#"[{"id":"org/repo-GGUF"}]"#).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].downloads, 0);
+        assert_eq!(hits[0].likes, 0);
+    }
+
+    #[test]
+    fn parse_search_results_rejects_non_array_json() {
+        assert!(parse_search_results(r#"{"error":"nope"}"#).is_err());
+        assert!(parse_search_results("not json at all").is_err());
     }
 }
