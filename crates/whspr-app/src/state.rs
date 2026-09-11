@@ -174,6 +174,11 @@ pub struct State {
     /// This machine's RAM snapshot, probed once at boot, used for the
     /// per-model "fits your machine" badge (see `whspr_hf::HardwareSpecs`).
     pub hf_specs: whspr_hf::HardwareSpecs,
+    /// Live HuggingFace GGUF search state for the refiner section (query,
+    /// results, the expanded repo's file list, busy/error flags). Held in one
+    /// struct so `state.rs` stays under the AA-06 line cap -- see
+    /// `crate::hf::LlmSearchState`.
+    pub llm_search: crate::hf::LlmSearchState,
     /// When set (from the `WHSPR_SCREENSHOT` env var at boot), the Hub
     /// window is captured to this PNG path shortly after it first renders,
     /// then the app exits -- a permission-free headless UI-verification path
@@ -243,6 +248,7 @@ impl State {
             hf_token_input: String::new(),
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
+            llm_search: crate::hf::LlmSearchState::default(),
             screenshot_path: None,
             screenshot_taken: false,
             needs_speaker_model: false,
