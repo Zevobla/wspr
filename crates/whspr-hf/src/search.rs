@@ -24,7 +24,19 @@
 //! unit-tested against captured sample payloads -- the tests never touch the
 //! network.
 
+use std::time::Duration;
+
 use whspr_core::{Result, WhsprError};
+
+/// The HuggingFace model-search endpoint (public; `filter=gguf` narrows to
+/// repos carrying GGUF weights).
+const HF_MODELS_URL: &str = "https://huggingface.co/api/models";
+/// How long a search / tree request waits before giving up, so an offline or
+/// throttled Hub degrades to a visible error instead of hanging the UI task.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// Default ceiling on how many repos a single search returns (the GUI passes
+/// this as the `limit`); keeps a large result set from ballooning the list.
+pub const DEFAULT_SEARCH_LIMIT: usize = 25;
 
 /// One repository hit from a GGUF model search: its `org/name` id and the
 /// popularity counters the GUI sorts by / annotates with.
@@ -115,6 +127,83 @@ pub fn parse_gguf_tree(body: &str) -> Result<Vec<GgufFile>> {
         .collect();
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(files)
+}
+
+/// Builds the shared HTTP client (oauth2's re-exported reqwest, so this crate
+/// never depends on reqwest directly) with a bounded [`REQUEST_TIMEOUT`].
+fn http_client() -> Result<oauth2::reqwest::Client> {
+    oauth2::reqwest::ClientBuilder::new()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|e| WhsprError::Other(format!("failed to build HTTP client: {e}")))
+}
+
+/// Attaches the bearer `token` to `builder` when present, leaving an anonymous
+/// request otherwise. The token is a credential -- only ever sent as an
+/// `Authorization: Bearer` header, never logged.
+fn with_token(
+    builder: oauth2::reqwest::RequestBuilder,
+    token: Option<&str>,
+) -> oauth2::reqwest::RequestBuilder {
+    match token {
+        Some(token) => builder.bearer_auth(token),
+        None => builder,
+    }
+}
+
+/// Sends `request`, mapping a transport failure, a non-2xx status (offline,
+/// 401 on a gated repo, 429 rate-limit, 5xx), or an unreadable body to a
+/// [`WhsprError`] tagged with `what` (e.g. `"search"` / `"tree"`). Returns the
+/// raw response text for the pure parser.
+async fn send_text(request: oauth2::reqwest::RequestBuilder, what: &str) -> Result<String> {
+    request
+        .header("User-Agent", "whspr")
+        .send()
+        .await
+        .map_err(|e| WhsprError::Other(format!("HF {what} request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| WhsprError::Other(format!("HF {what} returned an error status: {e}")))?
+        .text()
+        .await
+        .map_err(|e| WhsprError::Other(format!("could not read HF {what} response: {e}")))
+}
+
+/// Searches HuggingFace for GGUF model repos matching `query`, most-downloaded
+/// first, capped at `limit`. Sends `token` as a bearer when present (unlocks
+/// gated repos and lifts the anonymous rate limit). Network/status/parse
+/// failures degrade to an `Err` the GUI shows as a plain line -- never a panic.
+pub async fn search_gguf(
+    query: &str,
+    token: Option<&str>,
+    limit: usize,
+) -> Result<Vec<GgufRepoHit>> {
+    let http = http_client()?;
+    let limit = limit.to_string();
+    // reqwest percent-encodes each query value, so `query` needs no manual
+    // escaping here.
+    let request = http.get(HF_MODELS_URL).query(&[
+        ("filter", "gguf"),
+        ("search", query),
+        ("sort", "downloads"),
+        ("direction", "-1"),
+        ("limit", limit.as_str()),
+    ]);
+    let body = send_text(with_token(request, token), "search").await?;
+    parse_search_results(&body)
+}
+
+/// Lists the `.gguf` files (with sizes) in `repo`'s `main` revision, including
+/// files nested in subfolders (`recursive=true`). The tree endpoint carries a
+/// `size` per file, which the plainer model endpoint's `siblings` list often
+/// omits. Same token/error semantics as [`search_gguf`].
+pub async fn list_gguf_files(repo: &str, token: Option<&str>) -> Result<Vec<GgufFile>> {
+    let http = http_client()?;
+    // A repo id is `org/name` (only `[A-Za-z0-9._-]` plus that one slash), so
+    // it drops straight into the path without further escaping.
+    let url = format!("https://huggingface.co/api/models/{repo}/tree/main");
+    let request = http.get(url).query(&[("recursive", "true")]);
+    let body = send_text(with_token(request, token), "tree").await?;
+    parse_gguf_tree(&body)
 }
 
 #[cfg(test)]
