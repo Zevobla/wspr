@@ -409,6 +409,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         },
         #[cfg(target_os = "windows")]
         Message::CloseHubWindow => iced::exit(),
+        #[cfg(target_os = "windows")]
+        Message::ResizeHubWindow(direction) => match state.hub_window {
+            Some(id) => window::drag_resize(id, direction),
+            None => Task::none(),
+        },
         Message::TakeScreenshot => match state.hub_window {
             Some(id) if !state.screenshot_taken => {
                 state.screenshot_taken = true;

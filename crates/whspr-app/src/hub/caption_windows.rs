@@ -18,8 +18,10 @@
 //! additionally fills red with a paper glyph, the one universally read
 //! destructive cue.
 
+use iced::mouse::Interaction;
 use iced::widget::svg::{self, Handle};
-use iced::widget::{button, container, row, stack};
+use iced::widget::{button, column, container, mouse_area, row, stack, Space};
+use iced::window::Direction;
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
 use crate::state::Message;
@@ -50,14 +52,108 @@ enum Kind {
     Close,
 }
 
-/// Overlays the Windows caption controls on top of the Hub `content`.
-/// `content` renders unchanged underneath; the caption's empty gaps are
-/// transparent and pass presses through to the header's drag handle beneath.
+/// Thickness of the resize hit-test strips ringing the borderless window.
+/// Thin enough to stay out of the way of edge content, wide enough to grab.
+const EDGE: f32 = 6.0;
+
+/// Overlays the Windows caption controls and resize-edge zones on top of the
+/// Hub `content`. Stacked bottom-to-top: `content` (its header still owns the
+/// drag handle), then the resize frame (a ring of thin edge/corner zones with
+/// a transparent centre that passes events through), then the caption
+/// controls flush top-right. Higher layers only capture on their buttons/
+/// strips; every gap is transparent, so presses fall through to the layer
+/// beneath -- drag on the header, clicks in the body.
 pub fn chrome<'a>(
     content: Element<'a, Message>,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
-    stack![content, caption_bar(scheme)].into()
+    stack![content, resize_frame(), caption_bar(scheme)].into()
+}
+
+/// The resize hit-test ring: eight thin `drag_resize` zones (four edges, four
+/// corners) around a transparent, event-ignoring centre. With
+/// `decorations:false` the OS no longer draws resize borders, so this
+/// reinstates them via iced 0.14's `window::drag_resize`, each zone carrying
+/// the `Direction` it grows and showing the matching resize cursor on hover.
+fn resize_frame<'a>() -> Element<'a, Message> {
+    let edge = Length::Fixed(EDGE);
+    let top = row![
+        resize_zone(
+            Direction::NorthWest,
+            edge,
+            edge,
+            Interaction::ResizingDiagonallyDown
+        ),
+        resize_zone(
+            Direction::North,
+            Length::Fill,
+            edge,
+            Interaction::ResizingVertically
+        ),
+        resize_zone(
+            Direction::NorthEast,
+            edge,
+            edge,
+            Interaction::ResizingDiagonallyUp
+        ),
+    ]
+    .width(Length::Fill);
+    let middle = row![
+        resize_zone(
+            Direction::West,
+            edge,
+            Length::Fill,
+            Interaction::ResizingHorizontally
+        ),
+        Space::new().width(Length::Fill).height(Length::Fill),
+        resize_zone(
+            Direction::East,
+            edge,
+            Length::Fill,
+            Interaction::ResizingHorizontally
+        ),
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill);
+    let bottom = row![
+        resize_zone(
+            Direction::SouthWest,
+            edge,
+            edge,
+            Interaction::ResizingDiagonallyUp
+        ),
+        resize_zone(
+            Direction::South,
+            Length::Fill,
+            edge,
+            Interaction::ResizingVertically
+        ),
+        resize_zone(
+            Direction::SouthEast,
+            edge,
+            edge,
+            Interaction::ResizingDiagonallyDown
+        ),
+    ]
+    .width(Length::Fill);
+    column![top, middle, bottom]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// One resize strip: an invisible `mouse_area` of the given size that starts
+/// an OS resize-drag toward `direction` on press and shows `cursor` on hover.
+fn resize_zone<'a>(
+    direction: Direction,
+    width: Length,
+    height: Length,
+    cursor: Interaction,
+) -> Element<'a, Message> {
+    mouse_area(Space::new().width(width).height(height))
+        .interaction(cursor)
+        .on_press(Message::ResizeHubWindow(direction))
+        .into()
 }
 
 /// The caption controls, pinned flush to the window's top-right corner

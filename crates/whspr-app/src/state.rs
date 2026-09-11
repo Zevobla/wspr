@@ -532,6 +532,13 @@ pub enum Message {
     /// tray "Quit" action uses.
     #[cfg(target_os = "windows")]
     CloseHubWindow,
+    /// Windows only: a press began on one of the borderless window's resize
+    /// hit-test zones (a thin edge or corner strip). Carries the edge/corner
+    /// direction and starts an OS resize-drag, replacing the resize border
+    /// the removed system frame used to provide (see
+    /// `crate::hub::caption_windows`).
+    #[cfg(target_os = "windows")]
+    ResizeHubWindow(iced::window::Direction),
     /// Fired shortly after the Hub first renders when `WHSPR_SCREENSHOT` is
     /// set: triggers the one-shot window capture (see `crate::screenshot`).
     TakeScreenshot,
