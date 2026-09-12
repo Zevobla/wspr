@@ -1,24 +1,25 @@
-//! Detecting the browsers actually installed on this machine — by their real
-//! names — so the import sign-in picker reflects reality instead of a fixed
-//! engine list.
+//! Detecting installed browsers by the **structural signature** of their cookie
+//! stores, rather than a hardcoded list of vendor names or paths.
 //!
-//! `yt-dlp --cookies-from-browser` only takes a fixed set of engine ids
-//! (chrome, firefox, brave, …). To support Firefox forks it has no id for
-//! (Zen, IceCat, LibreWolf, camoufox, …) we pass `firefox:<profile-path>`,
-//! which reads that fork's `cookies.sqlite` directly (verified equivalent to
-//! plain `firefox`). So detection splits by engine family:
+//! We walk each platform's app-data root(s) one and two levels deep — enough to
+//! reach both `<browser>` and `<vendor>/<browser>` layouts — and classify every
+//! directory by what it contains:
 //!
-//! - **Firefox family — discovered generically.** Any app-data subdir holding
-//!   a `Profiles/<p>/cookies.sqlite` is a Firefox-format browser; the folder
-//!   name is its real name and the spec is `firefox:<path>` (plain `firefox`
-//!   for the stock single-profile install). No hardcoded fork list — new forks
-//!   appear automatically.
-//! - **Chromium family — a known-id table.** Dozens of Electron apps ship the
-//!   same `Cookies` DB, so a generic scan would be meaningless; instead probe
-//!   the yt-dlp-supported browsers by their real dirs, one entry per real
-//!   profile (`chrome`, `chrome:Profile 1`, …).
+//! - **Firefox family** — a profile with `cookies.sqlite` (Firefox, Zen,
+//!   IceCat, LibreWolf, camoufox, …). Fully generic; borrowed via
+//!   `firefox:<profile-path>` (verified equivalent to plain `firefox`), which
+//!   works for every Firefox-format fork yt-dlp has no dedicated id for.
+//! - **Chromium family** — a profile with `Cookies` (or `Network/Cookies`)
+//!   *and* the browser markers `History` + `Login Data`. That pair is the key
+//!   discriminator: real browsers have them; the dozens of Electron apps that
+//!   embed Chromium and also ship a `Cookies` DB (Claude, Postman, Element, …)
+//!   do not. yt-dlp can only *decrypt* Chromium cookies for browsers it has an
+//!   OS-keychain mapping for, so the engine id is inferred from the path
+//!   (chrome/chromium/brave/edge/vivaldi/opera); an unrecognized Chromium
+//!   browser is skipped rather than offered with cookies yt-dlp can't read.
 //! - **Safari** — its `.binarycookies` file.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use directories::BaseDirs;
@@ -26,186 +27,144 @@ use directories::BaseDirs;
 /// An installed browser whose logged-in cookies `yt-dlp` can borrow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CookieBrowser {
-    /// Real display name — a Firefox fork's folder name, or the browser name
-    /// for Chromium/Safari — with a profile suffix when there's more than one.
+    /// Real display name — a Firefox browser/fork's folder name, or the
+    /// Chromium browser's folder — with a profile suffix when there's >1.
     pub label: String,
-    /// The `yt-dlp --cookies-from-browser` argument (`firefox`,
-    /// `firefox:/path/to/profile`, `chrome`, `chrome:Profile 1`, `safari`).
+    /// The `yt-dlp --cookies-from-browser` argument (`firefox:/path`,
+    /// `chrome:/path`, `safari`).
     pub spec: String,
 }
 
-/// Every installed browser with a real cookie store, Firefox family first
-/// (they defeat YouTube's bot wall), then Chromium browsers, then Safari.
-/// Filesystem probes only, no subprocess.
+/// Every installed browser with a real, borrowable cookie store, discovered by
+/// signature. Filesystem probes only, no subprocess.
 pub fn installed_cookie_browsers() -> Vec<CookieBrowser> {
     let Some(base) = BaseDirs::new() else {
         return Vec::new();
     };
-    let mut out = firefox_family(&base);
-    out.extend(chromium_family(&base));
+    let mut out = Vec::new();
+    for root in app_data_roots(&base) {
+        for child in read_children(&root) {
+            classify(&child, &mut out);
+            for grandchild in read_children(&child) {
+                classify(&grandchild, &mut out);
+            }
+        }
+    }
     out.extend(safari(&base));
-    out
+    dedup_by_spec(out)
 }
 
-/// The immediate children of `dir`, sorted for stable order; empty if `dir`
-/// can't be read (owned paths, so no directory handle outlives the call).
-fn read_children(dir: &Path) -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
+/// The roots under which browsers keep their profiles on this platform.
+fn app_data_roots(base: &BaseDirs) -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        vec![base.home_dir().join("Library/Application Support")]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        vec![
+            base.data_local_dir().to_path_buf(),
+            base.data_dir().to_path_buf(),
+        ]
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        vec![base.config_dir().to_path_buf(), base.home_dir().join(".mozilla")]
+    }
+}
+
+/// Classifies one directory as a browser (or not) and appends any profiles it
+/// exposes as [`CookieBrowser`] entries.
+fn classify(dir: &Path, out: &mut Vec<CookieBrowser>) {
+    let ff = firefox_profiles(dir);
+    let single_ff = ff.len() == 1;
+    for prof in &ff {
+        out.push(CookieBrowser {
+            label: labeled(dir_name(dir), prof, single_ff),
+            spec: format!("firefox:{}", prof.display()),
+        });
+    }
+
+    if let Some(engine) = chromium_engine(dir) {
+        let profs = chromium_profiles(dir);
+        let single = profs.len() == 1;
+        for prof in &profs {
+            out.push(CookieBrowser {
+                label: labeled(chromium_label(dir), prof, single),
+                spec: format!("{engine}:{}", prof.display()),
+            });
+        }
+    }
+}
+
+/// `name`, plus the profile folder in parentheses when the browser exposes more
+/// than one profile (so two logins are distinguishable).
+fn labeled(name: String, profile: &Path, single: bool) -> String {
+    if single {
+        name
+    } else {
+        format!("{name} ({})", dir_name(profile))
+    }
+}
+
+/// Firefox-format profiles under `dir`: any `Profiles/<p>/cookies.sqlite`
+/// (macOS/Windows) or `<p>/cookies.sqlite` (Linux's flat layout).
+fn firefox_profiles(dir: &Path) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = read_children(&dir.join("Profiles"))
         .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
+        .filter(|p| p.join("cookies.sqlite").exists())
         .collect();
-    v.sort();
+    v.extend(
+        read_children(dir)
+            .into_iter()
+            .filter(|p| p.join("cookies.sqlite").exists()),
+    );
     v
 }
 
-fn dir_name(path: &Path) -> String {
-    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
-}
-
-/// Emits a [`CookieBrowser`] per Firefox-format profile found under `app_root`
-/// — every `<name>/Profiles/<p>/cookies.sqlite`. `name` is the browser's real
-/// folder name; the stock single-profile Firefox uses the bare `firefox` spec,
-/// everything else (forks, extra profiles) uses `firefox:<path>`.
-fn firefox_from_root(app_root: &Path, out: &mut Vec<CookieBrowser>) {
-    for child in read_children(app_root) {
-        let name = dir_name(&child);
-        let profiles: Vec<PathBuf> = read_children(&child.join("Profiles"))
-            .into_iter()
-            .filter(|p| p.join("cookies.sqlite").exists())
-            .collect();
-        let stock = name.eq_ignore_ascii_case("Firefox");
-        let single = profiles.len() == 1;
-        for prof in &profiles {
-            let spec = if stock && single {
-                "firefox".to_string()
-            } else {
-                format!("firefox:{}", prof.display())
-            };
-            let label = if single {
-                name.clone()
-            } else {
-                format!("{name} ({})", dir_name(prof))
-            };
-            out.push(CookieBrowser { label, spec });
+/// The yt-dlp Chromium engine id whose OS-keychain entry decrypts cookies under
+/// `dir`, inferred from the path. `None` => not a browser yt-dlp can decrypt
+/// (so it's skipped instead of offered as broken).
+fn chromium_engine(dir: &Path) -> Option<&'static str> {
+    let s = dir.to_string_lossy().to_ascii_lowercase();
+    // Order matters: match the specific vendors before the generic "chrome"
+    // (which is also a substring of "chrome for testing", handled by scanning).
+    for (keyword, id) in [
+        ("brave", "brave"),
+        ("edge", "edge"),
+        ("vivaldi", "vivaldi"),
+        ("opera", "opera"),
+        ("chromium", "chromium"),
+        ("chrome", "chrome"),
+    ] {
+        if s.contains(keyword) {
+            return Some(id);
         }
     }
+    None
 }
 
-#[cfg(target_os = "macos")]
-fn firefox_family(base: &BaseDirs) -> Vec<CookieBrowser> {
-    let mut out = Vec::new();
-    firefox_from_root(&base.home_dir().join("Library/Application Support"), &mut out);
-    out
+/// Chromium *browser* profiles under a user-data `dir`: a `Cookies` DB plus the
+/// `History` + `Login Data` markers that separate a browser from an Electron
+/// app. Guest/System profiles are skipped — never a user's session.
+fn chromium_profiles(dir: &Path) -> Vec<PathBuf> {
+    read_children(dir)
+        .into_iter()
+        .filter(|p| {
+            let n = dir_name(p);
+            n != "System Profile"
+                && n != "Guest Profile"
+                && (p.join("Cookies").exists() || p.join("Network").join("Cookies").exists())
+                && p.join("History").exists()
+                && p.join("Login Data").exists()
+        })
+        .collect()
 }
 
-#[cfg(not(target_os = "macos"))]
-fn firefox_family(base: &BaseDirs) -> Vec<CookieBrowser> {
-    // Windows/Linux keep Firefox-family under a browser-specific root rather
-    // than one shared dir, so the generic scan doesn't apply cleanly; detect
-    // the stock Firefox profile (fork discovery here is a later refinement).
-    #[cfg(target_os = "windows")]
-    let root = base.data_dir().join("Mozilla/Firefox");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let root = base.home_dir().join(".mozilla/firefox");
-
-    let nested = read_children(&root.join("Profiles"));
-    let direct = read_children(&root);
-    let present = nested
-        .iter()
-        .chain(direct.iter())
-        .any(|p| p.join("cookies.sqlite").exists());
-    if present {
-        vec![CookieBrowser {
-            label: "Firefox".to_string(),
-            spec: "firefox".to_string(),
-        }]
-    } else {
-        Vec::new()
-    }
-}
-
-/// Chromium-family: one entry per real login profile of each yt-dlp-supported
-/// browser present. Guest/System profiles are skipped — they never hold a
-/// user's YouTube session.
-fn chromium_family(base: &BaseDirs) -> Vec<CookieBrowser> {
-    let mut out = Vec::new();
-    for (root, id, label) in chromium_candidates(base) {
-        let profiles: Vec<PathBuf> = read_children(&root)
-            .into_iter()
-            .filter(|p| {
-                let n = dir_name(p);
-                n != "System Profile"
-                    && n != "Guest Profile"
-                    && (p.join("Cookies").exists() || p.join("Network").join("Cookies").exists())
-            })
-            .collect();
-        let single = profiles.len() == 1;
-        for prof in &profiles {
-            let pname = dir_name(prof);
-            let spec = if single {
-                id.to_string()
-            } else {
-                format!("{id}:{pname}")
-            };
-            let label = if single {
-                label.to_string()
-            } else {
-                format!("{label} ({pname})")
-            };
-            out.push(CookieBrowser { label, spec });
-        }
-    }
-    out
-}
-
-/// `(user-data dir, yt-dlp id, display label)` for each supported Chromium
-/// browser on this platform.
-fn chromium_candidates(base: &BaseDirs) -> Vec<(PathBuf, &'static str, &'static str)> {
-    #[cfg(target_os = "macos")]
-    {
-        let app = base.home_dir().join("Library/Application Support");
-        vec![
-            (app.join("Google/Chrome"), "chrome", "Chrome"),
-            (app.join("Chromium"), "chromium", "Chromium"),
-            (app.join("BraveSoftware/Brave-Browser"), "brave", "Brave"),
-            (app.join("Microsoft Edge"), "edge", "Edge"),
-            (app.join("Vivaldi"), "vivaldi", "Vivaldi"),
-            (app.join("com.operasoftware.Opera"), "opera", "Opera"),
-        ]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let local = base.data_local_dir();
-        vec![
-            (local.join("Google/Chrome/User Data"), "chrome", "Chrome"),
-            (local.join("Chromium/User Data"), "chromium", "Chromium"),
-            (
-                local.join("BraveSoftware/Brave-Browser/User Data"),
-                "brave",
-                "Brave",
-            ),
-            (local.join("Microsoft/Edge/User Data"), "edge", "Edge"),
-            (local.join("Vivaldi/User Data"), "vivaldi", "Vivaldi"),
-        ]
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let config = base.config_dir();
-        vec![
-            (config.join("google-chrome"), "chrome", "Chrome"),
-            (config.join("chromium"), "chromium", "Chromium"),
-            (
-                config.join("BraveSoftware/Brave-Browser"),
-                "brave",
-                "Brave",
-            ),
-            (config.join("microsoft-edge"), "edge", "Edge"),
-            (config.join("vivaldi"), "vivaldi", "Vivaldi"),
-            (config.join("opera"), "opera", "Opera"),
-        ]
-    }
+/// A Chromium browser's display name from its user-data dir (`Brave-Browser` ->
+/// `Brave`; `Chrome`, `Chrome for Testing`, `Vivaldi` pass through).
+fn chromium_label(dir: &Path) -> String {
+    dir_name(dir).replace("-Browser", "").trim().to_string()
 }
 
 fn safari(base: &BaseDirs) -> Vec<CookieBrowser> {
@@ -231,51 +190,97 @@ fn safari(base: &BaseDirs) -> Vec<CookieBrowser> {
     Vec::new()
 }
 
+/// First occurrence wins per `spec`, preserving discovery order (so a browser
+/// reached both as `<root>/X` and `<root>/X/Profiles` isn't listed twice).
+fn dedup_by_spec(list: Vec<CookieBrowser>) -> Vec<CookieBrowser> {
+    let mut seen = HashSet::new();
+    list.into_iter().filter(|b| seen.insert(b.spec.clone())).collect()
+}
+
+/// The immediate children of `dir`, sorted; empty if unreadable. Owned paths,
+/// so no directory handle outlives the call.
+fn read_children(dir: &Path) -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    v.sort();
+    v
+}
+
+fn dir_name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn touch(path: PathBuf) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"").unwrap();
+    }
+
     #[test]
-    fn detected_browsers_have_valid_unique_specs() {
-        // Filesystem-dependent, so assert the contract: every spec names a
-        // known engine (optionally with a profile/path suffix), and the specs
-        // are unique.
-        let engines = [
-            "firefox", "chrome", "chromium", "brave", "edge", "vivaldi", "opera", "safari",
-        ];
+    fn browsers_are_classified_but_electron_apps_are_not() {
+        let tmp = std::env::temp_dir().join(format!("whspr-cls-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // A Chrome-format browser: profile has Cookies + History + Login Data,
+        // and its path carries a decryptable engine keyword.
+        let chrome = tmp.join("Chrome/Default");
+        touch(chrome.join("Cookies"));
+        touch(chrome.join("History"));
+        touch(chrome.join("Login Data"));
+        // An Electron app: a Cookies DB but no browser markers.
+        touch(tmp.join("SomeChatApp/Default/Cookies"));
+        // A Firefox fork.
+        touch(tmp.join("zen/Profiles/abc.default/cookies.sqlite"));
+
+        let mut out = Vec::new();
+        classify(&tmp.join("Chrome"), &mut out);
+        classify(&tmp.join("SomeChatApp"), &mut out);
+        classify(&tmp.join("zen"), &mut out);
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let specs: Vec<&str> = out.iter().map(|b| b.spec.as_str()).collect();
+        assert!(
+            specs.iter().any(|s| s.starts_with("chrome:") && s.contains("Chrome/Default")),
+            "Chrome should be detected: {specs:?}"
+        );
+        assert!(
+            specs.iter().any(|s| s.starts_with("firefox:") && s.contains("zen")),
+            "the zen fork should be detected: {specs:?}"
+        );
+        assert!(
+            !specs.iter().any(|s| s.contains("SomeChatApp")),
+            "an Electron app (no History/Login Data) must be excluded: {specs:?}"
+        );
+    }
+
+    #[test]
+    fn engine_is_inferred_before_the_generic_chrome_keyword() {
+        assert_eq!(chromium_engine(Path::new("/x/BraveSoftware/Brave-Browser")), Some("brave"));
+        assert_eq!(chromium_engine(Path::new("/x/Google/Chrome for Testing")), Some("chrome"));
+        assert_eq!(chromium_engine(Path::new("/x/Microsoft Edge")), Some("edge"));
+        assert_eq!(chromium_engine(Path::new("/x/SomeChatApp")), None);
+    }
+
+    #[test]
+    fn detected_specs_are_valid_and_unique() {
+        let engines = ["firefox", "chrome", "chromium", "brave", "edge", "vivaldi", "opera", "safari"];
         let found = installed_cookie_browsers();
         for b in &found {
-            assert!(!b.label.is_empty(), "browser must have a label");
-            let engine = b.spec.split([':']).next().unwrap_or("");
-            assert!(engines.contains(&engine), "unknown engine in spec: {}", b.spec);
+            assert!(!b.label.is_empty());
+            let engine = b.spec.split(':').next().unwrap_or("");
+            assert!(engines.contains(&engine), "unknown engine: {}", b.spec);
         }
         let mut specs: Vec<&str> = found.iter().map(|b| b.spec.as_str()).collect();
         let n = specs.len();
         specs.sort_unstable();
         specs.dedup();
-        assert_eq!(specs.len(), n, "detected browser specs must be unique");
-    }
-
-    #[test]
-    fn firefox_fork_folder_becomes_a_profile_path_spec() {
-        // A fake fork with a cookies.sqlite is detected under its real folder
-        // name and mapped to a firefox:<path> spec; an empty sibling is not.
-        let tmp = std::env::temp_dir().join(format!("whspr-ff-{}", std::process::id()));
-        let prof = tmp.join("zen/Profiles/abc.default");
-        let _ = std::fs::create_dir_all(&prof);
-        let _ = std::fs::write(prof.join("cookies.sqlite"), b"");
-        let _ = std::fs::create_dir_all(tmp.join("empty/Profiles/p")); // no cookies.sqlite
-
-        let mut out = Vec::new();
-        firefox_from_root(&tmp, &mut out);
-        let _ = std::fs::remove_dir_all(&tmp);
-
-        assert_eq!(out.len(), 1, "only the fork with a cookie DB is detected");
-        assert_eq!(out[0].label, "zen");
-        assert!(
-            out[0].spec.starts_with("firefox:") && out[0].spec.ends_with("abc.default"),
-            "spec was {}",
-            out[0].spec
-        );
+        assert_eq!(specs.len(), n, "specs must be unique");
     }
 }
