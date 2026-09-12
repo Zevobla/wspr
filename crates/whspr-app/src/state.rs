@@ -160,11 +160,10 @@ pub struct State {
     /// Whether a HuggingFace login or model download is in flight -- disables
     /// the Models tab's action buttons so a second one can't be kicked off.
     pub hf_busy: bool,
-    /// Live progress for the model download currently in flight (bytes so far,
-    /// total, and a smoothed rate), or `None` when nothing is downloading. Set
-    /// when a download starts, folded by `Message::HfDownloadProgress`, and
-    /// cleared on completion (success or error). Drives the Models screen's
-    /// progress bar -- see `crate::hf_progress`.
+    /// Live progress for the model download in flight (bytes so far, total, and
+    /// a smoothed rate), or `None` when idle. Armed on start, folded by
+    /// `Message::HfDownloadProgress`, cleared on completion; drives the Models
+    /// screen's progress bar (see `crate::hf_progress`).
     pub active_download: Option<crate::hf_progress::ActiveDownload>,
     /// Live contents of the Models tab's "sign in with a token" field: a
     /// HuggingFace access token the user pastes in place of the browser OAuth
@@ -511,10 +510,9 @@ pub enum Message {
     /// The user clicked "Download" for the curated whisper model with this id
     /// (see `whspr_hf::WhisperModel::id`): starts the background download.
     HfDownloadModel(&'static str),
-    /// A byte-count update for the model download in flight, bridged from the
-    /// `whspr_hf` download's progress channel (see `crate::hf_progress`). Folds
-    /// into `State::active_download` to advance the Models screen's progress
-    /// bar; `total` is 0 until the server's `Content-Length` is known.
+    /// A byte-count update for the download in flight, bridged from the
+    /// `whspr_hf` progress channel (see `crate::hf_progress`); folds into
+    /// `State::active_download`. `total` is 0 until `Content-Length` is known.
     HfDownloadProgress { downloaded: u64, total: u64 },
     /// A whisper model download finished: the flat on-disk path on success,
     /// or an error message. On success the model dirs are rescanned.
