@@ -180,6 +180,20 @@ fn actions<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, 
     .style(move |_theme, s| styles::button::text(scheme, s))
     .on_press(Message::PickFileToTranscribe);
 
+    let add_link = button(
+        row![
+            icons::icon(icons::DOWNLOAD, 14.0, scheme.primary),
+            text("Add from a link\u{2026}")
+                .size(type_scale::LABEL_LARGE.size)
+                .font(type_scale::LABEL_LARGE.font()),
+        ]
+        .spacing(spacing::SM)
+        .align_y(Alignment::Center),
+    )
+    .padding([spacing::SM, spacing::MD])
+    .style(move |_theme, s| styles::button::text(scheme, s))
+    .on_press(Message::LinkImportOpen);
+
     // Temporary manual trigger for the longform note-desk mode -- A3 replaces
     // it with an automatic morph, so it stays an unobtrusive ghost action.
     let note_desk = button(
@@ -191,7 +205,7 @@ fn actions<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, 
     .style(move |_theme, s| styles::button::text(scheme, s))
     .on_press(Message::EnterNoteDesk);
 
-    row![copy, pick, note_desk].spacing(spacing::MD).into()
+    row![copy, pick, add_link, note_desk].spacing(spacing::MD).into()
 }
 
 /// The Recent block: a kicker + "All history" link, and the last three
