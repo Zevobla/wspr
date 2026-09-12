@@ -404,6 +404,15 @@ pub enum Message {
     /// attributed to a speaker and saved to history (see
     /// `crate::speakers::attribute_speaker` / `crate::history::record_completed`).
     FileTranscribed(Result<crate::transcribe_file::TranscribeOutcome, String>),
+    /// The user edited the Dictate screen's "Transcribe from URL" text input:
+    /// updates `State::transcribe_url_input`.
+    TranscribeUrlInput(String),
+    /// The user submitted the URL (the button or the input's Enter): if the
+    /// trimmed URL is non-empty, kicks off a background fetch + transcription
+    /// (see `crate::transcribe_url::run_transcribe_url`) whose result is routed
+    /// through `FileTranscribed`, reusing the file-transcribe display/history/
+    /// attribution path verbatim.
+    TranscribeUrlSubmit,
     /// The user clicked the in-app Record button: starts capture if idle,
     /// stops + transcribes if already recording.
     ToggleRecording,
