@@ -45,6 +45,17 @@ pub struct TranscriptRow {
     pub keep_score: u8,
 }
 
+/// A kept chapter marker, shown as a note heading in the desk's notes column.
+/// Built from the chapters the user chose to keep in the "Add from a link"
+/// dialog (see `crate::link_import`); the manual-entry `sample()` desk has none.
+#[derive(Debug, Clone)]
+pub struct NoteHeading {
+    /// The chapter's start time, formatted `MM:SS`.
+    pub time_label: String,
+    /// The chapter title, rendered as a note heading.
+    pub title: String,
+}
+
 /// All state for the note-desk mode. `title` heads the desk, `rows` are the
 /// transcript lines, and `timer_start` drives the header's elapsed timer. The
 /// Typst preview is a static placeholder this phase (real rendering is a later
@@ -55,6 +66,9 @@ pub struct NoteDeskState {
     pub title: String,
     /// The transcript rows shown in the left column.
     pub rows: Vec<TranscriptRow>,
+    /// Kept chapter headings (from a link import), shown in the notes column;
+    /// empty for the manual-entry `sample()` desk.
+    pub headings: Vec<NoteHeading>,
     /// When the session started -- the header timer reads `elapsed()`.
     pub timer_start: std::time::Instant,
 }
@@ -69,6 +83,7 @@ impl NoteDeskState {
         Self {
             title: "Statistical Mechanics · 7".to_string(),
             timer_start: std::time::Instant::now(),
+            headings: vec![],
             rows: vec![
                 TranscriptRow {
                     time_label: "11:52".to_string(),
