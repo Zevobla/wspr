@@ -52,6 +52,9 @@ pub struct LinkImport {
     /// footer shows progress and disables the confirm button instead of looking
     /// frozen; `None` when idle.
     pub importing: Option<String>,
+    /// Whisper's transcription progress (0..=100) for the transcribe-here path,
+    /// driving the footer progress bar; `None` before whisper starts reporting.
+    pub import_progress: Option<u8>,
     /// The decoded thumbnail image handle once `download_thumbnail` finishes
     /// (created once from the fetched JPEG bytes, so the view never re-decodes
     /// per frame -- that caused flicker); `None` before/without one, in which
@@ -119,6 +122,12 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
         Message::LinkImportConfirm => Some(start_import(state)),
         Message::LinkImportImported(result) => {
             apply_imported(state, result);
+            Some(Task::none())
+        }
+        Message::LinkImportProgress(percent) => {
+            if let Some(li) = state.link_import.as_mut() {
+                li.import_progress = Some(*percent);
+            }
             Some(Task::none())
         }
         Message::LinkImportThumbnail(bytes) => {
@@ -237,6 +246,7 @@ fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>)
             if let Some(li) = state.link_import.as_mut() {
                 li.error = Some(error.clone());
                 li.importing = None;
+                li.import_progress = None;
             }
         }
     }
@@ -292,6 +302,7 @@ fn start_import(state: &mut State) -> Task<Message> {
 
     if let Some(li) = state.link_import.as_mut() {
         li.error = None;
+        li.import_progress = None;
         li.importing = Some(
             if use_captions {
                 "Fetching captions\u{2026}"
@@ -303,7 +314,11 @@ fn start_import(state: &mut State) -> Task<Message> {
     }
     state.transcribe_status = Some("Importing\u{2026}".to_string());
 
-    Task::perform(
+    // The transcribe path streams whisper's progress back through this channel;
+    // the captions path never sends, so the bar just doesn't appear there.
+    let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+
+    let import = Task::perform(
         async move {
             let transcript = if use_captions {
                 // Prefer the track's direct URL (a plain GET that dodges the
@@ -334,7 +349,7 @@ fn start_import(state: &mut State) -> Task<Message> {
                     translate: config.capture.translate,
                 };
                 let transcribed = asr
-                    .transcribe(&audio, &opts)
+                    .transcribe_with_progress(&audio, &opts, progress_tx)
                     .await
                     .map_err(|e| e.to_string());
                 let _ = std::fs::remove_file(&wav);
@@ -343,7 +358,20 @@ fn start_import(state: &mut State) -> Task<Message> {
             Ok::<_, String>(Box::new((title, headings, transcript)))
         },
         Message::LinkImportImported,
-    )
+    );
+
+    Task::batch([import, import_progress_task(progress_rx)])
+}
+
+/// Bridges the transcribe-here whisper-progress channel into iced messages,
+/// mirroring `crate::hf_progress::progress_task`. Ends when the import future
+/// drops its sender (transcription finished, or the captions path that never
+/// sends returns), so it runs exactly as long as the import does.
+fn import_progress_task(rx: tokio::sync::mpsc::UnboundedReceiver<u8>) -> Task<Message> {
+    let updates = iced::futures::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|percent| (percent, rx))
+    });
+    Task::run(updates, Message::LinkImportProgress)
 }
 
 /// Parses an `MM:SS` (or bare-seconds) clip field into seconds. Blank or

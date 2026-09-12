@@ -14,13 +14,15 @@ mod card;
 mod chapters;
 mod format;
 
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
-use iced::{Alignment, Border, Color, Element, Length};
+use iced::widget::{
+    button, column, container, progress_bar, row, scrollable, text, text_input, Space,
+};
+use iced::{Alignment, Background, Border, Color, Element, Length};
 
 use crate::link_import::LinkImport;
 use crate::state::Message;
 use crate::theme::widgets;
-use crate::theme::{color, spacing, styles, type_scale};
+use crate::theme::{color, shape, spacing, styles, type_scale};
 
 /// The dialog's fixed width, from the comp.
 const DIALOG_W: f32 = 800.0;
@@ -170,22 +172,39 @@ fn resolved_body<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Elem
 /// The footer: a muted privacy note, Cancel, and the (stubbed) "Open note
 /// desk" confirm (disabled until media resolves).
 fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    // While an import runs, the note line becomes the live status (accent) so
-    // the dialog visibly works instead of looking frozen.
-    let (note_text, note_color) = match &li.importing {
-        Some(status) => (status.clone(), scheme.primary),
-        None => (
+    // While an import runs, the note area becomes the live status (accent): a
+    // real whisper progress bar once transcription reports, else just the
+    // phase text — so the dialog visibly works instead of looking frozen.
+    let status = |content: String, color| {
+        text(content)
+            .size(type_scale::LABEL_MEDIUM.size)
+            .font(type_scale::LABEL_MEDIUM.font())
+            .color(color)
+            .width(Length::Fill)
+    };
+    let note: Element<'a, Message> = match (&li.importing, li.import_progress) {
+        (Some(_), Some(percent)) => column![
+            progress_bar(0.0..=1.0, percent as f32 / 100.0)
+                .girth(Length::Fixed(6.0))
+                .style(move |_theme| progress_bar::Style {
+                    background: Background::Color(scheme.surface_container_highest),
+                    bar: Background::Color(scheme.primary),
+                    border: Border::default().rounded(shape::NONE),
+                }),
+            status(format!("Transcribing\u{2026} {percent}%"), scheme.primary),
+        ]
+        .spacing(spacing::XS)
+        .width(Length::Fill)
+        .into(),
+        (Some(phase), None) => status(phase.clone(), scheme.primary).into(),
+        (None, _) => status(
             "Downloads audio only and deletes it after transcribing \u{2014} change in \
              Settings \u{2192} Privacy."
                 .to_string(),
             scheme.on_surface_variant,
-        ),
+        )
+        .into(),
     };
-    let note = text(note_text)
-        .size(type_scale::LABEL_MEDIUM.size)
-        .font(type_scale::LABEL_MEDIUM.font())
-        .color(note_color)
-        .width(Length::Fill);
 
     let cancel = button(
         text("Cancel")

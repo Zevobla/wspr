@@ -596,6 +596,9 @@ pub enum Message {
     /// A `LinkImportConfirm` import finished (boxed like `LinkImportResolved`
     /// for `clippy::result_large_err`): the imported note, or an error.
     LinkImportImported(Result<Box<crate::link_import::ImportedNote>, String>),
+    /// A transcribe-here import reported whisper progress (0..=100 percent),
+    /// driving the dialog's progress bar.
+    LinkImportProgress(u8),
     /// The link-import thumbnail finished downloading (best-effort): the JPEG
     /// bytes, or `None` if it failed or the video had no thumbnail.
     LinkImportThumbnail(Option<Vec<u8>>),
