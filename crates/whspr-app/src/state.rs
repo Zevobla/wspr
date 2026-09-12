@@ -511,6 +511,11 @@ pub enum Message {
     /// The user clicked "Download" for the curated whisper model with this id
     /// (see `whspr_hf::WhisperModel::id`): starts the background download.
     HfDownloadModel(&'static str),
+    /// A byte-count update for the model download in flight, bridged from the
+    /// `whspr_hf` download's progress channel (see `crate::hf_progress`). Folds
+    /// into `State::active_download` to advance the Models screen's progress
+    /// bar; `total` is 0 until the server's `Content-Length` is known.
+    HfDownloadProgress { downloaded: u64, total: u64 },
     /// A whisper model download finished: the flat on-disk path on success,
     /// or an error message. On success the model dirs are rescanned.
     HfModelDownloaded(Result<std::path::PathBuf, String>),

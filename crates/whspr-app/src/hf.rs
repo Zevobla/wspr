@@ -119,6 +119,12 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
             }
             None => Task::none(),
         },
+        Message::HfDownloadProgress { downloaded, total } => {
+            if let Some(active) = state.active_download.as_mut() {
+                active.update(downloaded, total);
+            }
+            Task::none()
+        }
         Message::HfModelDownloaded(result) => downloaded(state, result, "the ASR list"),
         Message::HfLlmDownloaded(result) => downloaded(state, result, "the Refiner list"),
         Message::HfAsrSelected(option) => {
@@ -237,14 +243,18 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
 }
 
 /// Shared "start a download" bookkeeping for both whisper and LLM: resolves
-/// the target [`download_dir`], and on success flips `hf_busy` + sets the
-/// status line and returns the dir to download into. `None` (with an error
-/// status set) when no models directory can be determined.
+/// the target [`download_dir`], and on success flips `hf_busy`, arms the live
+/// [`ActiveDownload`](crate::hf_progress::ActiveDownload) progress indicator
+/// (which replaces the old static "Downloading..." status line -- see
+/// `crate::hf_progress`), and returns the dir to download into. `None` (with
+/// an error status set) when no models directory can be determined.
 fn start_download(state: &mut State, model_id: &str) -> Option<PathBuf> {
     match download_dir(&state.config) {
         Some(dir) => {
             state.hf_busy = true;
-            state.hf_status = Some(format!("Downloading {model_id}... this can take a while."));
+            state.hf_status = None;
+            state.active_download =
+                Some(crate::hf_progress::ActiveDownload::new(model_id.to_string()));
             Some(dir)
         }
         None => {
@@ -259,6 +269,9 @@ fn start_download(state: &mut State, model_id: &str) -> Option<PathBuf> {
 /// which selector to pick the model in) or the error, and rescans on success.
 fn downloaded(state: &mut State, result: Result<PathBuf, String>, selector: &str) -> Task<Message> {
     state.hf_busy = false;
+    // The download is over -- tear down the live progress indicator whether it
+    // succeeded or failed, so the bar never lingers past completion.
+    state.active_download = None;
     match result {
         Ok(path) => {
             state.hf_status = Some(format!(
