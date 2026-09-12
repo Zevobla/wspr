@@ -195,13 +195,15 @@ fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo
     match result {
         Ok(media) => {
             li.chapters_included = vec![true; media.chapters.len()];
-            if let Some(lang) = media.human_captions.first() {
-                li.use_captions = true;
-                li.caption_lang = Some(lang.code.clone());
-            } else {
-                li.use_captions = false;
-                li.caption_lang = media.auto_captions.first().map(|l| l.code.clone());
-            }
+            // Default to the caption path whenever any track exists (published
+            // first, else the source auto-caption): instant, model-free, and —
+            // fetched by direct URL — importable even when the audio is gated.
+            let default_track = media
+                .human_captions
+                .first()
+                .or_else(|| media.auto_captions.first());
+            li.use_captions = default_track.is_some();
+            li.caption_lang = default_track.map(|l| l.code.clone());
             li.error = None;
             li.thumbnail = None;
             li.media = Some(media.as_ref().clone());
@@ -267,6 +269,16 @@ fn start_import(state: &mut State) -> Task<Message> {
         })
         .collect();
     let caption_lang = li.caption_lang.clone();
+    // The Lang the pick landed on (published tracks first), kept for its direct
+    // URL. Chaining human before auto lets a human track win a code tie.
+    let selected_track = caption_lang.as_ref().and_then(|code| {
+        media
+            .human_captions
+            .iter()
+            .chain(media.auto_captions.iter())
+            .find(|l| &l.code == code)
+            .cloned()
+    });
     let human_track_selected = media
         .human_captions
         .iter()
@@ -286,10 +298,22 @@ fn start_import(state: &mut State) -> Task<Message> {
     Task::perform(
         async move {
             let transcript = if use_captions {
-                let lang = caption_lang.unwrap_or_else(|| "en".to_string());
-                whspr_import::download_captions(&url, &lang, !human_track_selected, cookies)
-                    .await
-                    .map_err(|e| e.to_string())?
+                // Prefer the track's direct URL (a plain GET that dodges the
+                // bot-walled player API); fall back to a yt-dlp spawn otherwise.
+                match selected_track
+                    .as_ref()
+                    .and_then(|t| Some((t.url.as_deref()?, t.ext.as_deref().unwrap_or(""))))
+                {
+                    Some((track_url, ext)) => whspr_import::fetch_caption(track_url, ext)
+                        .await
+                        .map_err(|e| e.to_string())?,
+                    None => {
+                        let lang = caption_lang.unwrap_or_else(|| "en".to_string());
+                        whspr_import::download_captions(&url, &lang, !human_track_selected, cookies)
+                            .await
+                            .map_err(|e| e.to_string())?
+                    }
+                }
             } else {
                 let (wav, audio) = whspr_import::download_to_audio(&url, clip, cookies)
                     .await
@@ -430,7 +454,9 @@ mod tests {
     }
 
     #[test]
-    fn resolved_defaults_to_transcribe_without_a_human_track() {
+    fn resolved_defaults_to_the_auto_caption_when_no_human_track() {
+        // With only auto captions, still default to the (instant, direct-URL)
+        // caption path — it imports even when the audio stream is bot-walled.
         let mut state = open_state();
         assert!(update(
             &mut state,
@@ -438,8 +464,23 @@ mod tests {
         )
         .is_some());
         let li = state.link_import.as_ref().unwrap();
-        assert!(!li.use_captions);
+        assert!(li.use_captions);
         assert_eq!(li.caption_lang.as_deref(), Some("de"));
+    }
+
+    #[test]
+    fn resolved_defaults_to_transcribe_without_any_captions() {
+        let mut state = open_state();
+        let mut media = sample_media(false);
+        media.auto_captions.clear();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Ok(Box::new(media)))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().unwrap();
+        assert!(!li.use_captions);
+        assert_eq!(li.caption_lang, None);
     }
 
     #[test]
