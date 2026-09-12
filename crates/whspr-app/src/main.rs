@@ -17,6 +17,7 @@ mod stats;
 mod system_theme;
 mod theme;
 mod transcribe_file;
+mod transcribe_url;
 mod tray;
 mod tray_state;
 mod worker;
