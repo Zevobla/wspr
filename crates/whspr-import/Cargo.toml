@@ -20,3 +20,7 @@ serde_json = "1.0"
 # workspace default features (rt-multi-thread/macros/sync) rather than
 # editing the workspace dependency.
 tokio = { workspace = true, features = ["process"] }
+# Direct HTTP GET for the resolved thumbnail URL (a public CDN image) -- far
+# faster than a second yt-dlp spawn. Uses oauth2's already-built, rustls-backed
+# reqwest (the same one whspr-hf uses) rather than pulling a second reqwest.
+oauth2.workspace = true

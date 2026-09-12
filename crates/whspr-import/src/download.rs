@@ -126,42 +126,27 @@ pub async fn download_to_audio(
     Ok((wav, audio))
 }
 
-/// Downloads the media's thumbnail as raw JPEG bytes via yt-dlp's
-/// `--write-thumbnail` (converted to jpg for a decodable format), so the
-/// import dialog can show a real preview. Best-effort: callers treat an error
+/// Fetches a thumbnail image straight from its URL (a public CDN image from
+/// [`crate::MediaInfo`]'s `thumbnail`) and returns its raw bytes. A plain HTTP
+/// GET -- fast, and no second yt-dlp spawn. Best-effort: callers treat an error
 /// as "no thumbnail" and keep the placeholder.
-pub async fn download_thumbnail(url: &str, cookies: CookiesFrom) -> Result<Vec<u8>> {
-    let ytdlp = resolve_tool(Tool::YtDlp).ok_or_else(|| {
-        WhsprError::Other("yt-dlp not found: install it or point WHSPR_YTDLP at it".to_string())
-    })?;
-    let dir = unique_temp_dir()?;
-    let out_template = dir.join("thumb.%(ext)s");
-    let mut cmd = tokio::process::Command::new(&ytdlp);
-    cmd.arg("--skip-download")
-        .arg("--write-thumbnail")
-        .arg("--convert-thumbnails")
-        .arg("jpg")
-        .arg("-o")
-        .arg(&out_template);
-    if let CookiesFrom::Browser(browser) = &cookies {
-        cmd.arg("--cookies-from-browser").arg(browser);
-    }
-    cmd.arg(url);
-    let output = cmd
-        .output()
+pub async fn download_thumbnail(url: &str) -> Result<Vec<u8>> {
+    let resp = oauth2::reqwest::Client::new()
+        .get(url)
+        .send()
         .await
-        .map_err(|e| WhsprError::Other(format!("failed to run yt-dlp: {e}")))?;
-    if !output.status.success() {
-        let _ = std::fs::remove_dir_all(&dir);
+        .map_err(|e| WhsprError::Other(format!("thumbnail request failed: {e}")))?;
+    if !resp.status().is_success() {
         return Err(WhsprError::Other(format!(
-            "yt-dlp thumbnail download failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "thumbnail request returned {}",
+            resp.status()
         )));
     }
-    let bytes = std::fs::read(dir.join("thumb.jpg"))
-        .map_err(|e| WhsprError::Other(format!("thumbnail file not found: {e}")));
-    let _ = std::fs::remove_dir_all(&dir);
-    bytes
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| WhsprError::Other(format!("reading thumbnail failed: {e}")))?;
+    Ok(bytes.to_vec())
 }
 
 /// A per-call scratch directory under the system temp dir, named uniquely by

@@ -136,12 +136,33 @@ fn media_info_from_value(v: &Value) -> MediaInfo {
             .or_else(|| v["channel"].as_str())
             .map(str::to_string),
         upload_date: v["upload_date"].as_str().map(str::to_string),
-        thumbnail: v["thumbnail"].as_str().map(str::to_string),
+        thumbnail: pick_thumbnail(v),
         chapters: parse_chapters(&v["chapters"]),
         human_captions: parse_langs(&v["subtitles"]),
         auto_captions: parse_langs(&v["automatic_captions"]),
         playlist,
     }
+}
+
+/// Picks a small/medium thumbnail URL from yt-dlp's `thumbnails` array -- the
+/// widest that's still `<= 640px` (a quick-to-fetch preview, not the ~1280px
+/// maxres), else the narrowest available, else the top-level `thumbnail`.
+fn pick_thumbnail(v: &Value) -> Option<String> {
+    if let Some(arr) = v["thumbnails"].as_array() {
+        let sized: Vec<(&str, i64)> = arr
+            .iter()
+            .filter_map(|t| Some((t["url"].as_str()?, t["width"].as_i64()?)))
+            .collect();
+        let pick = sized
+            .iter()
+            .filter(|(_, w)| *w <= 640)
+            .max_by_key(|(_, w)| *w)
+            .or_else(|| sized.iter().min_by_key(|(_, w)| *w));
+        if let Some((url, _)) = pick {
+            return Some(url.to_string());
+        }
+    }
+    v["thumbnail"].as_str().map(str::to_string)
 }
 
 /// Reads the `chapters` array. Entries without both a start and end time are
