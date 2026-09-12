@@ -591,10 +591,6 @@ pub enum Message {
     LinkImportClipStart(String),
     /// The user edited the "clip to" `MM:SS` input.
     LinkImportClipEnd(String),
-    /// Set the sign-in cookie source: `Some("firefox")` to borrow a browser's
-    /// logged-in session (what gets a bot-walled/private video past YouTube's
-    /// session check), or `None` to run anonymously.
-    LinkImportCookies(Option<String>),
     /// "Open note desk": runs the chosen import, then enters the note desk.
     LinkImportConfirm,
     /// A `LinkImportConfirm` import finished (boxed like `LinkImportResolved`

@@ -48,9 +48,6 @@ pub struct LinkImport {
     pub clip_start: String,
     /// Live contents of the "clip to" `MM:SS` input.
     pub clip_end: String,
-    /// The browser to borrow sign-in cookies from, once chosen (e.g.
-    /// `"safari"`); `None` runs anonymously.
-    pub cookies_browser: Option<String>,
     /// The decoded thumbnail image handle once `download_thumbnail` finishes
     /// (created once from the fetched JPEG bytes, so the view never re-decodes
     /// per frame -- that caused flicker); `None` before/without one, in which
@@ -115,12 +112,6 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             }
             Some(Task::none())
         }
-        Message::LinkImportCookies(browser) => {
-            if let Some(li) = state.link_import.as_mut() {
-                li.cookies_browser = browser.clone();
-            }
-            Some(Task::none())
-        }
         Message::LinkImportConfirm => Some(start_import(state)),
         Message::LinkImportImported(result) => {
             apply_imported(state, result);
@@ -136,10 +127,21 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
     }
 }
 
+/// The cookie source for import spawns, from the persisted Privacy setting
+/// (`Settings -> Privacy -> Media-import sign-in`): a chosen browser's
+/// logged-in session, or anonymous.
+fn cookies_from(config: &whspr_config::Config) -> whspr_import::CookiesFrom {
+    match &config.privacy.cookies_browser {
+        Some(browser) => whspr_import::CookiesFrom::Browser(browser.clone()),
+        None => whspr_import::CookiesFrom::None,
+    }
+}
+
 /// Kicks off `whspr_import::resolve` for the current URL off the UI thread,
 /// marking the dialog `resolving`. A blank URL is a no-op. yt-dlp's error is
 /// mapped to `String` so it lands in `LinkImportResolved(Err(..))`.
 fn start_resolve(state: &mut State) -> Task<Message> {
+    let cookies = cookies_from(&state.config);
     let Some(li) = state.link_import.as_mut() else {
         return Task::none();
     };
@@ -149,10 +151,6 @@ fn start_resolve(state: &mut State) -> Task<Message> {
     }
     li.resolving = true;
     li.error = None;
-    let cookies = match &li.cookies_browser {
-        Some(browser) => whspr_import::CookiesFrom::Browser(browser.clone()),
-        None => whspr_import::CookiesFrom::None,
-    };
     Task::perform(
         async move {
             whspr_import::resolve(&url, cookies)
@@ -284,10 +282,7 @@ fn start_import(state: &mut State) -> Task<Message> {
         .iter()
         .any(|l| Some(&l.code) == caption_lang.as_ref());
     let clip = parse_clip_range(&li.clip_start, &li.clip_end);
-    let cookies = match &li.cookies_browser {
-        Some(browser) => whspr_import::CookiesFrom::Browser(browser.clone()),
-        None => whspr_import::CookiesFrom::None,
-    };
+    let cookies = cookies_from(&state.config);
     let config = state.config.clone();
 
     if let Some(li) = state.link_import.as_mut() {
@@ -509,21 +504,6 @@ mod tests {
             state.link_import.as_ref().unwrap().chapters_included,
             vec![false, true]
         );
-    }
-
-    #[test]
-    fn cookies_pick_sets_then_clears_the_browser() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportCookies(Some("firefox".to_string()))
-        )
-        .is_some());
-        let picked = state.link_import.as_ref().unwrap().cookies_browser.clone();
-        assert_eq!(picked.as_deref(), Some("firefox"));
-
-        assert!(update(&mut state, &Message::LinkImportCookies(None)).is_some());
-        assert_eq!(state.link_import.as_ref().unwrap().cookies_browser, None);
     }
 
     #[test]
