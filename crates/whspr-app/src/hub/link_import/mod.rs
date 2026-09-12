@@ -57,6 +57,7 @@ fn dialog<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
         header(scheme),
         widgets::hr(scheme),
         url_row(li, scheme),
+        session_row(li, scheme),
         resolved_body(li, scheme),
         widgets::hr(scheme),
         footer(li, scheme),
@@ -148,6 +149,89 @@ fn url_row<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a
         .padding([spacing::MD, spacing::XL])
         .width(Length::Fill)
         .into()
+}
+
+/// The browsers whose logged-in cookies yt-dlp can borrow, as
+/// `(--cookies-from-browser id, display label)`, per platform. Firefox and
+/// Chrome carry a real signed-in YouTube session (they defeat the bot wall);
+/// Safari is offered on macOS but is usually not signed in. yt-dlp reports a
+/// clear error for a browser that isn't installed, which surfaces as the
+/// resolve error.
+fn cookie_browsers() -> &'static [(&'static str, &'static str)] {
+    #[cfg(target_os = "windows")]
+    {
+        &[("chrome", "Chrome"), ("firefox", "Firefox"), ("edge", "Edge")]
+    }
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            ("firefox", "Firefox"),
+            ("chrome", "Chrome"),
+            ("safari", "Safari"),
+        ]
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        &[
+            ("firefox", "Firefox"),
+            ("chrome", "Chrome"),
+            ("chromium", "Chromium"),
+        ]
+    }
+}
+
+/// The sign-in / cookie-source picker, shown before Resolve so it applies to
+/// resolve, captions, and audio alike. Borrowing a signed-in browser's cookies
+/// is what gets a bot-walled or private video past YouTube's session check.
+fn session_row<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let hint =
+        text("Sign-in \u{00b7} borrow a signed-in browser for bot-walled or private videos")
+            .size(type_scale::LABEL_MEDIUM.size)
+            .font(type_scale::LABEL_MEDIUM.font())
+            .color(scheme.on_surface_variant);
+
+    let mut chips = row![session_chip(
+        "No sign-in",
+        None,
+        li.cookies_browser.is_none(),
+        scheme,
+    )]
+    .spacing(spacing::SM)
+    .align_y(Alignment::Center);
+    for (id, label) in cookie_browsers() {
+        let selected = li.cookies_browser.as_deref() == Some(*id);
+        chips = chips.push(session_chip(label, Some((*id).to_string()), selected, scheme));
+    }
+
+    container(column![hint, chips].spacing(spacing::SM))
+        .padding([spacing::SM, spacing::XL])
+        .width(Length::Fill)
+        .into()
+}
+
+/// One selectable browser chip (or the "No sign-in" chip when `browser` is
+/// `None`): filled when active, outlined otherwise.
+fn session_chip<'a>(
+    label: &str,
+    browser: Option<String>,
+    selected: bool,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
+    button(
+        text(label.to_string())
+            .size(type_scale::LABEL_MEDIUM.size)
+            .font(type_scale::LABEL_LARGE.font()),
+    )
+    .padding([spacing::XS, spacing::MD])
+    .style(move |_theme, status| {
+        if selected {
+            styles::button::filled(scheme, status)
+        } else {
+            styles::button::outlined(scheme, status)
+        }
+    })
+    .on_press(Message::LinkImportCookies(browser))
+    .into()
 }
 
 /// The resolved section -- media card, captions/transcribe choice, and the
