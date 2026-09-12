@@ -266,8 +266,9 @@ fn start_download(state: &mut State, model_id: &str) -> Option<PathBuf> {
         Some(dir) => {
             state.hf_busy = true;
             state.hf_status = None;
-            state.active_download =
-                Some(crate::hf_progress::ActiveDownload::new(model_id.to_string()));
+            state.active_download = Some(crate::hf_progress::ActiveDownload::new(
+                model_id.to_string(),
+            ));
             Some(dir)
         }
         None => {
