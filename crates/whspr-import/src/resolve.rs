@@ -57,6 +57,10 @@ pub struct MediaInfo {
     pub title: String,
     pub duration_secs: Option<f32>,
     pub uploader: Option<String>,
+    /// yt-dlp's `upload_date`, a `"YYYYMMDD"` string when present.
+    pub upload_date: Option<String>,
+    /// yt-dlp's `thumbnail` URL, when present.
+    pub thumbnail: Option<String>,
     pub chapters: Vec<Chapter>,
     /// Human-authored caption languages (`subtitles`).
     pub human_captions: Vec<Lang>,
@@ -131,6 +135,8 @@ fn media_info_from_value(v: &Value) -> MediaInfo {
             .as_str()
             .or_else(|| v["channel"].as_str())
             .map(str::to_string),
+        upload_date: v["upload_date"].as_str().map(str::to_string),
+        thumbnail: v["thumbnail"].as_str().map(str::to_string),
         chapters: parse_chapters(&v["chapters"]),
         human_captions: parse_langs(&v["subtitles"]),
         auto_captions: parse_langs(&v["automatic_captions"]),
@@ -216,6 +222,8 @@ mod tests {
       "title": "Intro to Rust Ownership",
       "duration": 754,
       "uploader": "Rust Academy",
+      "upload_date": "20230115",
+      "thumbnail": "https://example.com/thumb.jpg",
       "channel": "Rust Academy",
       "webpage_url": "https://example.com/watch?v=abc123",
       "chapters": [
@@ -256,6 +264,11 @@ mod tests {
         assert_eq!(info.title, "Intro to Rust Ownership");
         assert_eq!(info.duration_secs, Some(754.0));
         assert_eq!(info.uploader.as_deref(), Some("Rust Academy"));
+        assert_eq!(info.upload_date.as_deref(), Some("20230115"));
+        assert_eq!(
+            info.thumbnail.as_deref(),
+            Some("https://example.com/thumb.jpg")
+        );
         assert!(info.playlist.is_none());
     }
 
@@ -306,6 +319,8 @@ mod tests {
         assert_eq!(info.title, "bare");
         assert_eq!(info.duration_secs, None);
         assert_eq!(info.uploader, None);
+        assert_eq!(info.upload_date, None);
+        assert_eq!(info.thumbnail, None);
         assert!(info.chapters.is_empty());
         assert!(info.human_captions.is_empty());
         assert!(info.playlist.is_none());

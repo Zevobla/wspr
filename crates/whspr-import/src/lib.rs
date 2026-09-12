@@ -43,7 +43,7 @@ mod download;
 mod resolve;
 mod tools;
 
-pub use captions::{parse_captions, CaptionFormat};
+pub use captions::{download_captions, parse_captions, CaptionFormat};
 pub use download::{download_audio, download_to_audio, ClipRange};
 pub use resolve::{
     parse_media_info, resolve, Chapter, CookiesFrom, Lang, MediaInfo, Playlist, PlaylistEntry,
