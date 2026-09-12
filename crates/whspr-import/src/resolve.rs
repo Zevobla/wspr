@@ -229,20 +229,18 @@ fn parse_langs(v: &Value) -> Vec<Lang> {
 }
 
 /// Picks the best downloadable format from one track's format list, preferring
-/// `json3` (richest timing) then `vtt` then the srv variants, and finally any
-/// entry that carries a URL at all. Returns its `(url, ext)` so the import can
-/// fetch and parse it directly.
+/// `json3` (richest timing) then `vtt` then `srv1`. Only these three are
+/// considered because they're exactly what the caption parser handles — never
+/// return an `ext` (`ttml`, `srv3`, …) the fetch path can't parse, so a track
+/// without a usable format degrades to `(None, None)` instead of a silently
+/// empty transcript. Returns the chosen `(url, ext)`.
 fn pick_caption_format(formats: &[Value]) -> (Option<String>, Option<String>) {
-    const PREF: [&str; 5] = ["json3", "vtt", "srv1", "srv3", "srv2"];
-    let with_url = |f: &&Value| f["url"].as_str().is_some();
-    let chosen = PREF
-        .iter()
-        .find_map(|want| {
-            formats
-                .iter()
-                .find(|f| f["ext"].as_str() == Some(want) && with_url(f))
-        })
-        .or_else(|| formats.iter().find(with_url));
+    const PREF: [&str; 3] = ["json3", "vtt", "srv1"];
+    let chosen = PREF.iter().find_map(|want| {
+        formats
+            .iter()
+            .find(|f| f["ext"].as_str() == Some(want) && f["url"].as_str().is_some())
+    });
     match chosen {
         Some(f) => (
             f["url"].as_str().map(str::to_string),
