@@ -371,6 +371,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_clip_range_needs_both_bounds() {
+        assert!(parse_clip_range("", "").is_none());
+        assert!(parse_clip_range("1:00", "").is_none());
+        let clip = parse_clip_range("1:00", "1:30").expect("both bounds parse");
+        assert_eq!(clip.start_secs, 60.0);
+        assert_eq!(clip.end_secs, 90.0);
+    }
+
+    #[test]
+    fn parse_clip_range_rejects_empty_or_inverted_ranges() {
+        assert!(parse_clip_range("1:30", "1:00").is_none());
+        assert!(parse_clip_range("1:00", "1:00").is_none());
+    }
+
+    #[test]
     fn update_ignores_unrelated_messages() {
         let mut state = open_state();
         assert!(update(&mut state, &Message::ThemeToggled).is_none());
