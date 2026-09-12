@@ -1,5 +1,5 @@
-//! The chapter list, clip inputs, and the playlist / sign-in right column for
-//! the link-import dialog (comp 2c). Chapters become note headings: each row
+//! The chapter list, clip inputs, and the playlist right column for the
+//! link-import dialog (comp 2c). Chapters become note headings: each row
 //! is an include toggle, a start timecode, the title, and its duration.
 
 use iced::widget::{button, column, container, row, text, text_input, Space};
@@ -15,17 +15,24 @@ use crate::state::Message;
 use crate::theme::widgets::{self, Mark};
 use crate::theme::{color, spacing, styles, type_scale};
 
-/// The lower grid: the chapters column (left, fills) beside the playlist /
-/// sign-in column (right, fixed), split by a 2px rule.
+/// The lower grid: the chapters column (left, fills) beside the playlist
+/// column (right, fixed, only when the URL resolved to a playlist), split by
+/// a 2px rule.
 pub fn panel_row<'a>(
     li: &'a LinkImport,
     media: &'a MediaInfo,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
+    let chapters = chapters_column(li, media, scheme);
+    // The playlist block is the only right-column content now that sign-in
+    // moved up beside the URL; without a playlist the chapters span full width.
+    let Some(playlist) = &media.playlist else {
+        return chapters;
+    };
     row![
-        chapters_column(li, media, scheme),
+        chapters,
         widgets::vrule(spacing::layout::RULE, scheme),
-        right_column(li, media, scheme),
+        container(playlist_block(playlist, scheme)).width(Length::Fixed(232.0)),
     ]
     .spacing(spacing::LG)
     .align_y(Alignment::Start)
@@ -147,21 +154,6 @@ fn clip_row<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'
     .into()
 }
 
-/// The right column: the playlist block (when present) over the sign-in
-/// (cookie-borrow) block, in a fixed 232px width.
-fn right_column<'a>(
-    li: &'a LinkImport,
-    media: &'a MediaInfo,
-    scheme: &'static color::Scheme,
-) -> Element<'a, Message> {
-    let mut col = column![].spacing(spacing::LG).width(Length::Fixed(232.0));
-    if let Some(playlist) = &media.playlist {
-        col = col.push(playlist_block(playlist, scheme));
-    }
-    col = col.push(signin_block(li, scheme));
-    col.into()
-}
-
 /// "Rest of the playlist": a summary line and a (stubbed this phase) "Queue
 /// all as one course" button.
 fn playlist_block<'a>(
@@ -197,39 +189,6 @@ fn playlist_block<'a>(
     ]
     .spacing(spacing::SM)
     .into()
-}
-
-/// "Sign-in": borrow cookies from a browser for members-only / private media.
-fn signin_block<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let browser = button(
-        text("Safari \u{25be}")
-            .size(type_scale::LABEL_MEDIUM.size)
-            .font(type_scale::LABEL_LARGE.font()),
-    )
-    .width(Length::Fill)
-    .padding([spacing::SM, spacing::MD])
-    .style(move |_theme, status| styles::button::text(scheme, status))
-    .on_press(Message::LinkImportBorrowCookies("safari".to_string()));
-
-    let mut col = column![
-        kicker(scheme, "Sign-in"),
-        muted(
-            scheme,
-            "Members-only or private? Borrow cookies from a browser.",
-        ),
-        browser,
-    ]
-    .spacing(spacing::SM);
-
-    if let Some(name) = &li.cookies_browser {
-        col = col.push(
-            text(format!("Using {name} cookies."))
-                .size(type_scale::LABEL_MEDIUM.size)
-                .font(type_scale::LABEL_MEDIUM.font())
-                .color(scheme.primary),
-        );
-    }
-    col.into()
 }
 
 /// A muted 12px line -- the dialog's help/summary text.
