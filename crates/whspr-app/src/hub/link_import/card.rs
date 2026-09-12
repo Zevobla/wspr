@@ -17,7 +17,9 @@ use crate::theme::{color, spacing, type_scale};
 
 /// The grey thumbnail placeholder's size (comp: 150x72).
 const THUMB_W: f32 = 150.0;
-const THUMB_H: f32 = 72.0;
+/// 16:9 to match YouTube thumbnails, so the image fills the box cleanly under
+/// `ContentFit::Cover` instead of letterboxing.
+const THUMB_H: f32 = 84.0;
 
 /// The resolved-media card: a thumbnail placeholder beside the title, a muted
 /// `uploader · duration · date` line, and the availability tags.
@@ -54,7 +56,7 @@ fn thumbnail<'a>(
         return iced::widget::Image::new(handle.clone())
             .width(Length::Fixed(THUMB_W))
             .height(Length::Fixed(THUMB_H))
-            .content_fit(iced::ContentFit::Contain)
+            .content_fit(iced::ContentFit::Cover)
             .into();
     }
     container(
