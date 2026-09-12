@@ -196,8 +196,14 @@
           # inputsFrom only carries over buildInputs/nativeBuildInputs, not
           # arbitrary env vars, so cmake/clang and LIBCLANG_PATH/
           # BINDGEN_EXTRA_CLANG_ARGS are repeated here explicitly.
+          # deno is a JavaScript runtime yt-dlp shells out to for YouTube's
+          # "nsig" challenge; without one, format URLs are throttled/missing and
+          # audio downloads fail ("n challenge solving failed" / "The page needs
+          # to be reloaded"). With deno on PATH yt-dlp solves it anonymously, so
+          # "Transcribe here" works without borrowed browser cookies. The macOS
+          # bundle must ship deno beside yt-dlp for the same reason.
           packages = [ toolchain pkgs.pkg-config ] ++ nativeCTools
-            ++ lib.optionals pkgs.stdenv.isDarwin [ ytdlpBundled ];
+            ++ lib.optionals pkgs.stdenv.isDarwin [ ytdlpBundled pkgs.deno ];
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
