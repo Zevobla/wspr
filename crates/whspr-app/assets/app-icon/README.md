@@ -14,5 +14,3 @@ Corners are flat (full-bleed) — macOS applies its own squircle mask.
 To export the macOS icon set once a direction is locked:
 `sips` each master down to 512/256/128/64/32/16 into an `.iconset`, then
 `iconutil -c icns whspr.iconset -o whspr.icns`.
-
-Source: `source-whspr-icon.dc.html` (the original design canvas).
