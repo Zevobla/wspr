@@ -125,6 +125,36 @@ pub async fn download_captions(
     result
 }
 
+/// Fetches an already-resolved caption track straight from its URL and parses
+/// it into a [`whspr_core::Transcript`]. `ext` (from [`crate::Lang::ext`],
+/// always one of `json3`/`vtt`/`srv1`) selects the parser.
+///
+/// Unlike [`download_captions`], this makes one plain HTTP GET instead of
+/// spawning yt-dlp: a track URL from a [`crate::resolve`] dump is directly
+/// fetchable, so this succeeds even when yt-dlp's player API is bot-walled (the
+/// "The page needs to be reloaded" response) and no stream format resolves.
+/// Errors if the format is unknown, the request fails, or it returns non-2xx.
+pub async fn fetch_caption(url: &str, ext: &str) -> Result<Transcript> {
+    let fmt = caption_format_from_ext(ext)
+        .ok_or_else(|| WhsprError::Other(format!("unrecognized caption format: {ext}")))?;
+    let resp = oauth2::reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| WhsprError::Other(format!("caption request failed: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(WhsprError::Other(format!(
+            "caption request returned {}",
+            resp.status()
+        )));
+    }
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| WhsprError::Other(format!("reading caption failed: {e}")))?;
+    Ok(parse_captions(&text, fmt))
+}
+
 /// Locates the single caption file yt-dlp wrote into `dir`, infers its
 /// [`CaptionFormat`] from the extension, reads it, and parses it. Split out so
 /// the caller can clean up the temp dir regardless of outcome.
