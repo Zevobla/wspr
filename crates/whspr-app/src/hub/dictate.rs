@@ -173,11 +173,14 @@ fn transcript_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
 fn url_row<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     let can_submit = url_submit_enabled(state);
 
-    let input = text_input("Paste a YouTube or media link...", &state.transcribe_url_input)
-        .on_input(Message::TranscribeUrlInput)
-        .on_submit_maybe(can_submit.then_some(Message::TranscribeUrlSubmit))
-        .width(Length::Fill)
-        .style(move |_theme, status| styles::text_input::outlined(scheme, status));
+    let input = text_input(
+        "Paste a YouTube or media link...",
+        &state.transcribe_url_input,
+    )
+    .on_input(Message::TranscribeUrlInput)
+    .on_submit_maybe(can_submit.then_some(Message::TranscribeUrlSubmit))
+    .width(Length::Fill)
+    .style(move |_theme, status| styles::text_input::outlined(scheme, status));
 
     let submit = button(
         row![
