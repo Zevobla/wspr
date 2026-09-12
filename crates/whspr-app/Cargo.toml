@@ -17,7 +17,7 @@ path = "src/main.rs"
 # resvg-backed `svg` widget, used to render the vendored Lucide line icons
 # (see `crate::theme::icons`); it's a feature flag on the existing iced dep,
 # pure-Rust (resvg), and needs no new workspace dependency or system library.
-iced = { workspace = true, features = ["tokio", "svg"] }
+iced = { workspace = true, features = ["tokio", "svg", "image"] }
 whspr-core = { workspace = true, features = ["testkit"] }
 whspr-inject.workspace = true
 whspr-audio.workspace = true

@@ -51,6 +51,10 @@ pub struct LinkImport {
     /// The browser to borrow sign-in cookies from, once chosen (e.g.
     /// `"safari"`); `None` runs anonymously.
     pub cookies_browser: Option<String>,
+    /// The fetched thumbnail image bytes (JPEG) once `download_thumbnail`
+    /// finishes; `None` before/without one, in which case the card shows the
+    /// placeholder.
+    pub thumbnail: Option<Vec<u8>>,
 }
 
 impl LinkImport {
@@ -82,7 +86,7 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
         Message::LinkImportResolve => Some(start_resolve(state)),
         Message::LinkImportResolved(result) => {
             apply_resolved(state, result);
-            Some(Task::none())
+            Some(thumbnail_task(state))
         }
         Message::LinkImportUseCaptions(use_captions) => {
             if let Some(li) = state.link_import.as_mut() {
@@ -121,6 +125,12 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             apply_imported(state, result);
             Some(Task::none())
         }
+        Message::LinkImportThumbnail(bytes) => {
+            if let Some(li) = state.link_import.as_mut() {
+                li.thumbnail = bytes.clone();
+            }
+            Some(Task::none())
+        }
         _ => None,
     }
 }
@@ -153,6 +163,30 @@ fn start_resolve(state: &mut State) -> Task<Message> {
     )
 }
 
+/// After a successful resolve, fetches the media's thumbnail off the UI thread
+/// (best-effort) so the card can show a real preview. A no-op when the dialog
+/// closed, there's no media, or the media has no thumbnail URL.
+fn thumbnail_task(state: &State) -> Task<Message> {
+    let Some(li) = state.link_import.as_ref() else {
+        return Task::none();
+    };
+    let Some(media) = li.media.as_ref() else {
+        return Task::none();
+    };
+    if media.thumbnail.is_none() {
+        return Task::none();
+    }
+    let url = li.url.trim().to_string();
+    let cookies = match &li.cookies_browser {
+        Some(browser) => whspr_import::CookiesFrom::Browser(browser.clone()),
+        None => whspr_import::CookiesFrom::None,
+    };
+    Task::perform(
+        async move { whspr_import::download_thumbnail(&url, cookies).await.ok() },
+        Message::LinkImportThumbnail,
+    )
+}
+
 /// Folds a finished `resolve` into the dialog: on success stores the media,
 /// seeds every chapter as included, and defaults the import path to captions
 /// when a human track exists (else transcribe, pre-selecting an auto track's
@@ -173,6 +207,7 @@ fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo
                 li.caption_lang = media.auto_captions.first().map(|l| l.code.clone());
             }
             li.error = None;
+            li.thumbnail = None;
             li.media = Some(media.as_ref().clone());
         }
         Err(error) => {

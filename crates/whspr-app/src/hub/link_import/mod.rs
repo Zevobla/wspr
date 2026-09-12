@@ -158,7 +158,7 @@ fn resolved_body<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Elem
     };
     column![
         widgets::hr(scheme),
-        card::media_card(media, scheme),
+        card::media_card(media, li.thumbnail.as_ref(), scheme),
         card::choice_selector(li, media, scheme),
         chapters::panel_row(li, media, scheme),
     ]
