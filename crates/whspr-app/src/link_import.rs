@@ -51,10 +51,11 @@ pub struct LinkImport {
     /// The browser to borrow sign-in cookies from, once chosen (e.g.
     /// `"safari"`); `None` runs anonymously.
     pub cookies_browser: Option<String>,
-    /// The fetched thumbnail image bytes (JPEG) once `download_thumbnail`
-    /// finishes; `None` before/without one, in which case the card shows the
-    /// placeholder.
-    pub thumbnail: Option<Vec<u8>>,
+    /// The decoded thumbnail image handle once `download_thumbnail` finishes
+    /// (created once from the fetched JPEG bytes, so the view never re-decodes
+    /// per frame -- that caused flicker); `None` before/without one, in which
+    /// case the card shows the placeholder.
+    pub thumbnail: Option<iced::widget::image::Handle>,
 }
 
 impl LinkImport {
@@ -127,7 +128,9 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
         }
         Message::LinkImportThumbnail(bytes) => {
             if let Some(li) = state.link_import.as_mut() {
-                li.thumbnail = bytes.clone();
+                li.thumbnail = bytes
+                    .clone()
+                    .map(iced::widget::image::Handle::from_bytes);
             }
             Some(Task::none())
         }

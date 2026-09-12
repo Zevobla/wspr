@@ -23,7 +23,7 @@ const THUMB_H: f32 = 72.0;
 /// `uploader · duration · date` line, and the availability tags.
 pub fn media_card<'a>(
     media: &'a MediaInfo,
-    thumb: Option<&'a Vec<u8>>,
+    thumb: Option<&'a iced::widget::image::Handle>,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
     row![
@@ -47,14 +47,14 @@ pub fn media_card<'a>(
 /// The media thumbnail: the fetched image when available, else a grey
 /// "Thumbnail" placeholder box.
 fn thumbnail<'a>(
-    thumb: Option<&'a Vec<u8>>,
+    thumb: Option<&'a iced::widget::image::Handle>,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
-    if let Some(bytes) = thumb {
-        return iced::widget::Image::new(iced::widget::image::Handle::from_bytes(bytes.clone()))
+    if let Some(handle) = thumb {
+        return iced::widget::Image::new(handle.clone())
             .width(Length::Fixed(THUMB_W))
             .height(Length::Fixed(THUMB_H))
-            .content_fit(iced::ContentFit::Cover)
+            .content_fit(iced::ContentFit::Contain)
             .into();
     }
     container(
