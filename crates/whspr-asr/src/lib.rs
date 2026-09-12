@@ -54,9 +54,19 @@ impl WhisperLocal {
     }
 }
 
-#[async_trait]
-impl AsrBackend for WhisperLocal {
-    async fn transcribe(&self, audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript> {
+impl WhisperLocal {
+    /// Shared body of both transcribe entrypoints: validates the model path,
+    /// then runs whisper.cpp on a blocking-pool thread (inference is CPU-bound
+    /// and takes real wall-clock seconds), optionally forwarding whisper's
+    /// progress callback (0..=100) to `progress`. WhisperContext/WhisperState/
+    /// FullParams are all `Send + Sync` (whisper-rs marks them so), so moving
+    /// them into the closure and running synchronously there is sound.
+    async fn run(
+        &self,
+        audio: &AudioBuffer,
+        opts: &AsrOptions,
+        progress: Option<tokio::sync::mpsc::UnboundedSender<u8>>,
+    ) -> Result<Transcript> {
         if !self.model_path.exists() {
             return Err(WhsprError::Asr(format!(
                 "WhisperLocal model file not found at {}; download a GGML model (e.g. \
@@ -71,16 +81,27 @@ impl AsrBackend for WhisperLocal {
         let language = opts.language.clone();
         let translate = opts.translate;
 
-        // whisper.cpp inference is CPU-bound and can take real wall-clock
-        // seconds; run it on a blocking-pool thread rather than blocking the
-        // async runtime directly. WhisperContext/WhisperState/FullParams are
-        // all `Send + Sync` (whisper-rs marks them so explicitly), so moving
-        // them into the closure and running synchronously in there is sound.
         tokio::task::spawn_blocking(move || {
-            transcribe_blocking(&model_path, &samples, language.as_deref(), translate)
+            transcribe_blocking(&model_path, &samples, language.as_deref(), translate, progress)
         })
         .await
         .map_err(|e| WhsprError::Asr(format!("WhisperLocal worker thread panicked: {}", e)))?
+    }
+}
+
+#[async_trait]
+impl AsrBackend for WhisperLocal {
+    async fn transcribe(&self, audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript> {
+        self.run(audio, opts, None).await
+    }
+
+    async fn transcribe_with_progress(
+        &self,
+        audio: &AudioBuffer,
+        opts: &AsrOptions,
+        progress: tokio::sync::mpsc::UnboundedSender<u8>,
+    ) -> Result<Transcript> {
+        self.run(audio, opts, Some(progress)).await
     }
 
     fn id(&self) -> &'static str {
@@ -95,6 +116,7 @@ fn transcribe_blocking(
     samples: &[f32],
     language: Option<&str>,
     translate: bool,
+    progress: Option<tokio::sync::mpsc::UnboundedSender<u8>>,
 ) -> Result<Transcript> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -116,6 +138,15 @@ fn transcribe_blocking(
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
+
+    // Forward whisper.cpp's own 0..=100 progress to the caller's channel for a
+    // UI progress bar. Fires from the C inference loop on this blocking thread;
+    // sends are best-effort (a closed channel just means nobody's watching).
+    if let Some(tx) = progress {
+        params.set_progress_callback_safe(move |percent: i32| {
+            let _ = tx.send(percent.clamp(0, 100) as u8);
+        });
+    }
 
     state
         .full(params, samples)
