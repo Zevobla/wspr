@@ -23,6 +23,10 @@ use crate::transcribe_file::{run_transcribe_audio, TranscribeOutcome};
 /// and surfaces in the Dictate screen's status line. When the error is a
 /// missing-tool one, a short install hint is prepended so the message reads
 /// legibly to a user who hasn't set the tools up yet.
+// Reserved for a later stream (the note-desk transition reuses this URL
+// fetch+transcribe path). No caller wires it this phase, so allow it to sit
+// unused rather than trip clippy's `-D warnings` dead-code lint.
+#[allow(dead_code)]
 pub async fn run_transcribe_url(url: String, config: Config) -> Result<TranscribeOutcome, String> {
     let (wav, audio) = whspr_import::download_to_audio(&url, None, whspr_import::CookiesFrom::None)
         .await
@@ -39,6 +43,7 @@ pub async fn run_transcribe_url(url: String, config: Config) -> Result<Transcrib
 /// `whspr-import` (its yt-dlp/ffmpeg lookups report "... not found: ..."), so
 /// the status line tells a first-time user exactly what to do. Any other
 /// error is returned unchanged.
+#[allow(dead_code)]
 fn with_install_hint(error: String) -> String {
     if error.contains("not found") {
         format!("Install yt-dlp and ffmpeg (e.g. brew install yt-dlp ffmpeg). {error}")
