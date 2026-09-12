@@ -128,9 +128,7 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
         }
         Message::LinkImportThumbnail(bytes) => {
             if let Some(li) = state.link_import.as_mut() {
-                li.thumbnail = bytes
-                    .clone()
-                    .map(iced::widget::image::Handle::from_bytes);
+                li.thumbnail = bytes.clone().map(iced::widget::image::Handle::from_bytes);
             }
             Some(Task::none())
         }
