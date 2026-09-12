@@ -128,7 +128,7 @@ pub async fn download_to_audio(
 
 /// A per-call scratch directory under the system temp dir, named uniquely by
 /// pid + a nanosecond clock read so concurrent imports never collide.
-fn unique_temp_dir() -> Result<PathBuf> {
+pub(crate) fn unique_temp_dir() -> Result<PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
