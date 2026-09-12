@@ -74,7 +74,9 @@ pub async fn download_audio(
 
     let mut cmd = tokio::process::Command::new(&ytdlp);
     cmd.arg("-f")
-        .arg("bestaudio")
+        // `bestaudio/best`: fall back to a combined stream when no audio-only
+        // format is offered (some sites / older yt-dlp builds).
+        .arg("bestaudio/best")
         .arg("--extract-audio")
         .arg("--audio-format")
         .arg("wav")
