@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Privacy and security settings for the whspr application.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct PrivacySettings {
     /// Whether the microphone is released/turned off outside of active capture.
@@ -14,6 +14,11 @@ pub struct PrivacySettings {
     /// Whether transcripts stored in history are encrypted at rest.
     /// Default false — plaintext history for now; encryption is a future security wave.
     pub history_encryption: bool,
+    /// Which browser's logged-in cookies media import may borrow (a
+    /// `yt-dlp --cookies-from-browser` id like `"firefox"`), to get a
+    /// bot-walled or private video past the site's session check. Default
+    /// `None` — imports run anonymously until the user opts in.
+    pub cookies_browser: Option<String>,
 }
 
 impl Default for PrivacySettings {
@@ -21,6 +26,7 @@ impl Default for PrivacySettings {
         Self {
             mic_privacy: true,
             history_encryption: false,
+            cookies_browser: None,
         }
     }
 }
@@ -37,7 +43,23 @@ mod tests {
             PrivacySettings {
                 mic_privacy: true,
                 history_encryption: false,
+                cookies_browser: None,
             }
+        );
+    }
+
+    #[test]
+    fn cookies_browser_round_trips_through_toml() {
+        let mut cfg = Config::default();
+        cfg.privacy.cookies_browser = Some("firefox".to_string());
+
+        let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
+        let round_tripped: Config =
+            toml::from_str(&toml_string).expect("failed to deserialize config");
+
+        assert_eq!(
+            round_tripped.privacy.cookies_browser.as_deref(),
+            Some("firefox")
         );
     }
 
