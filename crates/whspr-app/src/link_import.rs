@@ -119,6 +119,10 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             Some(Task::none())
         }
         Message::LinkImportConfirm => Some(start_import(state)),
+        Message::LinkImportImported(result) => {
+            apply_imported(state, result);
+            Some(Task::none())
+        }
         _ => None,
     }
 }
@@ -176,6 +180,27 @@ fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo
         Err(error) => {
             li.error = Some(error.clone());
             li.media = None;
+        }
+    }
+}
+
+/// Folds a finished import into the app: on success builds the note desk from
+/// the transcript + kept headings and closes the dialog (entering the desk); on
+/// failure keeps the dialog open and records the error. Either way the
+/// "Importing…" status is cleared.
+fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>) {
+    state.transcribe_status = None;
+    match result {
+        Ok(payload) => {
+            let (title, headings, transcript) = payload.as_ref();
+            state.note_desk =
+                Some(NoteDeskState::from_import(title, headings.clone(), transcript));
+            state.link_import = None;
+        }
+        Err(error) => {
+            if let Some(li) = state.link_import.as_mut() {
+                li.error = Some(error.clone());
+            }
         }
     }
 }
