@@ -8,7 +8,12 @@
 
 use std::time::Instant;
 
-use whspr_hf::human_size;
+use iced::futures::stream;
+use iced::Task;
+use tokio::sync::mpsc::UnboundedReceiver;
+use whspr_hf::{human_size, DownloadProgress};
+
+use crate::state::Message;
 
 /// Live state for the one download currently in flight on the Models screen:
 /// what's being fetched, how far along it is, and a smoothed transfer rate so
@@ -98,6 +103,24 @@ impl ActiveDownload {
         }
         line
     }
+}
+
+/// Bridges a `whspr_hf::DownloadProgress` receiver into iced: each byte-count
+/// update the download emits comes back to `update` as a
+/// `Message::HfDownloadProgress`. The stream ends -- and so does the task --
+/// when the download drops its sender, i.e. the moment the transfer finishes,
+/// so this runs exactly as long as the download does and never leaks. Runs
+/// alongside the completion `Task::perform` (batched by the caller in
+/// `crate::hf`). Built on `iced::futures` (iced's own re-export of the
+/// `futures` crate), so it needs no extra dependency.
+pub fn progress_task(rx: UnboundedReceiver<DownloadProgress>) -> Task<Message> {
+    let updates = stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|update| (update, rx))
+    });
+    Task::run(updates, |update| Message::HfDownloadProgress {
+        downloaded: update.downloaded,
+        total: update.total,
+    })
 }
 
 #[cfg(test)]

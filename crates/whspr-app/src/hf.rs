@@ -8,8 +8,9 @@
 use std::path::PathBuf;
 
 use iced::Task;
+use tokio::sync::mpsc::UnboundedSender;
 use whspr_config::Config;
-use whspr_hf::{HfIdentity, OauthConfig, ScanResult};
+use whspr_hf::{DownloadProgress, HfIdentity, OauthConfig, ScanResult};
 
 use crate::state::{Message, State};
 
@@ -102,20 +103,28 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
         Message::HfDownloadModel(model_id) => match start_download(state, model_id) {
             Some(dir) => {
                 let token = state.config.huggingface.token.clone();
-                Task::perform(
-                    run_download(model_id, token, dir),
-                    Message::HfModelDownloaded,
-                )
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                Task::batch([
+                    crate::hf_progress::progress_task(rx),
+                    Task::perform(
+                        run_download(model_id, token, dir, Some(tx)),
+                        Message::HfModelDownloaded,
+                    ),
+                ])
             }
             None => Task::none(),
         },
         Message::HfDownloadLlm(model_id) => match start_download(state, model_id) {
             Some(dir) => {
                 let token = state.config.huggingface.token.clone();
-                Task::perform(
-                    run_download_llm(model_id, token, dir),
-                    Message::HfLlmDownloaded,
-                )
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                Task::batch([
+                    crate::hf_progress::progress_task(rx),
+                    Task::perform(
+                        run_download_llm(model_id, token, dir, Some(tx)),
+                        Message::HfLlmDownloaded,
+                    ),
+                ])
             }
             None => Task::none(),
         },
@@ -213,10 +222,14 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
         Message::LlmSearchDownload(repo, filename) => match start_download(state, &filename) {
             Some(dir) => {
                 let token = state.config.huggingface.token.clone();
-                Task::perform(
-                    run_download_gguf(repo, filename, token, dir),
-                    Message::HfLlmDownloaded,
-                )
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                Task::batch([
+                    crate::hf_progress::progress_task(rx),
+                    Task::perform(
+                        run_download_gguf(repo, filename, token, dir, Some(tx)),
+                        Message::HfLlmDownloaded,
+                    ),
+                ])
             }
             None => Task::none(),
         },
@@ -371,10 +384,11 @@ pub async fn run_download(
     model_id: &'static str,
     token: Option<String>,
     dir: PathBuf,
+    progress: Option<UnboundedSender<DownloadProgress>>,
 ) -> Result<PathBuf, String> {
     let model =
         whspr_hf::model_by_id(model_id).ok_or_else(|| format!("unknown model id: {model_id}"))?;
-    whspr_hf::download(model, token, &dir, None)
+    whspr_hf::download(model, token, &dir, progress)
         .await
         .map_err(|e| e.to_string())
 }
@@ -385,10 +399,11 @@ pub async fn run_download_llm(
     model_id: &'static str,
     token: Option<String>,
     dir: PathBuf,
+    progress: Option<UnboundedSender<DownloadProgress>>,
 ) -> Result<PathBuf, String> {
     let model = whspr_hf::llm_model_by_id(model_id)
         .ok_or_else(|| format!("unknown llm model id: {model_id}"))?;
-    whspr_hf::download_llm(model, token, &dir, None)
+    whspr_hf::download_llm(model, token, &dir, progress)
         .await
         .map_err(|e| e.to_string())
 }
@@ -426,8 +441,9 @@ pub async fn run_download_gguf(
     filename: String,
     token: Option<String>,
     dir: PathBuf,
+    progress: Option<UnboundedSender<DownloadProgress>>,
 ) -> Result<PathBuf, String> {
-    whspr_hf::download_gguf(&repo, &filename, token, &dir, None)
+    whspr_hf::download_gguf(&repo, &filename, token, &dir, progress)
         .await
         .map_err(|e| e.to_string())
 }
@@ -504,7 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_download_rejects_an_unknown_model_id() {
-        let err = run_download("not-a-model", None, PathBuf::from("/tmp"))
+        let err = run_download("not-a-model", None, PathBuf::from("/tmp"), None)
             .await
             .expect_err("unknown id should error before any network call");
         assert!(err.contains("unknown model id"), "got: {err}");
@@ -512,7 +528,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_download_llm_rejects_an_unknown_model_id() {
-        let err = run_download_llm("not-a-model", None, PathBuf::from("/tmp"))
+        let err = run_download_llm("not-a-model", None, PathBuf::from("/tmp"), None)
             .await
             .expect_err("unknown id should error before any network call");
         assert!(err.contains("unknown llm model id"), "got: {err}");
