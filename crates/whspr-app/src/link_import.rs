@@ -174,16 +174,11 @@ fn thumbnail_task(state: &State) -> Task<Message> {
     let Some(media) = li.media.as_ref() else {
         return Task::none();
     };
-    if media.thumbnail.is_none() {
+    let Some(thumb_url) = media.thumbnail.clone() else {
         return Task::none();
-    }
-    let url = li.url.trim().to_string();
-    let cookies = match &li.cookies_browser {
-        Some(browser) => whspr_import::CookiesFrom::Browser(browser.clone()),
-        None => whspr_import::CookiesFrom::None,
     };
     Task::perform(
-        async move { whspr_import::download_thumbnail(&url, cookies).await.ok() },
+        async move { whspr_import::download_thumbnail(&thumb_url).await.ok() },
         Message::LinkImportThumbnail,
     )
 }
