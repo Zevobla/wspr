@@ -9,6 +9,22 @@ use crate::types::{AsrOptions, AudioBuffer, RefineContext, SpeakerTurn, Transcri
 pub trait AsrBackend: Send + Sync {
     async fn transcribe(&self, audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript>;
 
+    /// Like [`transcribe`](Self::transcribe), but reports coarse progress
+    /// (a `0..=100` percentage) through `progress` as inference advances — for
+    /// a UI progress bar on long transcriptions. The default ignores `progress`
+    /// and delegates to [`transcribe`](Self::transcribe), so only backends that
+    /// can actually report progress (e.g. local whisper) need override it.
+    /// Sends are best-effort: a dropped receiver just means nobody's watching.
+    async fn transcribe_with_progress(
+        &self,
+        audio: &AudioBuffer,
+        opts: &AsrOptions,
+        progress: tokio::sync::mpsc::UnboundedSender<u8>,
+    ) -> Result<Transcript> {
+        let _ = progress;
+        self.transcribe(audio, opts).await
+    }
+
     /// Stable identifier used for config/CLI backend selection (e.g. "whisper-local").
     fn id(&self) -> &'static str;
 }
