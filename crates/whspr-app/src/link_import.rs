@@ -48,6 +48,10 @@ pub struct LinkImport {
     pub clip_start: String,
     /// Live contents of the "clip to" `MM:SS` input.
     pub clip_end: String,
+    /// A human status while an import runs (`Some("Transcribing…")`), so the
+    /// footer shows progress and disables the confirm button instead of looking
+    /// frozen; `None` when idle.
+    pub importing: Option<String>,
     /// The decoded thumbnail image handle once `download_thumbnail` finishes
     /// (created once from the fetched JPEG bytes, so the view never re-decodes
     /// per frame -- that caused flicker); `None` before/without one, in which
@@ -232,6 +236,7 @@ fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>)
         Err(error) => {
             if let Some(li) = state.link_import.as_mut() {
                 li.error = Some(error.clone());
+                li.importing = None;
             }
         }
     }
@@ -287,6 +292,14 @@ fn start_import(state: &mut State) -> Task<Message> {
 
     if let Some(li) = state.link_import.as_mut() {
         li.error = None;
+        li.importing = Some(
+            if use_captions {
+                "Fetching captions\u{2026}"
+            } else {
+                "Downloading audio + transcribing\u{2026} this can take a while"
+            }
+            .to_string(),
+        );
     }
     state.transcribe_status = Some("Importing\u{2026}".to_string());
 

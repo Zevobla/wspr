@@ -170,14 +170,22 @@ fn resolved_body<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Elem
 /// The footer: a muted privacy note, Cancel, and the (stubbed) "Open note
 /// desk" confirm (disabled until media resolves).
 fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let note = text(
-        "Downloads audio only and deletes it after transcribing \u{2014} change in \
-         Settings \u{2192} Privacy.",
-    )
-    .size(type_scale::LABEL_MEDIUM.size)
-    .font(type_scale::LABEL_MEDIUM.font())
-    .color(scheme.on_surface_variant)
-    .width(Length::Fill);
+    // While an import runs, the note line becomes the live status (accent) so
+    // the dialog visibly works instead of looking frozen.
+    let (note_text, note_color) = match &li.importing {
+        Some(status) => (status.clone(), scheme.primary),
+        None => (
+            "Downloads audio only and deletes it after transcribing \u{2014} change in \
+             Settings \u{2192} Privacy."
+                .to_string(),
+            scheme.on_surface_variant,
+        ),
+    };
+    let note = text(note_text)
+        .size(type_scale::LABEL_MEDIUM.size)
+        .font(type_scale::LABEL_MEDIUM.font())
+        .color(note_color)
+        .width(Length::Fill);
 
     let cancel = button(
         text("Cancel")
@@ -188,14 +196,19 @@ fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
     .style(move |_theme, status| styles::button::outlined(scheme, status))
     .on_press(Message::LinkImportCancel);
 
+    let importing = li.importing.is_some();
     let confirm = button(
-        text("Open note desk \u{2192}")
-            .size(type_scale::LABEL_LARGE.size)
-            .font(type_scale::LABEL_LARGE.font()),
+        text(if importing {
+            "Importing\u{2026}"
+        } else {
+            "Open note desk \u{2192}"
+        })
+        .size(type_scale::LABEL_LARGE.size)
+        .font(type_scale::LABEL_LARGE.font()),
     )
     .padding([spacing::SM, spacing::LG])
     .style(move |_theme, status| styles::button::filled(scheme, status))
-    .on_press_maybe(li.media.is_some().then_some(Message::LinkImportConfirm));
+    .on_press_maybe((li.media.is_some() && !importing).then_some(Message::LinkImportConfirm));
 
     container(
         row![note, cancel, confirm]
