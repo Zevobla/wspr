@@ -95,6 +95,30 @@
           cp ${archivoExtraBold} $out/Archivo-ExtraBold.ttf
         '';
 
+        # yt-dlp: nixpkgs lags yt-dlp's release train by months, and an
+        # outdated yt-dlp fails on YouTube's current formats + caption lists
+        # (the "Requested format is not available" / empty-captions symptom).
+        # Pin the official self-contained macOS release (universal2) so dev and
+        # the bundled .app both ship a current yt-dlp. Bump version + hash to
+        # update -- find the SRI with `nix hash file yt-dlp_macos`.
+        ytdlpBundled = pkgs.stdenvNoCC.mkDerivation {
+          pname = "yt-dlp";
+          version = "2026.08.19";
+          src = pkgs.fetchurl {
+            url = "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos";
+            hash = "sha256-DxkrfsFHq2KIiF1jUdmrZzZ2QAKbQ3dXbvRt15z3sgI=";
+          };
+          dontUnpack = true;
+          dontFixup = true;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            cp $src $out/bin/yt-dlp
+            chmod +x $out/bin/yt-dlp
+            runHook postInstall
+          '';
+        };
+
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -151,6 +175,9 @@
         packages = {
           whspr-cli = whspr-cli;
           whspr-app = whspr-app;
+          # Pinned current yt-dlp (see `ytdlpBundled`); the macOS bundle script
+          # copies `nix build .#yt-dlp` into the .app's Resources.
+          yt-dlp = ytdlpBundled;
           # whspr-app (the iced GUI) is the actual product; whspr-cli stays
           # available as `nix build .#whspr-cli` for the headless binary.
           default = whspr-app;
@@ -169,7 +196,8 @@
           # inputsFrom only carries over buildInputs/nativeBuildInputs, not
           # arbitrary env vars, so cmake/clang and LIBCLANG_PATH/
           # BINDGEN_EXTRA_CLANG_ARGS are repeated here explicitly.
-          packages = [ toolchain pkgs.pkg-config ] ++ nativeCTools;
+          packages = [ toolchain pkgs.pkg-config ] ++ nativeCTools
+            ++ lib.optionals pkgs.stdenv.isDarwin [ ytdlpBundled ];
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
