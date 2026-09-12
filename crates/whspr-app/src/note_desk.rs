@@ -252,4 +252,40 @@ mod tests {
         assert!(!nd.title.is_empty());
         assert!(!nd.rows.is_empty());
     }
+
+    #[test]
+    fn from_import_maps_segments_to_candidate_rows() {
+        let transcript = whspr_core::Transcript {
+            text: "one two".to_string(),
+            language: Some("en".to_string()),
+            segments: vec![
+                whspr_core::TranscriptSegment {
+                    text: "one".to_string(),
+                    start_secs: 5.0,
+                    end_secs: 8.0,
+                    speaker: Some("Speaker A".to_string()),
+                },
+                whspr_core::TranscriptSegment {
+                    text: "two".to_string(),
+                    start_secs: 65.0,
+                    end_secs: 70.0,
+                    speaker: None,
+                },
+            ],
+        };
+        let headings = vec![NoteHeading {
+            time_label: "00:00".to_string(),
+            title: "Intro".to_string(),
+        }];
+        let nd = NoteDeskState::from_import("Lecture", headings, &transcript);
+        assert_eq!(nd.title, "Lecture");
+        assert_eq!(nd.headings.len(), 1);
+        assert_eq!(nd.rows.len(), 2);
+        assert_eq!(nd.rows[0].time_label, "00:05");
+        assert_eq!(nd.rows[0].text, "one");
+        assert_eq!(nd.rows[0].speaker_id.as_deref(), Some("Speaker A"));
+        assert_eq!(nd.rows[0].gutter, Gutter::Candidate);
+        assert_eq!(nd.rows[1].time_label, "01:05");
+        assert!(nd.rows[1].speaker_id.is_none());
+    }
 }
