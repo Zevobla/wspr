@@ -160,6 +160,12 @@ pub struct State {
     /// Whether a HuggingFace login or model download is in flight -- disables
     /// the Models tab's action buttons so a second one can't be kicked off.
     pub hf_busy: bool,
+    /// Live progress for the model download currently in flight (bytes so far,
+    /// total, and a smoothed rate), or `None` when nothing is downloading. Set
+    /// when a download starts, folded by `Message::HfDownloadProgress`, and
+    /// cleared on completion (success or error). Drives the Models screen's
+    /// progress bar -- see `crate::hf_progress`.
+    pub active_download: Option<crate::hf_progress::ActiveDownload>,
     /// Live contents of the Models tab's "sign in with a token" field: a
     /// HuggingFace access token the user pastes in place of the browser OAuth
     /// flow. Held here (never logged) only until `Message::HfTokenSubmit`
@@ -245,6 +251,7 @@ impl State {
             hf_username: None,
             hf_status,
             hf_busy: false,
+            active_download: None,
             hf_token_input: String::new(),
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
