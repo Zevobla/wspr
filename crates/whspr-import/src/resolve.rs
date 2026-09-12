@@ -95,6 +95,16 @@ pub async fn resolve(url: &str, cookies: CookiesFrom) -> Result<MediaInfo> {
 
     let mut cmd = tokio::process::Command::new(&ytdlp);
     cmd.arg("--dump-single-json").arg("--no-warnings");
+    // Resolve is metadata-only: title, chapters, caption tracks — never a
+    // download. When YouTube bot-walls a video's stream formats (the
+    // intermittent "The page needs to be reloaded" / "Requested format is not
+    // available" response), yt-dlp still extracts all the page metadata but
+    // then aborts non-zero because format selection found nothing. This flag
+    // tells it not to treat "no downloadable format" as fatal, so a probe that
+    // only wants metadata still succeeds. It is NOT a player-client hack: it
+    // changes nothing about which formats exist, only whether their absence
+    // fails a metadata dump.
+    cmd.arg("--ignore-no-formats-error");
     if let CookiesFrom::Browser(browser) = &cookies {
         cmd.arg("--cookies-from-browser").arg(browser);
     }
