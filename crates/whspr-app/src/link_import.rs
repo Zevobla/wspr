@@ -12,7 +12,16 @@
 
 use iced::Task;
 
+use whspr_core::AsrBackend;
+
+use crate::note_desk::{NoteDeskState, NoteHeading};
 use crate::state::{Message, State};
+
+/// The payload of a finished link import: the note-desk title, the kept chapter
+/// headings, and the transcript (from published captions or a local
+/// transcribe). Boxed in [`Message::LinkImportImported`] to keep the `Message`
+/// enum small (`clippy::result_large_err`), mirroring `LinkImportResolved`.
+pub type ImportedNote = (String, Vec<NoteHeading>, whspr_core::Transcript);
 
 /// All state for the "Add from a link" modal dialog. `None` on `State` means
 /// the dialog is closed; `Some(..)` opens it. Seeded empty by
