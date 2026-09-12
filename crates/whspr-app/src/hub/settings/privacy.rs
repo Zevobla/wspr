@@ -37,34 +37,8 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     )
 }
 
-/// The `yt-dlp --cookies-from-browser` sources offered per platform, as
-/// `(id, display label)`. Firefox and Chrome carry a real signed-in session
-/// (they defeat the YouTube bot wall); Safari on macOS is offered for
-/// completeness. yt-dlp errors clearly for a browser that isn't installed.
-fn cookie_browsers() -> &'static [(&'static str, &'static str)] {
-    #[cfg(target_os = "windows")]
-    {
-        &[("chrome", "Chrome"), ("firefox", "Firefox"), ("edge", "Edge")]
-    }
-    #[cfg(target_os = "macos")]
-    {
-        &[
-            ("firefox", "Firefox"),
-            ("chrome", "Chrome"),
-            ("safari", "Safari"),
-        ]
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        &[
-            ("firefox", "Firefox"),
-            ("chrome", "Chrome"),
-            ("chromium", "Chromium"),
-        ]
-    }
-}
-
-/// A chip row: "No sign-in" plus each available browser, the active one filled.
+/// A chip row: "No sign-in" plus each **installed** browser (detected by
+/// [`whspr_import::installed_cookie_browsers`]), the active one filled.
 fn browser_picker<'a>(
     current: Option<&str>,
     scheme: &'static color::Scheme,
@@ -72,11 +46,11 @@ fn browser_picker<'a>(
     let mut chips = row![chip("No sign-in", None, current.is_none(), scheme)]
         .spacing(spacing::SM)
         .align_y(Alignment::Center);
-    for (id, label) in cookie_browsers() {
+    for browser in whspr_import::installed_cookie_browsers() {
         chips = chips.push(chip(
-            label,
-            Some((*id).to_string()),
-            current == Some(*id),
+            browser.label,
+            Some(browser.id.to_string()),
+            current == Some(browser.id),
             scheme,
         ));
     }
