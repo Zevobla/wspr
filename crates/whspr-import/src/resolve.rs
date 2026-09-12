@@ -22,6 +22,15 @@ pub struct Lang {
     pub code: String,
     /// A human-readable name for the track, when yt-dlp provides one.
     pub name: Option<String>,
+    /// Direct download URL for this track's best format (see
+    /// [`pick_caption_format`]), lifted straight from yt-dlp's dump. Fetching
+    /// it over plain HTTP sidesteps a second yt-dlp spawn — which would re-hit
+    /// YouTube's frequently bot-walled player API — so captions import even
+    /// when the stream formats themselves are gated.
+    pub url: Option<String>,
+    /// The extension matching [`url`](Self::url) (`json3`/`vtt`/`srv1`…), so
+    /// the fetched bytes can be routed to the right parser.
+    pub ext: Option<String>,
 }
 
 /// One chapter marker within a single media item. The app maps these to note
@@ -204,14 +213,43 @@ fn parse_langs(v: &Value) -> Vec<Lang> {
         return Vec::new();
     };
     map.iter()
-        .map(|(code, formats)| Lang {
-            code: code.clone(),
-            name: formats
-                .as_array()
-                .and_then(|f| f.iter().find_map(|entry| entry["name"].as_str()))
-                .map(str::to_string),
+        .map(|(code, formats)| {
+            let formats = formats.as_array();
+            let (url, ext) = formats.map(|f| pick_caption_format(f)).unwrap_or((None, None));
+            Lang {
+                code: code.clone(),
+                name: formats
+                    .and_then(|f| f.iter().find_map(|entry| entry["name"].as_str()))
+                    .map(str::to_string),
+                url,
+                ext,
+            }
         })
         .collect()
+}
+
+/// Picks the best downloadable format from one track's format list, preferring
+/// `json3` (richest timing) then `vtt` then the srv variants, and finally any
+/// entry that carries a URL at all. Returns its `(url, ext)` so the import can
+/// fetch and parse it directly.
+fn pick_caption_format(formats: &[Value]) -> (Option<String>, Option<String>) {
+    const PREF: [&str; 5] = ["json3", "vtt", "srv1", "srv3", "srv2"];
+    let with_url = |f: &&Value| f["url"].as_str().is_some();
+    let chosen = PREF
+        .iter()
+        .find_map(|want| {
+            formats
+                .iter()
+                .find(|f| f["ext"].as_str() == Some(want) && with_url(f))
+        })
+        .or_else(|| formats.iter().find(with_url));
+    match chosen {
+        Some(f) => (
+            f["url"].as_str().map(str::to_string),
+            f["ext"].as_str().map(str::to_string),
+        ),
+        None => (None, None),
+    }
 }
 
 fn parse_playlist(v: &Value) -> Playlist {
@@ -327,9 +365,36 @@ mod tests {
             .collect();
         assert_eq!(human, ["en", "es"]);
         assert_eq!(info.human_captions[0].name.as_deref(), Some("English"));
+        // The track's downloadable format URL + ext are carried through so the
+        // import can fetch it directly instead of re-spawning yt-dlp.
+        assert_eq!(
+            info.human_captions[0].url.as_deref(),
+            Some("https://example.com/en.vtt")
+        );
+        assert_eq!(info.human_captions[0].ext.as_deref(), Some("vtt"));
 
         let auto: Vec<&str> = info.auto_captions.iter().map(|l| l.code.as_str()).collect();
         assert_eq!(auto, ["de", "en", "fr"]);
+    }
+
+    #[test]
+    fn caption_format_prefers_json3_then_vtt() {
+        let formats = serde_json::json!([
+            { "ext": "srv1", "url": "https://example.com/a.srv1" },
+            { "ext": "vtt", "url": "https://example.com/a.vtt" },
+            { "ext": "json3", "url": "https://example.com/a.json3" }
+        ]);
+        let (url, ext) = pick_caption_format(formats.as_array().unwrap());
+        assert_eq!(url.as_deref(), Some("https://example.com/a.json3"));
+        assert_eq!(ext.as_deref(), Some("json3"));
+
+        // No json3 => falls back to vtt over the srv variants.
+        let formats = serde_json::json!([
+            { "ext": "srv3", "url": "https://example.com/a.srv3" },
+            { "ext": "vtt", "url": "https://example.com/a.vtt" }
+        ]);
+        let (_, ext) = pick_caption_format(formats.as_array().unwrap());
+        assert_eq!(ext.as_deref(), Some("vtt"));
     }
 
     #[test]

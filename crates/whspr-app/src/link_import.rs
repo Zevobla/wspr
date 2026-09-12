@@ -371,6 +371,8 @@ mod tests {
                 vec![Lang {
                     code: "en".to_string(),
                     name: Some("English".to_string()),
+                    url: Some("https://example.com/en.vtt".to_string()),
+                    ext: Some("vtt".to_string()),
                 }]
             } else {
                 Vec::new()
@@ -378,6 +380,8 @@ mod tests {
             auto_captions: vec![Lang {
                 code: "de".to_string(),
                 name: None,
+                url: Some("https://example.com/de.json3".to_string()),
+                ext: Some("json3".to_string()),
             }],
             ..MediaInfo::default()
         }
