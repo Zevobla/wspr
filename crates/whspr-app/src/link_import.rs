@@ -486,4 +486,31 @@ mod tests {
         let mut state = open_state();
         assert!(update(&mut state, &Message::ThemeToggled).is_none());
     }
+
+    #[test]
+    fn imported_ok_enters_the_note_desk() {
+        let mut state = open_state();
+        let transcript = whspr_core::Transcript {
+            text: "hello world".to_string(),
+            ..Default::default()
+        };
+        let payload = Box::new(("Lecture".to_string(), Vec::new(), transcript));
+        assert!(update(&mut state, &Message::LinkImportImported(Ok(payload))).is_some());
+        assert!(state.link_import.is_none());
+        assert!(state.note_desk.is_some());
+        assert!(state.transcribe_status.is_none());
+    }
+
+    #[test]
+    fn imported_err_keeps_the_dialog_open_with_the_error() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportImported(Err("boom".to_string()))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().expect("dialog stays open on error");
+        assert_eq!(li.error.as_deref(), Some("boom"));
+        assert!(state.note_desk.is_none());
+    }
 }
