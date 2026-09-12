@@ -47,18 +47,20 @@ pub struct LlmSearchState {
 /// Settings message, and under the AA-06 line cap.
 pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message>, Message> {
     let task = match message {
-        Message::HfSignIn => match state.config.huggingface.oauth_client_id.clone() {
-            Some(client_id) if !client_id.trim().is_empty() => {
-                state.hf_busy = true;
-                state.hf_status = Some("Opening your browser to sign in...".to_string());
-                Task::perform(run_login(client_id), Message::HfSignedIn)
-            }
-            _ => {
-                state.hf_status =
-                    Some("Set [huggingface].oauth-client-id in your config first.".to_string());
-                Task::none()
-            }
-        },
+        Message::HfSignIn => {
+            // Use the user's own OAuth app if they set one, otherwise whspr's
+            // built-in public client id so browser sign-in works with no setup.
+            let client_id = state
+                .config
+                .huggingface
+                .oauth_client_id
+                .clone()
+                .filter(|id| !id.trim().is_empty())
+                .unwrap_or_else(|| whspr_hf::oauth::BUILTIN_CLIENT_ID.to_string());
+            state.hf_busy = true;
+            state.hf_status = Some("Opening your browser to sign in...".to_string());
+            Task::perform(run_login(client_id), Message::HfSignedIn)
+        }
         Message::HfTokenInput(token) => {
             state.hf_token_input = token;
             Task::none()
