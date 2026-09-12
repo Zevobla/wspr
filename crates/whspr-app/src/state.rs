@@ -590,6 +590,9 @@ pub enum Message {
     LinkImportClipEnd(String),
     /// Borrow sign-in cookies from this browser (e.g. `"safari"`).
     LinkImportBorrowCookies(String),
-    /// "Open note desk" -- stubbed for F3; closes the dialog + sets a status.
+    /// "Open note desk": runs the chosen import, then enters the note desk.
     LinkImportConfirm,
+    /// A `LinkImportConfirm` import finished (boxed like `LinkImportResolved`
+    /// for `clippy::result_large_err`): the imported note, or an error.
+    LinkImportImported(Result<Box<crate::link_import::ImportedNote>, String>),
 }
