@@ -9,6 +9,9 @@ use crate::model_menu::{AsrOption, RefineOption};
 // were part of this file, so they're re-exported here to keep the existing
 // `crate::state::Screen` / `crate::state::SettingsSection` paths working.
 pub use crate::screen::{Screen, SettingsSection};
+// The link-import dialog's state (with its handlers in `crate::link_import`);
+// re-exported so `state::LinkImport` resolves like the other Hub state types.
+pub use crate::link_import::LinkImport;
 
 /// Top-level state for the whspr GUI daemon (the Hub window).
 #[derive(Debug)]
@@ -183,6 +186,9 @@ pub struct State {
     /// `Message::EnterNoteDesk` / `Message::BackToDictate`; the auto-morph is
     /// a later phase.
     pub note_desk: Option<crate::note_desk::NoteDeskState>,
+    /// The "Add from a link" modal dialog's state (`crate::link_import`), or
+    /// `None` when the dialog is closed. Opened by `Message::LinkImportOpen`.
+    pub link_import: Option<LinkImport>,
 }
 
 impl State {
@@ -238,6 +244,7 @@ impl State {
             screenshot_taken: false,
             needs_speaker_model: false,
             note_desk: None,
+            link_import: None,
         }
     }
 }
