@@ -193,8 +193,11 @@ fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>)
     match result {
         Ok(payload) => {
             let (title, headings, transcript) = payload.as_ref();
-            state.note_desk =
-                Some(NoteDeskState::from_import(title, headings.clone(), transcript));
+            state.note_desk = Some(NoteDeskState::from_import(
+                title,
+                headings.clone(),
+                transcript,
+            ));
             state.link_import = None;
         }
         Err(error) => {
@@ -269,7 +272,10 @@ fn start_import(state: &mut State) -> Task<Message> {
                     language,
                     translate: config.capture.translate,
                 };
-                let transcribed = asr.transcribe(&audio, &opts).await.map_err(|e| e.to_string());
+                let transcribed = asr
+                    .transcribe(&audio, &opts)
+                    .await
+                    .map_err(|e| e.to_string());
                 let _ = std::fs::remove_file(&wav);
                 transcribed?
             };
@@ -509,7 +515,10 @@ mod tests {
             &Message::LinkImportImported(Err("boom".to_string()))
         )
         .is_some());
-        let li = state.link_import.as_ref().expect("dialog stays open on error");
+        let li = state
+            .link_import
+            .as_ref()
+            .expect("dialog stays open on error");
         assert_eq!(li.error.as_deref(), Some("boom"));
         assert!(state.note_desk.is_none());
     }
