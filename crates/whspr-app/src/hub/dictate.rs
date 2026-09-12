@@ -3,7 +3,7 @@
 //! and a Recent table -- restyled onto the Modernist widgets (flat, flush
 //! left, 2px rules between blocks).
 
-use iced::widget::{button, column, row, text, text_input, Space};
+use iced::widget::{button, column, row, text, Space};
 use iced::{Alignment, Element, Length};
 
 use crate::state::{Message, Screen, State};
@@ -18,14 +18,6 @@ fn copy_enabled(state: &State) -> bool {
         .transcribed_text
         .as_deref()
         .is_some_and(|t| !t.trim().is_empty())
-}
-
-/// Whether the "Transcribe from URL" action can fire: a non-empty trimmed URL
-/// and no transcription already running (`pipeline_state` is `Transcribing`),
-/// so a second fetch can't be kicked off while one is in flight.
-fn url_submit_enabled(state: &State) -> bool {
-    state.pipeline_state != whspr_core::PipelineState::Transcribing
-        && !state.transcribe_url_input.trim().is_empty()
 }
 
 fn word_count(text: &str) -> usize {
@@ -152,53 +144,9 @@ fn transcript_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
         None => Space::new().into(),
     };
 
-    column![
-        header,
-        body,
-        actions(state, scheme),
-        url_row(state, scheme),
-        status
-    ]
-    .spacing(spacing::MD)
-    .width(Length::Fill)
-    .into()
-}
-
-/// A media-link field + "Transcribe from URL..." action (a YouTube/podcast
-/// link). Mirrors the file-transcribe flow: the fetch + transcription run in
-/// the background and the result comes back through `Message::FileTranscribed`,
-/// so display/history/attribution are reused. While a transcription is already
-/// running (`pipeline_state` is `Transcribing`), both the button and the
-/// input's Enter are disabled so a second fetch can't be kicked off.
-fn url_row<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let can_submit = url_submit_enabled(state);
-
-    let input = text_input(
-        "Paste a YouTube or media link...",
-        &state.transcribe_url_input,
-    )
-    .on_input(Message::TranscribeUrlInput)
-    .on_submit_maybe(can_submit.then_some(Message::TranscribeUrlSubmit))
-    .width(Length::Fill)
-    .style(move |_theme, status| styles::text_input::outlined(scheme, status));
-
-    let submit = button(
-        row![
-            icons::icon(icons::DOWNLOAD, 14.0, scheme.primary),
-            text("Transcribe from URL...")
-                .size(type_scale::LABEL_LARGE.size)
-                .font(type_scale::LABEL_LARGE.font()),
-        ]
-        .spacing(spacing::SM)
-        .align_y(Alignment::Center),
-    )
-    .padding([spacing::SM, spacing::MD])
-    .style(move |_theme, s| styles::button::text(scheme, s))
-    .on_press_maybe(can_submit.then_some(Message::TranscribeUrlSubmit));
-
-    row![input, submit]
+    column![header, body, actions(state, scheme), status]
         .spacing(spacing::MD)
-        .align_y(Alignment::Center)
+        .width(Length::Fill)
         .into()
 }
 
@@ -232,6 +180,20 @@ fn actions<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, 
     .style(move |_theme, s| styles::button::text(scheme, s))
     .on_press(Message::PickFileToTranscribe);
 
+    let add_link = button(
+        row![
+            icons::icon(icons::DOWNLOAD, 14.0, scheme.primary),
+            text("Add from a link\u{2026}")
+                .size(type_scale::LABEL_LARGE.size)
+                .font(type_scale::LABEL_LARGE.font()),
+        ]
+        .spacing(spacing::SM)
+        .align_y(Alignment::Center),
+    )
+    .padding([spacing::SM, spacing::MD])
+    .style(move |_theme, s| styles::button::text(scheme, s))
+    .on_press(Message::LinkImportOpen);
+
     // Temporary manual trigger for the longform note-desk mode -- A3 replaces
     // it with an automatic morph, so it stays an unobtrusive ghost action.
     let note_desk = button(
@@ -243,7 +205,9 @@ fn actions<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, 
     .style(move |_theme, s| styles::button::text(scheme, s))
     .on_press(Message::EnterNoteDesk);
 
-    row![copy, pick, note_desk].spacing(spacing::MD).into()
+    row![copy, pick, add_link, note_desk]
+        .spacing(spacing::MD)
+        .into()
 }
 
 /// The Recent block: a kicker + "All history" link, and the last three
@@ -342,28 +306,6 @@ mod tests {
     #[test]
     fn copy_enabled_with_a_real_transcript() {
         assert!(copy_enabled(&state_with_transcript(Some("hello world"))));
-    }
-
-    #[test]
-    fn url_submit_disabled_when_input_is_blank() {
-        let mut state = State::new(Config::default());
-        state.transcribe_url_input = "   ".to_string();
-        assert!(!url_submit_enabled(&state));
-    }
-
-    #[test]
-    fn url_submit_enabled_with_a_url_when_idle() {
-        let mut state = State::new(Config::default());
-        state.transcribe_url_input = "https://youtu.be/abc".to_string();
-        assert!(url_submit_enabled(&state));
-    }
-
-    #[test]
-    fn url_submit_disabled_while_transcribing() {
-        let mut state = State::new(Config::default());
-        state.transcribe_url_input = "https://youtu.be/abc".to_string();
-        state.pipeline_state = whspr_core::PipelineState::Transcribing;
-        assert!(!url_submit_enabled(&state));
     }
 
     #[test]

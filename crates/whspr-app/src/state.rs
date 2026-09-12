@@ -9,6 +9,9 @@ use crate::model_menu::{AsrOption, RefineOption};
 // were part of this file, so they're re-exported here to keep the existing
 // `crate::state::Screen` / `crate::state::SettingsSection` paths working.
 pub use crate::screen::{Screen, SettingsSection};
+// The link-import dialog's state (with its handlers in `crate::link_import`);
+// re-exported so `state::LinkImport` resolves like the other Hub state types.
+pub use crate::link_import::LinkImport;
 
 /// Top-level state for the whspr GUI daemon (the Hub window).
 #[derive(Debug)]
@@ -89,11 +92,6 @@ pub struct State {
     /// The text from the most recent "Transcribe a file" run, shown on-screen
     /// in the Hub. `None` until the user transcribes a file this session.
     pub transcribed_text: Option<String>,
-    /// Live contents of the Dictate screen's "Transcribe from URL" text input
-    /// (a media link -- YouTube etc.). Cleared the moment a fetch is kicked
-    /// off (see `crate::app`'s `TranscribeUrlSubmit` handler); the fetch +
-    /// transcription then run through the shared `FileTranscribed` path.
-    pub transcribe_url_input: String,
     /// Whether the in-app record button is currently capturing. The live
     /// `CaptureHandle` itself lives in a main-thread `thread_local` in
     /// `crate::app` (cpal's stream is `!Send`/`!Debug`, so it can't sit in
@@ -183,6 +181,9 @@ pub struct State {
     /// `Message::EnterNoteDesk` / `Message::BackToDictate`; the auto-morph is
     /// a later phase.
     pub note_desk: Option<crate::note_desk::NoteDeskState>,
+    /// The "Add from a link" modal dialog's state (`crate::link_import`), or
+    /// `None` when the dialog is closed. Opened by `Message::LinkImportOpen`.
+    pub link_import: Option<LinkImport>,
 }
 
 impl State {
@@ -219,7 +220,6 @@ impl State {
             diarize_status: None,
             transcribe_status: None,
             transcribed_text: None,
-            transcribe_url_input: String::new(),
             is_recording: false,
             mic_level: 0.0,
             tray: None,
@@ -238,6 +238,7 @@ impl State {
             screenshot_taken: false,
             needs_speaker_model: false,
             note_desk: None,
+            link_import: None,
         }
     }
 }
@@ -372,15 +373,6 @@ pub enum Message {
     /// attributed to a speaker and saved to history (see
     /// `crate::speakers::attribute_speaker` / `crate::history::record_completed`).
     FileTranscribed(Result<crate::transcribe_file::TranscribeOutcome, String>),
-    /// The user edited the Dictate screen's "Transcribe from URL" text input:
-    /// updates `State::transcribe_url_input`.
-    TranscribeUrlInput(String),
-    /// The user submitted the URL (the button or the input's Enter): if the
-    /// trimmed URL is non-empty, kicks off a background fetch + transcription
-    /// (see `crate::transcribe_url::run_transcribe_url`) whose result is routed
-    /// through `FileTranscribed`, reusing the file-transcribe display/history/
-    /// attribution path verbatim.
-    TranscribeUrlSubmit,
     /// The user clicked the in-app Record button: starts capture if idle,
     /// stops + transcribes if already recording.
     ToggleRecording,
@@ -576,4 +568,28 @@ pub enum Message {
     /// The Hub window screenshot resolved: encode it to the requested PNG
     /// path and exit.
     ScreenshotTaken(iced::window::Screenshot),
+    /// Opens the link-import modal (see `crate::link_import`).
+    LinkImportOpen,
+    /// Dismisses the link-import dialog.
+    LinkImportCancel,
+    /// The user edited the dialog's URL input.
+    LinkImportUrl(String),
+    /// "Resolve" pressed: runs `whspr_import::resolve`.
+    LinkImportResolve,
+    /// A `resolve` finished: media metadata or an error message. The
+    /// `MediaInfo` is boxed to keep the `Message` enum (and thus the `Err`
+    /// variant of the handler chain) small -- see `clippy::result_large_err`.
+    LinkImportResolved(Result<Box<whspr_import::MediaInfo>, String>),
+    /// Captions (`true`) vs transcribe-here (`false`) selector.
+    LinkImportUseCaptions(bool),
+    /// Toggles whether the chapter at this index becomes a note heading.
+    LinkImportToggleChapter(usize),
+    /// The user edited the "clip from" `MM:SS` input.
+    LinkImportClipStart(String),
+    /// The user edited the "clip to" `MM:SS` input.
+    LinkImportClipEnd(String),
+    /// Borrow sign-in cookies from this browser (e.g. `"safari"`).
+    LinkImportBorrowCookies(String),
+    /// "Open note desk" -- stubbed for F3; closes the dialog + sets a status.
+    LinkImportConfirm,
 }

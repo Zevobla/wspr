@@ -10,7 +10,7 @@
 //! `history`, `models`, `speakers`, `settings`) renders its own body from
 //! the shared widgets in `crate::theme::widgets`.
 
-use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, stack, text, Space};
 use iced::{Alignment, Background, Border, Element, Length};
 
 // Windows-only custom caption/resize chrome for the borderless window (see
@@ -21,6 +21,7 @@ mod caption_windows;
 mod common;
 mod dictate;
 mod history;
+mod link_import;
 mod models;
 pub mod note_desk;
 pub(crate) mod settings;
@@ -200,7 +201,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
     #[cfg(target_os = "windows")]
     let hub = caption_windows::chrome(hub, scheme);
 
-    hub
+    // Overlay the "Add from a link" modal when it's open (comp 2c): stacked on
+    // top of the whole shell, the backdrop dimming the Hub beneath it (same
+    // `stack!` precedent as the Windows caption controls).
+    match &state.link_import {
+        Some(li) => stack![hub, link_import::overlay(li, scheme)].into(),
+        None => hub,
+    }
 }
 
 /// The rail's label for a screen -- pure so the wording stays testable.
