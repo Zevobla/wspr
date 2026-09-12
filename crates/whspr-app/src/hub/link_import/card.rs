@@ -93,26 +93,34 @@ fn meta_line<'a>(media: &'a MediaInfo, scheme: &'static color::Scheme) -> Elemen
         .into()
 }
 
+/// yt-dlp keys the source auto-caption `<lang>-orig` (e.g. `ru-orig`); strip
+/// that suffix so the UI shows a plain language code.
+fn display_code(code: &str) -> &str {
+    code.strip_suffix("-orig").unwrap_or(code)
+}
+
 /// The availability tags: caption tracks (human/auto), chapter count, and a
 /// playlist marker -- matching the comp's outline/neutral tag row.
 fn tags<'a>(media: &'a MediaInfo, scheme: &'static color::Scheme) -> Element<'a, Message> {
     let mut tag_row = row![].spacing(spacing::SM);
     let mut captioned = false;
     for lang in &media.human_captions {
+        let code = display_code(&lang.code);
         let label = if captioned {
-            format!("{} (human)", lang.code)
+            format!("{code} (human)")
         } else {
             captioned = true;
-            format!("Captions: {} (human)", lang.code)
+            format!("Captions: {code} (human)")
         };
         tag_row = tag_row.push(widgets::tag(TagKind::Outline, label, scheme));
     }
     for lang in &media.auto_captions {
+        let code = display_code(&lang.code);
         let label = if captioned {
-            format!("{} (auto)", lang.code)
+            format!("{code} (auto)")
         } else {
             captioned = true;
-            format!("Captions: {} (auto)", lang.code)
+            format!("Captions: {code} (auto)")
         };
         tag_row = tag_row.push(widgets::tag(TagKind::Outline, label, scheme));
     }
@@ -146,7 +154,10 @@ pub fn choice_selector<'a>(
         "No captions for this video".to_string()
     } else {
         match &li.caption_lang {
-            Some(code) => format!("{code} \u{00b7} already timestamped, no model needed"),
+            Some(code) => format!(
+                "{} \u{00b7} already timestamped, no model needed",
+                display_code(code)
+            ),
             None => "already timestamped \u{00b7} no model needed".to_string(),
         }
     };
