@@ -33,3 +33,6 @@ debug
 **/*.rs.bk
 *.pdb
 **/mutants.out*/
+
+# --- Design comps / references (read from Downloads, never tracked) ---
+*.dc.html
