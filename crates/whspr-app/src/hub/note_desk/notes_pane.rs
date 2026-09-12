@@ -177,4 +177,17 @@ mod tests {
     fn typst_column_builds() {
         let _: Element<'_, Message> = view(&NoteDeskState::sample(), &color::LIGHT);
     }
+
+    #[test]
+    fn typst_column_renders_headings() {
+        let nd = NoteDeskState::from_import(
+            "Lecture",
+            vec![crate::note_desk::NoteHeading {
+                time_label: "00:00".to_string(),
+                title: "Intro".to_string(),
+            }],
+            &whspr_core::Transcript::default(),
+        );
+        let _: Element<'_, Message> = view(&nd, &color::LIGHT);
+    }
 }
