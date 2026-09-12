@@ -21,6 +21,7 @@ mod caption_windows;
 mod common;
 mod dictate;
 mod history;
+mod link_import;
 mod models;
 pub mod note_desk;
 pub(crate) mod settings;
