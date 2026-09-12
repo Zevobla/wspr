@@ -116,6 +116,11 @@ pub struct State {
     /// The text from the most recent "Transcribe a file" run, shown on-screen
     /// in the Hub. `None` until the user transcribes a file this session.
     pub transcribed_text: Option<String>,
+    /// Live contents of the Dictate screen's "Transcribe from URL" text input
+    /// (a media link -- YouTube etc.). Cleared the moment a fetch is kicked
+    /// off (see `crate::app`'s `TranscribeUrlSubmit` handler); the fetch +
+    /// transcription then run through the shared `FileTranscribed` path.
+    pub transcribe_url_input: String,
     /// Whether the in-app record button is currently capturing. The live
     /// `CaptureHandle` itself lives in a main-thread `thread_local` in
     /// `crate::app` (cpal's stream is `!Send`/`!Debug`, so it can't sit in
@@ -241,6 +246,7 @@ impl State {
             diarize_status: None,
             transcribe_status: None,
             transcribed_text: None,
+            transcribe_url_input: String::new(),
             is_recording: false,
             mic_level: 0.0,
             tray: None,
