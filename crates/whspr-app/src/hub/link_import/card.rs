@@ -46,7 +46,10 @@ pub fn media_card<'a>(
 
 /// The media thumbnail: the fetched image when available, else a grey
 /// "Thumbnail" placeholder box.
-fn thumbnail<'a>(thumb: Option<&'a Vec<u8>>, scheme: &'static color::Scheme) -> Element<'a, Message> {
+fn thumbnail<'a>(
+    thumb: Option<&'a Vec<u8>>,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     if let Some(bytes) = thumb {
         return iced::widget::Image::new(iced::widget::image::Handle::from_bytes(bytes.clone()))
             .width(Length::Fixed(THUMB_W))
