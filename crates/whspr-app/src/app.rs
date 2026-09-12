@@ -279,6 +279,32 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Message::FileTranscribed,
             )
         }
+        Message::TranscribeUrlInput(url) => {
+            state.transcribe_url_input = url;
+            Task::none()
+        }
+        Message::TranscribeUrlSubmit => {
+            let url = state.transcribe_url_input.trim().to_string();
+            if url.is_empty() {
+                Task::none()
+            } else {
+                state.transcribe_url_input.clear();
+                state.transcribed_text = None;
+                state.transcribe_status =
+                    Some("Fetching audio from the link... this can take a while.".to_string());
+                // Show the "thinking" tray icon while the fetch + transcription
+                // run, exactly like the record/stop path -- this also drives the
+                // Dictate screen's "disable re-submit while busy" gate (see
+                // `crate::hub::dictate`). The URL result routes back through
+                // `Message::FileTranscribed`, reusing display/history/attribution
+                // (and its error arm) verbatim.
+                set_pipeline_state(state, whspr_core::PipelineState::Transcribing);
+                Task::perform(
+                    crate::transcribe_url::run_transcribe_url(url, state.config.clone()),
+                    Message::FileTranscribed,
+                )
+            }
+        }
         Message::FileTranscribed(Ok((text, duration_secs, embedding))) => {
             state.transcribe_status = Some("Transcription complete".to_string());
             state.transcribed_text = Some(text.clone());
