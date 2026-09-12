@@ -6,6 +6,7 @@ mod hf_progress;
 mod history;
 mod hotkey_capture;
 mod hub;
+mod link_import;
 mod logging;
 mod model_menu;
 mod note_desk;
