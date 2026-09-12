@@ -47,12 +47,9 @@ fn browser_picker<'a>(
         .spacing(spacing::SM)
         .align_y(Alignment::Center);
     for browser in whspr_import::installed_cookie_browsers() {
-        chips = chips.push(chip(
-            browser.label,
-            Some(browser.id.to_string()),
-            current == Some(browser.id),
-            scheme,
-        ));
+        let whspr_import::CookieBrowser { label, spec } = browser;
+        let selected = current == Some(spec.as_str());
+        chips = chips.push(chip(&label, Some(spec), selected, scheme));
     }
     chips.into()
 }
