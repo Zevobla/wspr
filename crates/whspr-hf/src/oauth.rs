@@ -44,6 +44,15 @@ pub const DEFAULT_REDIRECT_PORT: u16 = 8788;
 pub const DEFAULT_SCOPES: &[&str] = &["openid", "profile", "read-repos"];
 /// How long [`run_login`] waits for the browser redirect before giving up.
 pub const DEFAULT_LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+/// whspr's built-in HuggingFace OAuth **client id**, so "Sign in with
+/// HuggingFace" works out of the box with no per-user setup. It is a *public*
+/// identifier, not a secret: whspr is a native public client, so the flow uses
+/// PKCE (see the module docs) and there is deliberately no client secret here.
+/// Registered as a Connected App whose redirect URI is [`redirect_uri`] on
+/// [`DEFAULT_REDIRECT_PORT`] with [`DEFAULT_SCOPES`].
+/// `whspr_config::HuggingFaceSettings::oauth_client_id` overrides it for anyone
+/// running their own OAuth app.
+pub const BUILTIN_CLIENT_ID: &str = "a89b3ec5-447f-4205-b738-785b78b09276";
 
 /// The `http://localhost:<port>/callback` redirect URI for `port`. This exact
 /// string must be registered on the HuggingFace OAuth app.
