@@ -115,9 +115,9 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             }
             Some(Task::none())
         }
-        Message::LinkImportBorrowCookies(browser) => {
+        Message::LinkImportCookies(browser) => {
             if let Some(li) = state.link_import.as_mut() {
-                li.cookies_browser = Some(browser.clone());
+                li.cookies_browser = browser.clone();
             }
             Some(Task::none())
         }
@@ -512,22 +512,18 @@ mod tests {
     }
 
     #[test]
-    fn borrow_cookies_records_the_browser() {
+    fn cookies_pick_sets_then_clears_the_browser() {
         let mut state = open_state();
         assert!(update(
             &mut state,
-            &Message::LinkImportBorrowCookies("safari".to_string())
+            &Message::LinkImportCookies(Some("firefox".to_string()))
         )
         .is_some());
-        assert_eq!(
-            state
-                .link_import
-                .as_ref()
-                .unwrap()
-                .cookies_browser
-                .as_deref(),
-            Some("safari")
-        );
+        let picked = state.link_import.as_ref().unwrap().cookies_browser.clone();
+        assert_eq!(picked.as_deref(), Some("firefox"));
+
+        assert!(update(&mut state, &Message::LinkImportCookies(None)).is_some());
+        assert_eq!(state.link_import.as_ref().unwrap().cookies_browser, None);
     }
 
     #[test]
