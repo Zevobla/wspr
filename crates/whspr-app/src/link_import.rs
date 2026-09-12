@@ -12,7 +12,16 @@
 
 use iced::Task;
 
+use whspr_core::AsrBackend;
+
+use crate::note_desk::{NoteDeskState, NoteHeading};
 use crate::state::{Message, State};
+
+/// The payload of a finished link import: the note-desk title, the kept chapter
+/// headings, and the transcript (from published captions or a local
+/// transcribe). Boxed in [`Message::LinkImportImported`] to keep the `Message`
+/// enum small (`clippy::result_large_err`), mirroring `LinkImportResolved`.
+pub type ImportedNote = (String, Vec<NoteHeading>, whspr_core::Transcript);
 
 /// All state for the "Add from a link" modal dialog. `None` on `State` means
 /// the dialog is closed; `Some(..)` opens it. Seeded empty by
@@ -109,11 +118,9 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             }
             Some(Task::none())
         }
-        Message::LinkImportConfirm => {
-            // TODO(F3): run captions/transcribe -> build NoteDeskState -> EnterNoteDesk
-            state.link_import = None;
-            state.transcribe_status =
-                Some("Opening note desk\u{2026} (wiring lands next)".to_string());
+        Message::LinkImportConfirm => Some(start_import(state)),
+        Message::LinkImportImported(result) => {
+            apply_imported(state, result);
             Some(Task::none())
         }
         _ => None,
@@ -175,6 +182,127 @@ fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo
             li.media = None;
         }
     }
+}
+
+/// Folds a finished import into the app: on success builds the note desk from
+/// the transcript + kept headings and closes the dialog (entering the desk); on
+/// failure keeps the dialog open and records the error. Either way the
+/// "Importing…" status is cleared.
+fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>) {
+    state.transcribe_status = None;
+    match result {
+        Ok(payload) => {
+            let (title, headings, transcript) = payload.as_ref();
+            state.note_desk =
+                Some(NoteDeskState::from_import(title, headings.clone(), transcript));
+            state.link_import = None;
+        }
+        Err(error) => {
+            if let Some(li) = state.link_import.as_mut() {
+                li.error = Some(error.clone());
+            }
+        }
+    }
+}
+
+/// Runs the user's chosen import off the UI thread and, when it finishes, hands
+/// the result to [`Message::LinkImportImported`]. The captions path returns a
+/// `Transcript` directly; the transcribe path downloads audio, runs the
+/// configured ASR backend (for timestamped segments), then deletes the temp
+/// WAV. An unresolved dialog or a blank URL is a no-op. Sets an "Importing…"
+/// status while it runs and clears any prior error.
+fn start_import(state: &mut State) -> Task<Message> {
+    let Some(li) = state.link_import.as_ref() else {
+        return Task::none();
+    };
+    let Some(media) = li.media.as_ref() else {
+        return Task::none();
+    };
+    let url = li.url.trim().to_string();
+    if url.is_empty() {
+        return Task::none();
+    }
+    let use_captions = li.use_captions;
+    let title = media.title.clone();
+    let headings: Vec<NoteHeading> = media
+        .chapters
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| li.chapters_included.get(*i).copied().unwrap_or(true))
+        .map(|(_, ch)| NoteHeading {
+            time_label: crate::note_desk::secs_to_mmss(ch.start_secs),
+            title: ch.title.clone(),
+        })
+        .collect();
+    let caption_lang = li.caption_lang.clone();
+    let human_track_selected = media
+        .human_captions
+        .iter()
+        .any(|l| Some(&l.code) == caption_lang.as_ref());
+    let clip = parse_clip_range(&li.clip_start, &li.clip_end);
+    let cookies = match &li.cookies_browser {
+        Some(browser) => whspr_import::CookiesFrom::Browser(browser.clone()),
+        None => whspr_import::CookiesFrom::None,
+    };
+    let config = state.config.clone();
+
+    if let Some(li) = state.link_import.as_mut() {
+        li.error = None;
+    }
+    state.transcribe_status = Some("Importing\u{2026}".to_string());
+
+    Task::perform(
+        async move {
+            let transcript = if use_captions {
+                let lang = caption_lang.unwrap_or_else(|| "en".to_string());
+                whspr_import::download_captions(&url, &lang, !human_track_selected, cookies)
+                    .await
+                    .map_err(|e| e.to_string())?
+            } else {
+                let (wav, audio) = whspr_import::download_to_audio(&url, clip, cookies)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let asr = crate::worker::build_asr_backend(&config)?;
+                let language =
+                    whspr_config::effective_language(&config.language_settings, &config.language);
+                let opts = whspr_core::AsrOptions {
+                    language,
+                    translate: config.capture.translate,
+                };
+                let transcribed = asr.transcribe(&audio, &opts).await.map_err(|e| e.to_string());
+                let _ = std::fs::remove_file(&wav);
+                transcribed?
+            };
+            Ok::<_, String>(Box::new((title, headings, transcript)))
+        },
+        Message::LinkImportImported,
+    )
+}
+
+/// Parses an `MM:SS` (or bare-seconds) clip field into seconds. Blank or
+/// unparseable input is `None`, so an empty field just means "no bound".
+fn parse_mmss(value: &str) -> Option<f32> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.split_once(':') {
+        Some((mins, secs)) => {
+            let mins: f32 = mins.trim().parse().ok()?;
+            let secs: f32 = secs.trim().parse().ok()?;
+            Some(mins * 60.0 + secs)
+        }
+        None => trimmed.parse().ok(),
+    }
+}
+
+/// A [`whspr_import::ClipRange`] from the dialog's clip inputs, but only when
+/// both bounds parse and describe a non-empty forward range; otherwise the
+/// whole item is imported (`None`).
+fn parse_clip_range(start: &str, end: &str) -> Option<whspr_import::ClipRange> {
+    let start = parse_mmss(start)?;
+    let end = parse_mmss(end)?;
+    (end > start).then(|| whspr_import::ClipRange::new(start, end))
 }
 
 #[cfg(test)]
@@ -323,21 +451,66 @@ mod tests {
     }
 
     #[test]
-    fn confirm_closes_the_dialog_and_sets_status() {
+    fn confirm_starts_import_and_keeps_the_dialog_open() {
         let mut state = open_state();
         assert!(update(
             &mut state,
             &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
         )
         .is_some());
+        assert!(update(&mut state, &Message::LinkImportUrl("https://x".to_string())).is_some());
         assert!(update(&mut state, &Message::LinkImportConfirm).is_some());
-        assert!(state.link_import.is_none());
+        // The dialog stays open while the async import runs; the returned task
+        // is never polled in a unit test (no iced runtime), so no network runs.
+        assert!(state.link_import.is_some());
         assert!(state.transcribe_status.is_some());
+    }
+
+    #[test]
+    fn parse_clip_range_needs_both_bounds() {
+        assert!(parse_clip_range("", "").is_none());
+        assert!(parse_clip_range("1:00", "").is_none());
+        let clip = parse_clip_range("1:00", "1:30").expect("both bounds parse");
+        assert_eq!(clip.start_secs, 60.0);
+        assert_eq!(clip.end_secs, 90.0);
+    }
+
+    #[test]
+    fn parse_clip_range_rejects_empty_or_inverted_ranges() {
+        assert!(parse_clip_range("1:30", "1:00").is_none());
+        assert!(parse_clip_range("1:00", "1:00").is_none());
     }
 
     #[test]
     fn update_ignores_unrelated_messages() {
         let mut state = open_state();
         assert!(update(&mut state, &Message::ThemeToggled).is_none());
+    }
+
+    #[test]
+    fn imported_ok_enters_the_note_desk() {
+        let mut state = open_state();
+        let transcript = whspr_core::Transcript {
+            text: "hello world".to_string(),
+            ..Default::default()
+        };
+        let payload = Box::new(("Lecture".to_string(), Vec::new(), transcript));
+        assert!(update(&mut state, &Message::LinkImportImported(Ok(payload))).is_some());
+        assert!(state.link_import.is_none());
+        assert!(state.note_desk.is_some());
+        assert!(state.transcribe_status.is_none());
+    }
+
+    #[test]
+    fn imported_err_keeps_the_dialog_open_with_the_error() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportImported(Err("boom".to_string()))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().expect("dialog stays open on error");
+        assert_eq!(li.error.as_deref(), Some("boom"));
+        assert!(state.note_desk.is_none());
     }
 }

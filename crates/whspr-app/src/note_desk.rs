@@ -45,6 +45,17 @@ pub struct TranscriptRow {
     pub keep_score: u8,
 }
 
+/// A kept chapter marker, shown as a note heading in the desk's notes column.
+/// Built from the chapters the user chose to keep in the "Add from a link"
+/// dialog (see `crate::link_import`); the manual-entry `sample()` desk has none.
+#[derive(Debug, Clone)]
+pub struct NoteHeading {
+    /// The chapter's start time, formatted `MM:SS`.
+    pub time_label: String,
+    /// The chapter title, rendered as a note heading.
+    pub title: String,
+}
+
 /// All state for the note-desk mode. `title` heads the desk, `rows` are the
 /// transcript lines, and `timer_start` drives the header's elapsed timer. The
 /// Typst preview is a static placeholder this phase (real rendering is a later
@@ -55,11 +66,64 @@ pub struct NoteDeskState {
     pub title: String,
     /// The transcript rows shown in the left column.
     pub rows: Vec<TranscriptRow>,
+    /// Kept chapter headings (from a link import), shown in the notes column;
+    /// empty for the manual-entry `sample()` desk.
+    pub headings: Vec<NoteHeading>,
     /// When the session started -- the header timer reads `elapsed()`.
     pub timer_start: std::time::Instant,
 }
 
+/// Formats a timestamp in seconds as `MM:SS` (minutes uncapped, e.g. `73:04`).
+pub(crate) fn secs_to_mmss(secs: f32) -> String {
+    let total = secs.max(0.0) as u64;
+    format!("{:02}:{:02}", total / 60, total % 60)
+}
+
 impl NoteDeskState {
+    /// Builds a note desk from a finished link import: `title` heads the desk,
+    /// `headings` are the kept chapters, and each transcript segment becomes a
+    /// candidate [`TranscriptRow`] (start time as `MM:SS`, the segment's own
+    /// speaker if it carries one). A transcript with no segments -- e.g. the
+    /// mock ASR, which only fills `text` -- collapses to a single `00:00` row
+    /// so the desk is never empty. `timer_start` begins now.
+    pub fn from_import(
+        title: &str,
+        headings: Vec<NoteHeading>,
+        transcript: &whspr_core::Transcript,
+    ) -> Self {
+        let rows: Vec<TranscriptRow> = if transcript.segments.is_empty() {
+            if transcript.text.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![TranscriptRow {
+                    time_label: "00:00".to_string(),
+                    text: transcript.text.clone(),
+                    speaker_id: None,
+                    gutter: Gutter::Candidate,
+                    keep_score: 2,
+                }]
+            }
+        } else {
+            transcript
+                .segments
+                .iter()
+                .map(|seg| TranscriptRow {
+                    time_label: secs_to_mmss(seg.start_secs),
+                    text: seg.text.clone(),
+                    speaker_id: seg.speaker.clone(),
+                    gutter: Gutter::Candidate,
+                    keep_score: 2,
+                })
+                .collect()
+        };
+        Self {
+            title: title.to_string(),
+            headings,
+            rows,
+            timer_start: std::time::Instant::now(),
+        }
+    }
+
     /// A seeded note desk with sample rows so the layout renders before live
     /// transcription exists (that arrives in a later phase). Mirrors the
     /// design comp's "Statistical Mechanics · 7 / Microstates" excerpt.
@@ -69,6 +133,7 @@ impl NoteDeskState {
         Self {
             title: "Statistical Mechanics · 7".to_string(),
             timer_start: std::time::Instant::now(),
+            headings: vec![],
             rows: vec![
                 TranscriptRow {
                     time_label: "11:52".to_string(),
@@ -186,5 +251,54 @@ mod tests {
         let nd = NoteDeskState::sample();
         assert!(!nd.title.is_empty());
         assert!(!nd.rows.is_empty());
+    }
+
+    #[test]
+    fn from_import_maps_segments_to_candidate_rows() {
+        let transcript = whspr_core::Transcript {
+            text: "one two".to_string(),
+            language: Some("en".to_string()),
+            segments: vec![
+                whspr_core::TranscriptSegment {
+                    text: "one".to_string(),
+                    start_secs: 5.0,
+                    end_secs: 8.0,
+                    speaker: Some("Speaker A".to_string()),
+                },
+                whspr_core::TranscriptSegment {
+                    text: "two".to_string(),
+                    start_secs: 65.0,
+                    end_secs: 70.0,
+                    speaker: None,
+                },
+            ],
+        };
+        let headings = vec![NoteHeading {
+            time_label: "00:00".to_string(),
+            title: "Intro".to_string(),
+        }];
+        let nd = NoteDeskState::from_import("Lecture", headings, &transcript);
+        assert_eq!(nd.title, "Lecture");
+        assert_eq!(nd.headings.len(), 1);
+        assert_eq!(nd.rows.len(), 2);
+        assert_eq!(nd.rows[0].time_label, "00:05");
+        assert_eq!(nd.rows[0].text, "one");
+        assert_eq!(nd.rows[0].speaker_id.as_deref(), Some("Speaker A"));
+        assert_eq!(nd.rows[0].gutter, Gutter::Candidate);
+        assert_eq!(nd.rows[1].time_label, "01:05");
+        assert!(nd.rows[1].speaker_id.is_none());
+    }
+
+    #[test]
+    fn from_import_without_segments_uses_a_single_text_row() {
+        let transcript = whspr_core::Transcript {
+            text: "just text".to_string(),
+            ..Default::default()
+        };
+        let nd = NoteDeskState::from_import("Talk", Vec::new(), &transcript);
+        assert_eq!(nd.rows.len(), 1);
+        assert_eq!(nd.rows[0].time_label, "00:00");
+        assert_eq!(nd.rows[0].text, "just text");
+        assert!(nd.headings.is_empty());
     }
 }

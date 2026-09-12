@@ -140,6 +140,14 @@ fn page_body<'a>(nd: &'a NoteDeskState) -> Element<'a, Message> {
         });
 
     let mut col = column![head, head_rule, title].spacing(spacing::SM);
+    for h in &nd.headings {
+        col = col.push(
+            text(format!("{}  ·  {}", h.time_label, h.title))
+                .size(10.0)
+                .font(type_scale::TITLE_MEDIUM.font())
+                .color(PAGE_INK),
+        );
+    }
     for r in nd.rows.iter().take(4) {
         col = col.push(
             row![
@@ -168,5 +176,18 @@ mod tests {
     #[test]
     fn typst_column_builds() {
         let _: Element<'_, Message> = view(&NoteDeskState::sample(), &color::LIGHT);
+    }
+
+    #[test]
+    fn typst_column_renders_headings() {
+        let nd = NoteDeskState::from_import(
+            "Lecture",
+            vec![crate::note_desk::NoteHeading {
+                time_label: "00:00".to_string(),
+                title: "Intro".to_string(),
+            }],
+            &whspr_core::Transcript::default(),
+        );
+        let _: Element<'_, Message> = view(&nd, &color::LIGHT);
     }
 }
