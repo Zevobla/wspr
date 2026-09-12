@@ -129,11 +129,15 @@ pub fn choice_selector<'a>(
     media: &'a MediaInfo,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
-    let caption_sub = match &li.caption_lang {
-        Some(code) => format!("{code} \u{00b7} already timestamped, no model needed"),
-        None => "already timestamped \u{00b7} no model needed".to_string(),
-    };
     let captions_available = !media.human_captions.is_empty() || !media.auto_captions.is_empty();
+    let caption_sub = if !captions_available {
+        "No captions for this video".to_string()
+    } else {
+        match &li.caption_lang {
+            Some(code) => format!("{code} \u{00b7} already timestamped, no model needed"),
+            None => "already timestamped \u{00b7} no model needed".to_string(),
+        }
+    };
 
     let captions = choice_card(
         "Use published captions",
@@ -216,6 +220,10 @@ fn choice_style(selected: bool, scheme: &color::Scheme, status: button::Status) 
         ..button::Style::default()
     };
     match status {
+        button::Status::Disabled => button::Style {
+            text_color: scheme.on_surface_variant,
+            ..base
+        },
         button::Status::Hovered | button::Status::Pressed => button::Style {
             background: Some(Background::Color(color::wash(scheme.on_surface, 0.05))),
             ..base
