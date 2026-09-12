@@ -68,6 +68,10 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.privacy.history_encryption = enabled;
             persist_config(state);
         }
+        Message::CookieBrowserChanged(browser) => {
+            state.config.privacy.cookies_browser = browser;
+            persist_config(state);
+        }
         Message::DeviceHotplugToggled(enabled) => {
             state.config.device.device_hotplug = enabled;
             persist_config(state);

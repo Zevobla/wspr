@@ -429,6 +429,9 @@ pub enum Message {
     MicPrivacyToggled(bool),
     /// The user toggled "Encrypt history at rest" in the Privacy section.
     HistoryEncryptionToggled(bool),
+    /// The user picked the media-import sign-in browser in the Privacy
+    /// section: `Some(id)` to borrow that browser's cookies, `None` for none.
+    CookieBrowserChanged(Option<String>),
     /// The user toggled "Rescan devices when one is plugged/unplugged" in
     /// the Devices section.
     DeviceHotplugToggled(bool),
