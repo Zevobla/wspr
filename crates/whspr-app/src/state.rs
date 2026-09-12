@@ -583,4 +583,26 @@ pub enum Message {
     /// The Hub window screenshot resolved: encode it to the requested PNG
     /// path and exit.
     ScreenshotTaken(iced::window::Screenshot),
+    /// Opens the link-import modal (see `crate::link_import`).
+    LinkImportOpen,
+    /// Dismisses the link-import dialog.
+    LinkImportCancel,
+    /// The user edited the dialog's URL input.
+    LinkImportUrl(String),
+    /// "Resolve" pressed: runs `whspr_import::resolve`.
+    LinkImportResolve,
+    /// A `resolve` finished: media metadata or an error message.
+    LinkImportResolved(Result<whspr_import::MediaInfo, String>),
+    /// Captions (`true`) vs transcribe-here (`false`) selector.
+    LinkImportUseCaptions(bool),
+    /// Toggles whether the chapter at this index becomes a note heading.
+    LinkImportToggleChapter(usize),
+    /// The user edited the "clip from" `MM:SS` input.
+    LinkImportClipStart(String),
+    /// The user edited the "clip to" `MM:SS` input.
+    LinkImportClipEnd(String),
+    /// Borrow sign-in cookies from this browser (e.g. `"safari"`).
+    LinkImportBorrowCookies(String),
+    /// "Open note desk" -- stubbed for F3; closes the dialog + sets a status.
+    LinkImportConfirm,
 }
