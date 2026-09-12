@@ -73,7 +73,57 @@ pub struct NoteDeskState {
     pub timer_start: std::time::Instant,
 }
 
+/// Formats a timestamp in seconds as `MM:SS` (minutes uncapped, e.g. `73:04`).
+pub(crate) fn secs_to_mmss(secs: f32) -> String {
+    let total = secs.max(0.0) as u64;
+    format!("{:02}:{:02}", total / 60, total % 60)
+}
+
 impl NoteDeskState {
+    /// Builds a note desk from a finished link import: `title` heads the desk,
+    /// `headings` are the kept chapters, and each transcript segment becomes a
+    /// candidate [`TranscriptRow`] (start time as `MM:SS`, the segment's own
+    /// speaker if it carries one). A transcript with no segments -- e.g. the
+    /// mock ASR, which only fills `text` -- collapses to a single `00:00` row
+    /// so the desk is never empty. `timer_start` begins now.
+    pub fn from_import(
+        title: &str,
+        headings: Vec<NoteHeading>,
+        transcript: &whspr_core::Transcript,
+    ) -> Self {
+        let rows: Vec<TranscriptRow> = if transcript.segments.is_empty() {
+            if transcript.text.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![TranscriptRow {
+                    time_label: "00:00".to_string(),
+                    text: transcript.text.clone(),
+                    speaker_id: None,
+                    gutter: Gutter::Candidate,
+                    keep_score: 2,
+                }]
+            }
+        } else {
+            transcript
+                .segments
+                .iter()
+                .map(|seg| TranscriptRow {
+                    time_label: secs_to_mmss(seg.start_secs),
+                    text: seg.text.clone(),
+                    speaker_id: seg.speaker.clone(),
+                    gutter: Gutter::Candidate,
+                    keep_score: 2,
+                })
+                .collect()
+        };
+        Self {
+            title: title.to_string(),
+            headings,
+            rows,
+            timer_start: std::time::Instant::now(),
+        }
+    }
+
     /// A seeded note desk with sample rows so the layout renders before live
     /// transcription exists (that arrives in a later phase). Mirrors the
     /// design comp's "Statistical Mechanics · 7 / Microstates" excerpt.
