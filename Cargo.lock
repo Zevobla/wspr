@@ -8881,6 +8881,7 @@ dependencies = [
  "whspr-core",
  "whspr-diarize",
  "whspr-hf",
+ "whspr-import",
  "whspr-inject",
  "whspr-refine",
 ]
