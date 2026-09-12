@@ -8,9 +8,15 @@
 //! transcript with no segments rather than an error, so a bad caption file
 //! just falls back to the audio path instead of aborting an import.
 
+use std::path::Path;
+
 use serde_json::Value;
 
-use whspr_core::{Transcript, TranscriptSegment};
+use whspr_core::{Result, Transcript, TranscriptSegment, WhsprError};
+
+use crate::download::unique_temp_dir;
+use crate::resolve::CookiesFrom;
+use crate::tools::{resolve_tool, Tool};
 
 /// Which caption serialization [`parse_captions`] is being handed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +60,98 @@ fn caption_format_from_ext(ext: &str) -> Option<CaptionFormat> {
         "srv1" | "srv" => Some(CaptionFormat::Srv),
         _ => None,
     }
+}
+
+/// Downloads the chosen published caption track for `url` and parses it into a
+/// [`whspr_core::Transcript`] — the "instant, no model" import path.
+///
+/// Shells `yt-dlp --skip-download` to fetch one subtitle track: `auto` selects
+/// the machine-generated `automatic_captions` (`--write-auto-subs`), otherwise
+/// the human `subtitles` (`--write-subs`), in language `lang`, preferring
+/// `json3` then `vtt`. The written file is located in a fresh temp dir, its
+/// format inferred from the extension, read, and handed to [`parse_captions`].
+/// The temp dir is removed best-effort afterward, whatever the outcome.
+///
+/// With [`CookiesFrom::Browser`], authenticates via `--cookies-from-browser`.
+/// Errors if yt-dlp can't be found or exits non-zero, if no caption file was
+/// written (the track may not exist), or if its extension isn't a known
+/// caption format.
+pub async fn download_captions(
+    url: &str,
+    lang: &str,
+    auto: bool,
+    cookies: CookiesFrom,
+) -> Result<Transcript> {
+    let ytdlp = resolve_tool(Tool::YtDlp).ok_or_else(|| {
+        WhsprError::Other("yt-dlp not found: install it or point WHSPR_YTDLP at it".to_string())
+    })?;
+
+    let dir = unique_temp_dir()?;
+    let out_template = dir.join("captions.%(ext)s");
+
+    let mut cmd = tokio::process::Command::new(&ytdlp);
+    cmd.arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--sub-langs")
+        .arg(lang)
+        .arg("--sub-format")
+        .arg("json3/vtt")
+        .arg(if auto {
+            "--write-auto-subs"
+        } else {
+            "--write-subs"
+        })
+        .arg("-o")
+        .arg(&out_template);
+    if let CookiesFrom::Browser(browser) = &cookies {
+        cmd.arg("--cookies-from-browser").arg(browser);
+    }
+    cmd.arg(url);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| WhsprError::Other(format!("failed to run yt-dlp: {e}")))?;
+    if !output.status.success() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(WhsprError::Other(format!(
+            "yt-dlp caption download failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let result = read_caption_dir(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    result
+}
+
+/// Locates the single caption file yt-dlp wrote into `dir`, infers its
+/// [`CaptionFormat`] from the extension, reads it, and parses it. Split out so
+/// the caller can clean up the temp dir regardless of outcome.
+fn read_caption_dir(dir: &Path) -> Result<Transcript> {
+    let file = std::fs::read_dir(dir)
+        .map_err(|e| WhsprError::Other(format!("failed to read caption dir: {e}")))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| p.is_file())
+        .ok_or_else(|| {
+            WhsprError::Other("yt-dlp wrote no caption file (track may not exist)".to_string())
+        })?;
+
+    let fmt = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(caption_format_from_ext)
+        .ok_or_else(|| {
+            WhsprError::Other(format!(
+                "unrecognized caption file extension: {}",
+                file.display()
+            ))
+        })?;
+
+    let text = std::fs::read_to_string(&file)
+        .map_err(|e| WhsprError::Other(format!("failed to read caption file: {e}")))?;
+    Ok(parse_captions(&text, fmt))
 }
 
 /// Collapses internal runs of whitespace to single spaces and trims — cue
