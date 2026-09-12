@@ -44,6 +44,18 @@ pub fn parse_captions(vtt_or_srv: &str, format: CaptionFormat) -> Transcript {
     }
 }
 
+/// Picks the [`CaptionFormat`] for a caption file's extension (given without
+/// the leading dot, matched case-insensitively). Unknown extensions → `None`,
+/// which the download path turns into a [`whspr_core::WhsprError`].
+fn caption_format_from_ext(ext: &str) -> Option<CaptionFormat> {
+    match ext.to_ascii_lowercase().as_str() {
+        "vtt" => Some(CaptionFormat::WebVtt),
+        "json3" | "json" => Some(CaptionFormat::Json3),
+        "srv1" | "srv" => Some(CaptionFormat::Srv),
+        _ => None,
+    }
+}
+
 /// Collapses internal runs of whitespace to single spaces and trims — cue
 /// text routinely spans several physical lines that read as one utterance.
 fn normalize_ws(s: &str) -> String {
