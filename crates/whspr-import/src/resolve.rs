@@ -57,6 +57,10 @@ pub struct MediaInfo {
     pub title: String,
     pub duration_secs: Option<f32>,
     pub uploader: Option<String>,
+    /// yt-dlp's `upload_date`, a `"YYYYMMDD"` string when present.
+    pub upload_date: Option<String>,
+    /// yt-dlp's `thumbnail` URL, when present.
+    pub thumbnail: Option<String>,
     pub chapters: Vec<Chapter>,
     /// Human-authored caption languages (`subtitles`).
     pub human_captions: Vec<Lang>,
@@ -131,6 +135,8 @@ fn media_info_from_value(v: &Value) -> MediaInfo {
             .as_str()
             .or_else(|| v["channel"].as_str())
             .map(str::to_string),
+        upload_date: v["upload_date"].as_str().map(str::to_string),
+        thumbnail: v["thumbnail"].as_str().map(str::to_string),
         chapters: parse_chapters(&v["chapters"]),
         human_captions: parse_langs(&v["subtitles"]),
         auto_captions: parse_langs(&v["automatic_captions"]),
