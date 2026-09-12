@@ -576,8 +576,10 @@ pub enum Message {
     LinkImportUrl(String),
     /// "Resolve" pressed: runs `whspr_import::resolve`.
     LinkImportResolve,
-    /// A `resolve` finished: media metadata or an error message.
-    LinkImportResolved(Result<whspr_import::MediaInfo, String>),
+    /// A `resolve` finished: media metadata or an error message. The
+    /// `MediaInfo` is boxed to keep the `Message` enum (and thus the `Err`
+    /// variant of the handler chain) small -- see `clippy::result_large_err`.
+    LinkImportResolved(Result<Box<whspr_import::MediaInfo>, String>),
     /// Captions (`true`) vs transcribe-here (`false`) selector.
     LinkImportUseCaptions(bool),
     /// Toggles whether the chapter at this index becomes a note heading.

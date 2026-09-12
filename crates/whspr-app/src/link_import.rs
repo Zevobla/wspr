@@ -141,6 +141,7 @@ fn start_resolve(state: &mut State) -> Task<Message> {
         async move {
             whspr_import::resolve(&url, cookies)
                 .await
+                .map(Box::new)
                 .map_err(|e| e.to_string())
         },
         Message::LinkImportResolved,
@@ -151,7 +152,7 @@ fn start_resolve(state: &mut State) -> Task<Message> {
 /// seeds every chapter as included, and defaults the import path to captions
 /// when a human track exists (else transcribe, pre-selecting an auto track's
 /// language if any). On failure records the error and clears any media.
-fn apply_resolved(state: &mut State, result: &Result<whspr_import::MediaInfo, String>) {
+fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo>, String>) {
     let Some(li) = state.link_import.as_mut() else {
         return;
     };
@@ -167,7 +168,7 @@ fn apply_resolved(state: &mut State, result: &Result<whspr_import::MediaInfo, St
                 li.caption_lang = media.auto_captions.first().map(|l| l.code.clone());
             }
             li.error = None;
-            li.media = Some(media.clone());
+            li.media = Some(media.as_ref().clone());
         }
         Err(error) => {
             li.error = Some(error.clone());
@@ -239,7 +240,7 @@ mod tests {
         let mut state = open_state();
         assert!(update(
             &mut state,
-            &Message::LinkImportResolved(Ok(sample_media(true)))
+            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
         )
         .is_some());
         let li = state.link_import.as_ref().unwrap();
@@ -253,7 +254,7 @@ mod tests {
         let mut state = open_state();
         assert!(update(
             &mut state,
-            &Message::LinkImportResolved(Ok(sample_media(true)))
+            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
         )
         .is_some());
         let li = state.link_import.as_ref().unwrap();
@@ -266,7 +267,7 @@ mod tests {
         let mut state = open_state();
         assert!(update(
             &mut state,
-            &Message::LinkImportResolved(Ok(sample_media(false)))
+            &Message::LinkImportResolved(Ok(Box::new(sample_media(false))))
         )
         .is_some());
         let li = state.link_import.as_ref().unwrap();
@@ -292,7 +293,7 @@ mod tests {
         let mut state = open_state();
         assert!(update(
             &mut state,
-            &Message::LinkImportResolved(Ok(sample_media(true)))
+            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
         )
         .is_some());
         assert!(update(&mut state, &Message::LinkImportToggleChapter(0)).is_some());
@@ -324,7 +325,7 @@ mod tests {
         let mut state = open_state();
         assert!(update(
             &mut state,
-            &Message::LinkImportResolved(Ok(sample_media(true)))
+            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
         )
         .is_some());
         assert!(update(&mut state, &Message::LinkImportConfirm).is_some());
