@@ -87,6 +87,13 @@ fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         body = body.push(token_login(state, scheme));
     }
 
+    // While a model download is in flight, show a live progress bar + label
+    // (percent, downloaded/total, rate) in place of the old static
+    // "Downloading..." status line -- see `crate::hf_progress`.
+    if let Some(active) = &state.active_download {
+        body = body.push(crate::hf_progress::view(active, scheme));
+    }
+
     if let Some(status) = &state.hf_status {
         body = body.push(body_text(status.clone(), scheme));
     }
