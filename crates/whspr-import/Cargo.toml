@@ -24,3 +24,6 @@ tokio = { workspace = true, features = ["process"] }
 # faster than a second yt-dlp spawn. Uses oauth2's already-built, rustls-backed
 # reqwest (the same one whspr-hf uses) rather than pulling a second reqwest.
 oauth2.workspace = true
+# Resolves the home/data dirs where each browser keeps its cookie store, so the
+# sign-in picker can offer only installed browsers (same crate whspr-config uses).
+directories.workspace = true

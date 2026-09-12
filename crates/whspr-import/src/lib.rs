@@ -38,11 +38,13 @@
 //! delete-after-use policy is enforced at the app layer, not here, so the
 //! library stays a pure "URL in, path out" function.
 
+mod browsers;
 mod captions;
 mod download;
 mod resolve;
 mod tools;
 
+pub use browsers::{installed_cookie_browsers, CookieBrowser};
 pub use captions::{download_captions, fetch_caption, parse_captions, CaptionFormat};
 pub use download::{download_audio, download_thumbnail, download_to_audio, ClipRange};
 pub use resolve::{
