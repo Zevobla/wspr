@@ -186,6 +186,32 @@ fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo
     }
 }
 
+/// Parses an `MM:SS` (or bare-seconds) clip field into seconds. Blank or
+/// unparseable input is `None`, so an empty field just means "no bound".
+fn parse_mmss(value: &str) -> Option<f32> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.split_once(':') {
+        Some((mins, secs)) => {
+            let mins: f32 = mins.trim().parse().ok()?;
+            let secs: f32 = secs.trim().parse().ok()?;
+            Some(mins * 60.0 + secs)
+        }
+        None => trimmed.parse().ok(),
+    }
+}
+
+/// A [`whspr_import::ClipRange`] from the dialog's clip inputs, but only when
+/// both bounds parse and describe a non-empty forward range; otherwise the
+/// whole item is imported (`None`).
+fn parse_clip_range(start: &str, end: &str) -> Option<whspr_import::ClipRange> {
+    let start = parse_mmss(start)?;
+    let end = parse_mmss(end)?;
+    (end > start).then(|| whspr_import::ClipRange::new(start, end))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
