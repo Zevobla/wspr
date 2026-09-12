@@ -288,4 +288,17 @@ mod tests {
         assert_eq!(nd.rows[1].time_label, "01:05");
         assert!(nd.rows[1].speaker_id.is_none());
     }
+
+    #[test]
+    fn from_import_without_segments_uses_a_single_text_row() {
+        let transcript = whspr_core::Transcript {
+            text: "just text".to_string(),
+            ..Default::default()
+        };
+        let nd = NoteDeskState::from_import("Talk", Vec::new(), &transcript);
+        assert_eq!(nd.rows.len(), 1);
+        assert_eq!(nd.rows[0].time_label, "00:00");
+        assert_eq!(nd.rows[0].text, "just text");
+        assert!(nd.headings.is_empty());
+    }
 }
