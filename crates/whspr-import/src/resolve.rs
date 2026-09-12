@@ -158,7 +158,7 @@ fn media_info_from_value(v: &Value) -> MediaInfo {
         thumbnail: pick_thumbnail(v),
         chapters: parse_chapters(&v["chapters"]),
         human_captions: parse_langs(&v["subtitles"]),
-        auto_captions: parse_langs(&v["automatic_captions"]),
+        auto_captions: parse_auto_captions(&v["automatic_captions"]),
         playlist,
     }
 }
@@ -249,6 +249,27 @@ fn pick_caption_format(formats: &[Value]) -> (Option<String>, Option<String>) {
             f["ext"].as_str().map(str::to_string),
         ),
         None => (None, None),
+    }
+}
+
+/// Reads `automatic_captions`, but collapses YouTube's translation spam.
+///
+/// yt-dlp lists the source ASR track keyed `<lang>-orig` (e.g. `ru-orig`)
+/// alongside ~150 machine *translations* of it into every other language. Only
+/// the source is a genuine transcript of the audio; the translations are
+/// derived noise that would flood the tag row and make an alphabetical
+/// `.first()` pick "Afar" as the default. So when any `-orig` track is present,
+/// keep just those; otherwise (older dumps / non-YouTube sites with no `-orig`
+/// marker) keep the list untouched.
+fn parse_auto_captions(v: &Value) -> Vec<Lang> {
+    let langs = parse_langs(v);
+    if langs.iter().any(|l| l.code.ends_with("-orig")) {
+        langs
+            .into_iter()
+            .filter(|l| l.code.ends_with("-orig"))
+            .collect()
+    } else {
+        langs
     }
 }
 
@@ -395,6 +416,28 @@ mod tests {
         ]);
         let (_, ext) = pick_caption_format(formats.as_array().unwrap());
         assert_eq!(ext.as_deref(), Some("vtt"));
+    }
+
+    #[test]
+    fn auto_captions_keep_only_the_source_orig_track() {
+        // Real YouTube shape: the source ASR track (`ru-orig`) plus its machine
+        // translations into every language. Only the source survives.
+        let json = r#"{
+          "title": "видео",
+          "automatic_captions": {
+            "aa": [{ "ext": "json3", "url": "https://x/aa.json3" }],
+            "en": [{ "ext": "json3", "url": "https://x/en.json3" }],
+            "ru": [{ "ext": "json3", "url": "https://x/ru.json3" }],
+            "ru-orig": [{ "ext": "json3", "url": "https://x/ru-orig.json3" }]
+          }
+        }"#;
+        let info = parse_media_info(json).expect("parse");
+        let codes: Vec<&str> = info.auto_captions.iter().map(|l| l.code.as_str()).collect();
+        assert_eq!(codes, ["ru-orig"]);
+        assert_eq!(
+            info.auto_captions[0].url.as_deref(),
+            Some("https://x/ru-orig.json3")
+        );
     }
 
     #[test]
