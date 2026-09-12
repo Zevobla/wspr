@@ -175,3 +175,166 @@ fn apply_resolved(state: &mut State, result: &Result<whspr_import::MediaInfo, St
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use whspr_config::Config;
+    use whspr_import::{Chapter, Lang, MediaInfo};
+
+    fn open_state() -> State {
+        let mut state = State::new(Config::default());
+        assert!(update(&mut state, &Message::LinkImportOpen).is_some());
+        state
+    }
+
+    fn sample_media(human: bool) -> MediaInfo {
+        MediaInfo {
+            title: "Lecture".to_string(),
+            chapters: vec![
+                Chapter {
+                    title: "One".to_string(),
+                    start_secs: 0.0,
+                    end_secs: 60.0,
+                },
+                Chapter {
+                    title: "Two".to_string(),
+                    start_secs: 60.0,
+                    end_secs: 120.0,
+                },
+            ],
+            human_captions: if human {
+                vec![Lang {
+                    code: "en".to_string(),
+                    name: Some("English".to_string()),
+                }]
+            } else {
+                Vec::new()
+            },
+            auto_captions: vec![Lang {
+                code: "de".to_string(),
+                name: None,
+            }],
+            ..MediaInfo::default()
+        }
+    }
+
+    #[test]
+    fn open_seeds_a_dialog_and_cancel_clears_it() {
+        let mut state = open_state();
+        assert!(state.link_import.is_some());
+        assert!(update(&mut state, &Message::LinkImportCancel).is_some());
+        assert!(state.link_import.is_none());
+    }
+
+    #[test]
+    fn url_edits_are_stored() {
+        let mut state = open_state();
+        assert!(update(&mut state, &Message::LinkImportUrl("https://x".to_string())).is_some());
+        assert_eq!(state.link_import.as_ref().unwrap().url, "https://x");
+    }
+
+    #[test]
+    fn resolved_seeds_all_chapters_included() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Ok(sample_media(true)))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().unwrap();
+        assert_eq!(li.chapters_included, vec![true, true]);
+        assert!(li.media.is_some());
+        assert!(!li.resolving);
+    }
+
+    #[test]
+    fn resolved_defaults_to_captions_when_a_human_track_exists() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Ok(sample_media(true)))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().unwrap();
+        assert!(li.use_captions);
+        assert_eq!(li.caption_lang.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn resolved_defaults_to_transcribe_without_a_human_track() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Ok(sample_media(false)))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().unwrap();
+        assert!(!li.use_captions);
+        assert_eq!(li.caption_lang.as_deref(), Some("de"));
+    }
+
+    #[test]
+    fn resolved_error_is_recorded() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Err("boom".to_string()))
+        )
+        .is_some());
+        let li = state.link_import.as_ref().unwrap();
+        assert_eq!(li.error.as_deref(), Some("boom"));
+        assert!(li.media.is_none());
+    }
+
+    #[test]
+    fn toggle_chapter_flips_one_flag() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Ok(sample_media(true)))
+        )
+        .is_some());
+        assert!(update(&mut state, &Message::LinkImportToggleChapter(0)).is_some());
+        assert_eq!(
+            state.link_import.as_ref().unwrap().chapters_included,
+            vec![false, true]
+        );
+    }
+
+    #[test]
+    fn borrow_cookies_records_the_browser() {
+        let mut state = open_state();
+        assert!(
+            update(&mut state, &Message::LinkImportBorrowCookies("safari".to_string())).is_some()
+        );
+        assert_eq!(
+            state
+                .link_import
+                .as_ref()
+                .unwrap()
+                .cookies_browser
+                .as_deref(),
+            Some("safari")
+        );
+    }
+
+    #[test]
+    fn confirm_closes_the_dialog_and_sets_status() {
+        let mut state = open_state();
+        assert!(update(
+            &mut state,
+            &Message::LinkImportResolved(Ok(sample_media(true)))
+        )
+        .is_some());
+        assert!(update(&mut state, &Message::LinkImportConfirm).is_some());
+        assert!(state.link_import.is_none());
+        assert!(state.transcribe_status.is_some());
+    }
+
+    #[test]
+    fn update_ignores_unrelated_messages() {
+        let mut state = open_state();
+        assert!(update(&mut state, &Message::ThemeToggled).is_none());
+    }
+}
