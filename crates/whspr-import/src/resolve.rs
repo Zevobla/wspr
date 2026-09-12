@@ -239,7 +239,7 @@ fn pick_caption_format(formats: &[Value]) -> (Option<String>, Option<String>) {
     let chosen = PREF.iter().find_map(|want| {
         formats
             .iter()
-            .find(|f| f["ext"].as_str() == Some(want) && f["url"].as_str().is_some())
+            .find(|f| f["ext"].as_str() == Some(*want) && f["url"].as_str().is_some())
     });
     match chosen {
         Some(f) => (
