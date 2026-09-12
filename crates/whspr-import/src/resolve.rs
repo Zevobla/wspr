@@ -222,6 +222,8 @@ mod tests {
       "title": "Intro to Rust Ownership",
       "duration": 754,
       "uploader": "Rust Academy",
+      "upload_date": "20230115",
+      "thumbnail": "https://example.com/thumb.jpg",
       "channel": "Rust Academy",
       "webpage_url": "https://example.com/watch?v=abc123",
       "chapters": [
@@ -262,6 +264,11 @@ mod tests {
         assert_eq!(info.title, "Intro to Rust Ownership");
         assert_eq!(info.duration_secs, Some(754.0));
         assert_eq!(info.uploader.as_deref(), Some("Rust Academy"));
+        assert_eq!(info.upload_date.as_deref(), Some("20230115"));
+        assert_eq!(
+            info.thumbnail.as_deref(),
+            Some("https://example.com/thumb.jpg")
+        );
         assert!(info.playlist.is_none());
     }
 
@@ -312,6 +319,8 @@ mod tests {
         assert_eq!(info.title, "bare");
         assert_eq!(info.duration_secs, None);
         assert_eq!(info.uploader, None);
+        assert_eq!(info.upload_date, None);
+        assert_eq!(info.thumbnail, None);
         assert!(info.chapters.is_empty());
         assert!(info.human_captions.is_empty());
         assert!(info.playlist.is_none());
