@@ -164,9 +164,16 @@ fn right_column<'a>(
 
 /// "Rest of the playlist": a summary line and a (stubbed this phase) "Queue
 /// all as one course" button.
-fn playlist_block<'a>(playlist: &'a Playlist, scheme: &'static color::Scheme) -> Element<'a, Message> {
+fn playlist_block<'a>(
+    playlist: &'a Playlist,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     let more = playlist.count.saturating_sub(1);
-    let total_secs: f32 = playlist.entries.iter().filter_map(|e| e.duration_secs).sum();
+    let total_secs: f32 = playlist
+        .entries
+        .iter()
+        .filter_map(|e| e.duration_secs)
+        .sum();
     let summary = if total_secs > 0.0 {
         format!("{more} more videos, {} total.", long_duration(total_secs))
     } else {

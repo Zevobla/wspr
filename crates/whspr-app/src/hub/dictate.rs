@@ -145,9 +145,9 @@ fn transcript_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Ele
     };
 
     column![header, body, actions(state, scheme), status]
-    .spacing(spacing::MD)
-    .width(Length::Fill)
-    .into()
+        .spacing(spacing::MD)
+        .width(Length::Fill)
+        .into()
 }
 
 /// Copy (secondary, gated) and Transcribe-a-file (ghost).
@@ -205,7 +205,9 @@ fn actions<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, 
     .style(move |_theme, s| styles::button::text(scheme, s))
     .on_press(Message::EnterNoteDesk);
 
-    row![copy, pick, add_link, note_desk].spacing(spacing::MD).into()
+    row![copy, pick, add_link, note_desk]
+        .spacing(spacing::MD)
+        .into()
 }
 
 /// The Recent block: a kicker + "All history" link, and the last three

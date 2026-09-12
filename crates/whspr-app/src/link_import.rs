@@ -306,9 +306,11 @@ mod tests {
     #[test]
     fn borrow_cookies_records_the_browser() {
         let mut state = open_state();
-        assert!(
-            update(&mut state, &Message::LinkImportBorrowCookies("safari".to_string())).is_some()
-        );
+        assert!(update(
+            &mut state,
+            &Message::LinkImportBorrowCookies("safari".to_string())
+        )
+        .is_some());
         assert_eq!(
             state
                 .link_import

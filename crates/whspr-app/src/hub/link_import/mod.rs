@@ -63,27 +63,29 @@ fn dialog<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
     ]
     .width(Length::Fill);
 
-    container(scrollable(card).style(move |_theme, status| styles::scrollable::rail(scheme, status)))
-        .width(Length::Fixed(DIALOG_W))
-        .max_height(DIALOG_MAX_H)
-        .style(move |_theme| container::Style {
-            background: Some(iced::Background::Color(scheme.surface)),
-            border: Border {
-                color: scheme.outline_variant,
-                width: spacing::layout::RULE,
-                radius: 0.0.into(),
+    container(
+        scrollable(card).style(move |_theme, status| styles::scrollable::rail(scheme, status)),
+    )
+    .width(Length::Fixed(DIALOG_W))
+    .max_height(DIALOG_MAX_H)
+    .style(move |_theme| container::Style {
+        background: Some(iced::Background::Color(scheme.surface)),
+        border: Border {
+            color: scheme.outline_variant,
+            width: spacing::layout::RULE,
+            radius: 0.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: Color {
+                a: 0.35,
+                ..Color::BLACK
             },
-            shadow: iced::Shadow {
-                color: Color {
-                    a: 0.35,
-                    ..Color::BLACK
-                },
-                offset: iced::Vector::new(0.0, 12.0),
-                blur_radius: 40.0,
-            },
-            ..container::Style::default()
-        })
-        .into()
+            offset: iced::Vector::new(0.0, 12.0),
+            blur_radius: 40.0,
+        },
+        ..container::Style::default()
+    })
+    .into()
 }
 
 /// The header band: the title and a muted "yt-dlp · bundled" tag.
@@ -207,7 +209,10 @@ fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
 
 /// A 2px-outline square (an unselected radio/checkbox mark), matching the
 /// filled `widgets::status_square(Mark::Solid, ..)` at the same size.
-pub(super) fn outline_square<'a>(size: f32, scheme: &'static color::Scheme) -> Element<'a, Message> {
+pub(super) fn outline_square<'a>(
+    size: f32,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     container(Space::new())
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))

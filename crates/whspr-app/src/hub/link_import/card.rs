@@ -21,7 +21,10 @@ const THUMB_H: f32 = 72.0;
 
 /// The resolved-media card: a thumbnail placeholder beside the title, a muted
 /// `uploader · duration · date` line, and the availability tags.
-pub fn media_card<'a>(media: &'a MediaInfo, scheme: &'static color::Scheme) -> Element<'a, Message> {
+pub fn media_card<'a>(
+    media: &'a MediaInfo,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     row![
         thumbnail(scheme),
         column![
