@@ -9,11 +9,13 @@
 use std::time::Instant;
 
 use iced::futures::stream;
-use iced::Task;
+use iced::widget::{column, progress_bar, text};
+use iced::{Background, Border, Element, Length, Task};
 use tokio::sync::mpsc::UnboundedReceiver;
 use whspr_hf::{human_size, DownloadProgress};
 
 use crate::state::Message;
+use crate::theme::{color, shape, spacing, type_scale};
 
 /// Live state for the one download currently in flight on the Models screen:
 /// what's being fetched, how far along it is, and a smoothed transfer rate so
@@ -121,6 +123,35 @@ pub fn progress_task(rx: UnboundedReceiver<DownloadProgress>) -> Task<Message> {
         downloaded: update.downloaded,
         total: update.total,
     })
+}
+
+/// The Modernist download indicator: a squared accent progress bar (dropped
+/// while `total` is unknown, leaving only the label -- iced has no built-in
+/// indeterminate bar, and a bar stuck at 0% would read as the very "frozen"
+/// look this feature exists to kill) above the byte/percent/rate status line.
+/// Rendered in the Models screen's account section while a download is in
+/// flight (see `crate::hub::models`).
+pub fn view<'a>(active: &ActiveDownload, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let mut content = column![].spacing(spacing::SM);
+    if let Some(fraction) = active.fraction() {
+        content = content.push(
+            progress_bar(0.0..=1.0, fraction)
+                .girth(Length::Fixed(8.0))
+                .style(move |_theme| progress_bar::Style {
+                    background: Background::Color(scheme.surface_container_highest),
+                    bar: Background::Color(scheme.primary),
+                    border: Border::default().rounded(shape::NONE),
+                }),
+        );
+    }
+    content
+        .push(
+            text(active.status_line())
+                .size(type_scale::BODY_MEDIUM.size)
+                .font(type_scale::BODY_MEDIUM.font())
+                .color(scheme.on_surface_variant),
+        )
+        .into()
 }
 
 #[cfg(test)]
