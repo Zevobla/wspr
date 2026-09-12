@@ -12,8 +12,6 @@
 
 use iced::Task;
 
-use whspr_core::AsrBackend;
-
 use crate::note_desk::{NoteDeskState, NoteHeading};
 use crate::state::{Message, State};
 
