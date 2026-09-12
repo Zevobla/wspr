@@ -5,37 +5,10 @@ use whspr_config::Config;
 
 use crate::history::HistoryEntry;
 use crate::model_menu::{AsrOption, RefineOption};
-
-/// Which top-level screen the Hub's left numbered nav rail (`crate::hub`)
-/// is currently showing. `Dictate` is the default: whspr's core action
-/// (record/dictate) gets the screen a user lands on. The declaration order
-/// is the rail order (01 Dictate .. 05 Settings) -- see `crate::hub`'s
-/// module doc for the redesign this drives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Screen {
-    #[default]
-    Dictate,
-    History,
-    Models,
-    Speakers,
-    Settings,
-}
-
-/// Which section of the Settings screen's middle sub-nav is selected (the
-/// Modernist rail -> sub-nav -> form three-column layout, mockup 1c). One
-/// variant per real `Config` group (each maps 1:1 to a `hub::settings`
-/// section view); declaration order is the sub-nav order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SettingsSection {
-    #[default]
-    General,
-    Audio,
-    Capture,
-    Cleanup,
-    Typing,
-    Privacy,
-    Accounts,
-}
+// The Hub's navigation enums live in their own module (AA-06 line cap); they
+// were part of this file, so they're re-exported here to keep the existing
+// `crate::state::Screen` / `crate::state::SettingsSection` paths working.
+pub use crate::screen::{Screen, SettingsSection};
 
 /// Top-level state for the whspr GUI daemon (the Hub window).
 #[derive(Debug)]
@@ -311,11 +284,6 @@ mod tests {
         let state = State::new(config);
 
         assert_eq!(state.pre_paste_delay_draft, "250");
-    }
-
-    #[test]
-    fn screen_default_is_dictate() {
-        assert_eq!(Screen::default(), Screen::Dictate);
     }
 
     #[test]

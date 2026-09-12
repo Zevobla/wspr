@@ -9,6 +9,7 @@ mod hub;
 mod logging;
 mod model_menu;
 mod note_desk;
+mod screen;
 mod screenshot;
 mod sound;
 mod speakers;
