@@ -402,4 +402,16 @@ mod tests {
             .segments
             .is_empty());
     }
+
+    #[test]
+    fn caption_format_detected_from_extension() {
+        assert_eq!(caption_format_from_ext("vtt"), Some(CaptionFormat::WebVtt));
+        assert_eq!(caption_format_from_ext("VTT"), Some(CaptionFormat::WebVtt));
+        assert_eq!(caption_format_from_ext("json3"), Some(CaptionFormat::Json3));
+        assert_eq!(caption_format_from_ext("json"), Some(CaptionFormat::Json3));
+        assert_eq!(caption_format_from_ext("srv1"), Some(CaptionFormat::Srv));
+        assert_eq!(caption_format_from_ext("srv"), Some(CaptionFormat::Srv));
+        assert_eq!(caption_format_from_ext("mp4"), None);
+        assert_eq!(caption_format_from_ext(""), None);
+    }
 }
