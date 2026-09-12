@@ -40,13 +40,6 @@ fn is_signed_in(state: &State) -> bool {
 }
 
 fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let has_client_id = state
-        .config
-        .huggingface
-        .oauth_client_id
-        .as_deref()
-        .is_some_and(|id| !id.trim().is_empty());
-
     let mut body = column![].spacing(spacing::SM);
 
     if is_signed_in(state) {
@@ -60,7 +53,10 @@ fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                 .style(move |_theme, status| styles::button::outlined(scheme, status))
                 .on_press_maybe((!state.hf_busy).then_some(Message::HfSignOut)),
         );
-    } else if has_client_id {
+    } else {
+        // Browser sign-in always works -- whspr ships a built-in public OAuth
+        // client id (`whspr_hf::oauth::BUILTIN_CLIENT_ID`), so no per-user
+        // config is needed; the token field below is the no-browser fallback.
         body = body.push(body_text(
             "Sign in to download gated models and use your account.".to_string(),
             scheme,
@@ -75,15 +71,6 @@ fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                 .style(move |_theme, status| styles::button::filled(scheme, status))
                 .on_press_maybe((!state.hf_busy).then_some(Message::HfSignIn)),
         );
-        body = body.push(token_login(state, scheme));
-    } else {
-        body = body.push(body_text(
-            "Sign in to download gated models and use your account. No OAuth app required -- \
-             paste a HuggingFace access token below. (You can also enable browser sign-in by \
-             setting [huggingface].oauth-client-id in your config.)"
-                .to_string(),
-            scheme,
-        ));
         body = body.push(token_login(state, scheme));
     }
 
