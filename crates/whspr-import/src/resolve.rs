@@ -157,7 +157,7 @@ fn media_info_from_value(v: &Value) -> MediaInfo {
         upload_date: v["upload_date"].as_str().map(str::to_string),
         thumbnail: pick_thumbnail(v),
         chapters: parse_chapters(&v["chapters"]),
-        human_captions: parse_langs(&v["subtitles"]),
+        human_captions: parse_human_captions(&v["subtitles"]),
         auto_captions: parse_auto_captions(&v["automatic_captions"]),
         playlist,
     }
@@ -248,6 +248,17 @@ fn pick_caption_format(formats: &[Value]) -> (Option<String>, Option<String>) {
         ),
         None => (None, None),
     }
+}
+
+/// Reads `subtitles` as human caption tracks, dropping YouTube's `live_chat`
+/// pseudo-track. `live_chat` is a replay of the live-chat log, not a spoken-word
+/// transcript, and yt-dlp lists it under `subtitles`; offering it as a caption
+/// source would import chat messages instead of speech, so it's excluded.
+fn parse_human_captions(v: &Value) -> Vec<Lang> {
+    parse_langs(v)
+        .into_iter()
+        .filter(|l| l.code != "live_chat")
+        .collect()
 }
 
 /// Reads `automatic_captions`, but collapses YouTube's translation spam.
@@ -414,6 +425,22 @@ mod tests {
         ]);
         let (_, ext) = pick_caption_format(formats.as_array().unwrap());
         assert_eq!(ext.as_deref(), Some("vtt"));
+    }
+
+    #[test]
+    fn live_chat_is_not_offered_as_a_human_caption() {
+        // A livestream lists `live_chat` under subtitles; it's a chat replay,
+        // not speech, so it must be dropped (leaving the real `en` track).
+        let json = r#"{
+          "title": "stream",
+          "subtitles": {
+            "live_chat": [{ "ext": "json", "url": "https://x/chat.json" }],
+            "en": [{ "ext": "vtt", "url": "https://x/en.vtt" }]
+          }
+        }"#;
+        let info = parse_media_info(json).expect("parse");
+        let codes: Vec<&str> = info.human_captions.iter().map(|l| l.code.as_str()).collect();
+        assert_eq!(codes, ["en"]);
     }
 
     #[test]
