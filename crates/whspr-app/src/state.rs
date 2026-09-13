@@ -341,6 +341,10 @@ pub enum Message {
     /// The user asked to leave the note desk and return to the normal Hub
     /// (see `crate::note_desk`). Handled by `crate::note_desk`.
     BackToDictate,
+    /// The user clicked a segment of the note desk's transcript filter
+    /// (`Key / All / Kept`), changing which rows the transcript column shows
+    /// (see `crate::note_desk`). Handled by `crate::note_desk`.
+    SetTranscriptFilter(crate::note_desk::TranscriptFilter),
     /// The user clicked a Settings sub-nav entry: switches which section's
     /// form renders (see `SettingsSection`).
     SettingsSectionSelected(SettingsSection),
