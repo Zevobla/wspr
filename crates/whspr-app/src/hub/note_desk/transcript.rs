@@ -143,10 +143,12 @@ fn seg_style(
 /// The section heading + the transcript rows, with a speaker label above each
 /// speaker's run.
 fn rows<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let visible: Vec<&TranscriptRow> =
+        nd.rows.iter().filter(|&r| nd.filter.keeps(r)).collect();
     let mut col = column![section_heading(nd, scheme)].width(Length::Fill);
     let mut prev_speaker: Option<&str> = None;
-    let last = nd.rows.len().saturating_sub(1);
-    for (i, r) in nd.rows.iter().enumerate() {
+    let last = visible.len().saturating_sub(1);
+    for (i, r) in visible.into_iter().enumerate() {
         let speaker = r.speaker_id.as_deref();
         if speaker != prev_speaker {
             if let Some(name) = speaker {
