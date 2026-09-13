@@ -10,6 +10,7 @@ mod link_import;
 mod logging;
 mod model_menu;
 mod note_desk;
+mod note_export;
 mod screen;
 mod screenshot;
 mod sound;
