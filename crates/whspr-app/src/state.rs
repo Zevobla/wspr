@@ -600,4 +600,20 @@ pub enum Message {
     /// The link-import thumbnail finished downloading (best-effort): the JPEG
     /// bytes, or `None` if it failed or the video had no thumbnail.
     LinkImportThumbnail(Option<Vec<u8>>),
+    /// The note desk's "View code" toggle: flips between the rendered note and
+    /// the raw `document_typ` source in the Typst column (see
+    /// `crate::note_desk` / `crate::note_export`).
+    NoteDeskToggleViewCode,
+    /// "Export .typ" pressed: opens a native save dialog and writes the
+    /// generated Typst source to the chosen path off the UI thread.
+    NoteDeskExportTyp,
+    /// A `.typ` export finished: `Ok(Some(path))` on success, `Ok(None)` when
+    /// the user cancelled the dialog, or `Err(message)` on a write failure.
+    NoteDeskExportTypDone(Result<Option<std::path::PathBuf>, String>),
+    /// "Export PDF" pressed: opens a native save dialog, writes the Typst to a
+    /// temp file, then shells out to `typst compile` off the UI thread.
+    NoteDeskExportPdf,
+    /// A PDF export finished: `Ok(Some(path))` on success, `Ok(None)` when the
+    /// user cancelled, or `Err(message)` on a compile/IO failure.
+    NoteDeskExportPdfDone(Result<Option<std::path::PathBuf>, String>),
 }
