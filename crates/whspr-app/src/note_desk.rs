@@ -117,13 +117,35 @@ pub(crate) fn secs_to_mmss(secs: f32) -> String {
     format!("{:02}:{:02}", total / 60, total % 60)
 }
 
+/// A lightweight "how key is this line" heuristic (until an LLM ranking pass):
+/// filler → chatter, long / figure-bearing lines → kept, the rest → candidates.
+/// Drives the gutter, score dots, and `Key`/`Kept` filters (ranked, not flat).
+fn rank_line(text: &str) -> (Gutter, u8) {
+    let words = text.split_whitespace().count();
+    if words <= 3 {
+        return (Gutter::Chatter, 0);
+    }
+    let has_digit = text.chars().any(|c| c.is_ascii_digit());
+    let score = if words >= 14 || (words >= 9 && has_digit) {
+        3
+    } else if words >= 8 {
+        2
+    } else {
+        1
+    };
+    let gutter = if score >= 3 {
+        Gutter::Kept
+    } else {
+        Gutter::Candidate
+    };
+    (gutter, score)
+}
+
 impl NoteDeskState {
-    /// Builds a note desk from a finished link import: `title` heads the desk,
+    /// Builds a note desk from a finished import: `title` heads the desk,
     /// `headings` are the kept chapters, and each transcript segment becomes a
-    /// candidate [`TranscriptRow`] (start time as `MM:SS`, the segment's own
-    /// speaker if it carries one). A transcript with no segments -- e.g. the
-    /// mock ASR, which only fills `text` -- collapses to a single `00:00` row
-    /// so the desk is never empty. The filter starts at its `Key` default.
+    /// ranked [`TranscriptRow`] (start time, its own speaker if any). A
+    /// transcript with no segments collapses to a single `00:00` row.
     pub fn from_import(
         title: &str,
         headings: Vec<NoteHeading>,
@@ -133,24 +155,28 @@ impl NoteDeskState {
             if transcript.text.trim().is_empty() {
                 Vec::new()
             } else {
+                let (gutter, keep_score) = rank_line(&transcript.text);
                 vec![TranscriptRow {
                     time_label: "00:00".to_string(),
                     text: transcript.text.clone(),
                     speaker_id: None,
-                    gutter: Gutter::Candidate,
-                    keep_score: 2,
+                    gutter,
+                    keep_score,
                 }]
             }
         } else {
             transcript
                 .segments
                 .iter()
-                .map(|seg| TranscriptRow {
-                    time_label: secs_to_mmss(seg.start_secs),
-                    text: seg.text.clone(),
-                    speaker_id: seg.speaker.clone(),
-                    gutter: Gutter::Candidate,
-                    keep_score: 2,
+                .map(|seg| {
+                    let (gutter, keep_score) = rank_line(&seg.text);
+                    TranscriptRow {
+                        time_label: secs_to_mmss(seg.start_secs),
+                        text: seg.text.clone(),
+                        speaker_id: seg.speaker.clone(),
+                        gutter,
+                        keep_score,
+                    }
                 })
                 .collect()
         };
@@ -389,200 +415,7 @@ fn temp_typ_path() -> PathBuf {
     std::env::temp_dir().join(format!("whspr-note-{}-{nanos}.typ", std::process::id()))
 }
 
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use whspr_config::Config;
-
-    #[test]
-    fn enter_note_desk_seeds_the_mode() {
-        let mut state = State::new(Config::default());
-        assert!(state.note_desk.is_none());
-        assert!(update(&mut state, &Message::EnterNoteDesk).is_some());
-        let nd = state.note_desk.as_ref().expect("note desk seeded");
-        assert!(!nd.rows.is_empty());
-    }
-
-    #[test]
-    fn back_to_dictate_clears_the_mode() {
-        let mut state = State::new(Config::default());
-        state.note_desk = Some(NoteDeskState::sample());
-        assert!(update(&mut state, &Message::BackToDictate).is_some());
-        assert!(state.note_desk.is_none());
-    }
-
-    #[test]
-    fn set_transcript_filter_updates_the_active_desk() {
-        let mut state = State::new(Config::default());
-        state.note_desk = Some(NoteDeskState::sample());
-        let msg = Message::SetTranscriptFilter(TranscriptFilter::Kept);
-        assert!(update(&mut state, &msg).is_some());
-        assert_eq!(
-            state.note_desk.as_ref().expect("desk").filter,
-            TranscriptFilter::Kept
-        );
-    }
-
-    #[test]
-    fn update_ignores_unrelated_messages() {
-        let mut state = State::new(Config::default());
-        assert!(update(&mut state, &Message::ThemeToggled).is_none());
-    }
-
-    #[test]
-    fn toggle_view_code_flips_the_flag() {
-        let mut state = State::new(Config::default());
-        state.note_desk = Some(NoteDeskState::sample());
-        assert!(!state.note_desk.as_ref().unwrap().view_code);
-        assert!(update(&mut state, &Message::NoteDeskToggleViewCode).is_some());
-        assert!(state.note_desk.as_ref().unwrap().view_code);
-        assert!(update(&mut state, &Message::NoteDeskToggleViewCode).is_some());
-        assert!(!state.note_desk.as_ref().unwrap().view_code);
-    }
-
-    #[test]
-    fn export_done_ok_records_the_saved_path() {
-        let mut state = State::new(Config::default());
-        state.note_desk = Some(NoteDeskState::sample());
-        let path = PathBuf::from("/tmp/note.typ");
-        assert!(update(&mut state, &Message::NoteDeskExportTypDone(Ok(Some(path)))).is_some());
-        assert_eq!(
-            state.note_desk.as_ref().unwrap().export_status.as_deref(),
-            Some("Saved Typst to /tmp/note.typ")
-        );
-    }
-
-    #[test]
-    fn export_done_cancel_clears_status() {
-        let mut state = State::new(Config::default());
-        let mut nd = NoteDeskState::sample();
-        nd.export_status = Some("Exporting PDF\u{2026}".to_string());
-        state.note_desk = Some(nd);
-        assert!(update(&mut state, &Message::NoteDeskExportPdfDone(Ok(None))).is_some());
-        assert!(state.note_desk.as_ref().unwrap().export_status.is_none());
-    }
-
-    #[test]
-    fn export_done_err_records_the_failure() {
-        let mut state = State::new(Config::default());
-        state.note_desk = Some(NoteDeskState::sample());
-        assert!(update(
-            &mut state,
-            &Message::NoteDeskExportPdfDone(Err("boom".to_string()))
-        )
-        .is_some());
-        assert_eq!(
-            state.note_desk.as_ref().unwrap().export_status.as_deref(),
-            Some("PDF export failed: boom")
-        );
-    }
-
-    #[test]
-    fn suggested_file_name_sanitizes_and_falls_back() {
-        assert_eq!(suggested_file_name("Lecture 7", "typ"), "Lecture 7.typ");
-        assert_eq!(suggested_file_name("a/b\\c", "pdf"), "a-b-c.pdf");
-        assert_eq!(suggested_file_name("   ", "typ"), "note.typ");
-    }
-
-    #[test]
-    fn sample_keep_scores_are_in_range() {
-        for row in NoteDeskState::sample().rows {
-            assert!(row.keep_score <= 3);
-        }
-    }
-
-    #[test]
-    fn sample_has_a_title_and_rows() {
-        let nd = NoteDeskState::sample();
-        assert!(!nd.title.is_empty());
-        assert!(!nd.rows.is_empty());
-    }
-
-    #[test]
-    fn from_import_maps_segments_to_candidate_rows() {
-        let transcript = whspr_core::Transcript {
-            text: "one two".to_string(),
-            language: Some("en".to_string()),
-            segments: vec![
-                whspr_core::TranscriptSegment {
-                    text: "one".to_string(),
-                    start_secs: 5.0,
-                    end_secs: 8.0,
-                    speaker: Some("Speaker A".to_string()),
-                },
-                whspr_core::TranscriptSegment {
-                    text: "two".to_string(),
-                    start_secs: 65.0,
-                    end_secs: 70.0,
-                    speaker: None,
-                },
-            ],
-        };
-        let headings = vec![NoteHeading {
-            time_label: "00:00".to_string(),
-            title: "Intro".to_string(),
-        }];
-        let nd = NoteDeskState::from_import("Lecture", headings, &transcript);
-        assert_eq!(nd.title, "Lecture");
-        assert_eq!(nd.headings.len(), 1);
-        assert_eq!(nd.rows.len(), 2);
-        assert_eq!(nd.rows[0].time_label, "00:05");
-        assert_eq!(nd.rows[0].text, "one");
-        assert_eq!(nd.rows[0].speaker_id.as_deref(), Some("Speaker A"));
-        assert_eq!(nd.rows[0].gutter, Gutter::Candidate);
-        assert_eq!(nd.rows[1].time_label, "01:05");
-        assert!(nd.rows[1].speaker_id.is_none());
-    }
-
-    /// A `TranscriptRow` with just the fields the filter reads set.
-    fn row_with(gutter: Gutter, keep_score: u8) -> TranscriptRow {
-        TranscriptRow {
-            time_label: "00:00".to_string(),
-            text: String::new(),
-            speaker_id: None,
-            gutter,
-            keep_score,
-        }
-    }
-
-    #[test]
-    fn filter_all_keeps_every_row() {
-        for gutter in [Gutter::Kept, Gutter::Candidate, Gutter::Chatter] {
-            for score in 0..=3 {
-                assert!(TranscriptFilter::All.keeps(&row_with(gutter, score)));
-            }
-        }
-    }
-
-    #[test]
-    fn filter_kept_keeps_only_kept_rows() {
-        assert!(TranscriptFilter::Kept.keeps(&row_with(Gutter::Kept, 0)));
-        assert!(!TranscriptFilter::Kept.keeps(&row_with(Gutter::Candidate, 3)));
-        assert!(!TranscriptFilter::Kept.keeps(&row_with(Gutter::Chatter, 3)));
-    }
-
-    #[test]
-    fn filter_key_includes_high_score_candidates() {
-        assert!(TranscriptFilter::Key.keeps(&row_with(Gutter::Kept, 0)));
-        assert!(TranscriptFilter::Key.keeps(&row_with(Gutter::Candidate, 2)));
-        assert!(!TranscriptFilter::Key.keeps(&row_with(Gutter::Candidate, 1)));
-    }
-
-    #[test]
-    fn filter_default_is_key() {
-        assert_eq!(TranscriptFilter::default(), TranscriptFilter::Key);
-    }
-
-    #[test]
-    fn from_import_without_segments_uses_a_single_text_row() {
-        let transcript = whspr_core::Transcript {
-            text: "just text".to_string(),
-            ..Default::default()
-        };
-        let nd = NoteDeskState::from_import("Talk", Vec::new(), &transcript);
-        assert_eq!(nd.rows.len(), 1);
-        assert_eq!(nd.rows[0].time_label, "00:00");
-        assert_eq!(nd.rows[0].text, "just text");
-        assert!(nd.headings.is_empty());
-    }
-}
+#[path = "note_desk_tests.rs"]
+mod tests;
