@@ -85,10 +85,9 @@ impl TranscriptFilter {
     }
 }
 
-/// All state for the note-desk mode. `title` heads the desk, `rows` are the
-/// transcript lines, and `timer_start` drives the header's elapsed timer. The
-/// Typst preview is a static placeholder this phase (real rendering is a later
-/// phase), so it carries no field yet.
+/// All state for the note-desk mode: `title` heads the desk, `rows` are the
+/// transcript lines, `headings` the kept chapters, and `filter` which rows the
+/// transcript column shows.
 #[derive(Debug)]
 pub struct NoteDeskState {
     /// The desk title, shown in the header (e.g. "Statistical Mechanics · 7").
@@ -115,7 +114,7 @@ impl NoteDeskState {
     /// candidate [`TranscriptRow`] (start time as `MM:SS`, the segment's own
     /// speaker if it carries one). A transcript with no segments -- e.g. the
     /// mock ASR, which only fills `text` -- collapses to a single `00:00` row
-    /// so the desk is never empty. `timer_start` begins now.
+    /// so the desk is never empty. The filter starts at its `Key` default.
     pub fn from_import(
         title: &str,
         headings: Vec<NoteHeading>,
