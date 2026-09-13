@@ -1,7 +1,5 @@
-//! ASR backend implementations. Everything here implements
-//! `whspr_core::AsrBackend`; the pipeline never knows or cares which one it
-//! got. `WhisperLocal` (whisper-rs), `OpenAiAsr`, and `DeepgramAsr` are all
-//! real implementations now.
+//! ASR backends implementing `whspr_core::AsrBackend`: `WhisperLocal`
+//! (whisper-rs), `OpenAiAsr`, and `DeepgramAsr`.
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -56,11 +54,8 @@ impl WhisperLocal {
 
 impl WhisperLocal {
     /// Shared body of both transcribe entrypoints: validates the model path,
-    /// then runs whisper.cpp on a blocking-pool thread (inference is CPU-bound
-    /// and takes real wall-clock seconds), optionally forwarding whisper's
-    /// progress callback (0..=100) to `progress`. WhisperContext/WhisperState/
-    /// FullParams are all `Send + Sync` (whisper-rs marks them so), so moving
-    /// them into the closure and running synchronously there is sound.
+    /// then runs whisper.cpp on a blocking-pool thread (its types are
+    /// `Send + Sync`), optionally forwarding its `0..=100` progress to `progress`.
     async fn run(
         &self,
         audio: &AudioBuffer,
@@ -139,9 +134,8 @@ fn transcribe_blocking(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
-    // Forward whisper.cpp's own 0..=100 progress to the caller's channel for a
-    // UI progress bar. Fires from the C inference loop on this blocking thread;
-    // sends are best-effort (a closed channel just means nobody's watching).
+    // Forward whisper.cpp's own 0..=100 progress to the caller's channel (for a
+    // UI bar); best-effort, a closed channel just means nobody's watching.
     if let Some(tx) = progress {
         params.set_progress_callback_safe(move |percent: i32| {
             let _ = tx.send(percent.clamp(0, 100) as u8);

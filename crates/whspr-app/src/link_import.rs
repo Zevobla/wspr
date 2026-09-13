@@ -48,17 +48,13 @@ pub struct LinkImport {
     pub clip_start: String,
     /// Live contents of the "clip to" `MM:SS` input.
     pub clip_end: String,
-    /// A human status while an import runs (`Some("Transcribing…")`), so the
-    /// footer shows progress and disables the confirm button instead of looking
-    /// frozen; `None` when idle.
+    /// A status shown in the footer while an import runs (also disabling the
+    /// confirm button); `None` when idle.
     pub importing: Option<String>,
-    /// Whisper's transcription progress (0..=100) for the transcribe-here path,
-    /// driving the footer progress bar; `None` before whisper starts reporting.
+    /// Whisper progress (0..=100) for the transcribe path; `None` until it reports.
     pub import_progress: Option<u8>,
-    /// The decoded thumbnail image handle once `download_thumbnail` finishes
-    /// (created once from the fetched JPEG bytes, so the view never re-decodes
-    /// per frame -- that caused flicker); `None` before/without one, in which
-    /// case the card shows the placeholder.
+    /// The decoded thumbnail handle (created once to avoid per-frame re-decode
+    /// flicker); `None` shows the placeholder.
     pub thumbnail: Option<iced::widget::image::Handle>,
 }
 
@@ -175,9 +171,8 @@ fn start_resolve(state: &mut State) -> Task<Message> {
     )
 }
 
-/// After a successful resolve, fetches the media's thumbnail off the UI thread
-/// (best-effort) so the card can show a real preview. A no-op when the dialog
-/// closed, there's no media, or the media has no thumbnail URL.
+/// Fetches the resolved media's thumbnail off the UI thread (best-effort);
+/// a no-op without a live dialog, media, or thumbnail URL.
 fn thumbnail_task(state: &State) -> Task<Message> {
     let Some(li) = state.link_import.as_ref() else {
         return Task::none();
@@ -194,10 +189,9 @@ fn thumbnail_task(state: &State) -> Task<Message> {
     )
 }
 
-/// Folds a finished `resolve` into the dialog: on success stores the media,
-/// seeds every chapter as included, and defaults the import path to captions
-/// when a human track exists (else transcribe, pre-selecting an auto track's
-/// language if any). On failure records the error and clears any media.
+/// Folds a finished `resolve` into the dialog: stores the media, seeds every
+/// chapter included, and picks the default import path; on failure records the
+/// error and clears the media.
 fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo>, String>) {
     let Some(li) = state.link_import.as_mut() else {
         return;
@@ -226,10 +220,8 @@ fn apply_resolved(state: &mut State, result: &Result<Box<whspr_import::MediaInfo
     }
 }
 
-/// Folds a finished import into the app: on success builds the note desk from
-/// the transcript + kept headings and closes the dialog (entering the desk); on
-/// failure keeps the dialog open and records the error. Either way the
-/// "Importing…" status is cleared.
+/// Folds a finished import: on success builds the note desk and closes the
+/// dialog; on failure keeps it open with the error. Clears the status either way.
 fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>) {
     state.transcribe_status = None;
     match result {
@@ -252,12 +244,9 @@ fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>)
     }
 }
 
-/// Runs the user's chosen import off the UI thread and, when it finishes, hands
-/// the result to [`Message::LinkImportImported`]. The captions path returns a
-/// `Transcript` directly; the transcribe path downloads audio, runs the
-/// configured ASR backend (for timestamped segments), then deletes the temp
-/// WAV. An unresolved dialog or a blank URL is a no-op. Sets an "Importing…"
-/// status while it runs and clears any prior error.
+/// Runs the chosen import off the UI thread → [`Message::LinkImportImported`].
+/// Captions return a `Transcript` directly; transcribe downloads audio, runs
+/// the ASR backend, then deletes the temp WAV. No-op if unresolved/blank.
 fn start_import(state: &mut State) -> Task<Message> {
     let Some(li) = state.link_import.as_ref() else {
         return Task::none();
@@ -282,8 +271,7 @@ fn start_import(state: &mut State) -> Task<Message> {
         })
         .collect();
     let caption_lang = li.caption_lang.clone();
-    // The Lang the pick landed on (published tracks first), kept for its direct
-    // URL. Chaining human before auto lets a human track win a code tie.
+    // The Lang the pick landed on (published first), kept for its direct URL.
     let selected_track = caption_lang.as_ref().and_then(|code| {
         media
             .human_captions
@@ -314,15 +302,13 @@ fn start_import(state: &mut State) -> Task<Message> {
     }
     state.transcribe_status = Some("Importing\u{2026}".to_string());
 
-    // The transcribe path streams whisper's progress back through this channel;
-    // the captions path never sends, so the bar just doesn't appear there.
+    // Only the transcribe path sends whisper progress on this channel.
     let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
 
     let import = Task::perform(
         async move {
             let transcript = if use_captions {
-                // Prefer the track's direct URL (a plain GET that dodges the
-                // bot-walled player API); fall back to a yt-dlp spawn otherwise.
+                // Prefer the track's direct URL; fall back to a yt-dlp spawn.
                 match selected_track
                     .as_ref()
                     .and_then(|t| Some((t.url.as_deref()?, t.ext.as_deref().unwrap_or(""))))
@@ -363,10 +349,8 @@ fn start_import(state: &mut State) -> Task<Message> {
     Task::batch([import, import_progress_task(progress_rx)])
 }
 
-/// Bridges the transcribe-here whisper-progress channel into iced messages,
-/// mirroring `crate::hf_progress::progress_task`. Ends when the import future
-/// drops its sender (transcription finished, or the captions path that never
-/// sends returns), so it runs exactly as long as the import does.
+/// Bridges the whisper-progress channel into iced messages (mirrors
+/// `crate::hf_progress::progress_task`); ends when the import drops its sender.
 fn import_progress_task(rx: tokio::sync::mpsc::UnboundedReceiver<u8>) -> Task<Message> {
     let updates = iced::futures::stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|percent| (percent, rx))
