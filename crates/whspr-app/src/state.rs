@@ -175,11 +175,8 @@ pub struct State {
     /// stays `false` whenever attribution is disabled or a model is present.
     pub needs_speaker_model: bool,
     /// When `Some`, the Hub is in the full-screen longform "note desk" mode
-    /// (see `crate::note_desk`): its view (`crate::hub::note_desk`)
-    /// short-circuits the normal nav-rail + header shell wholesale. `None` is
-    /// the normal Hub. Entered/left manually for now via
-    /// `Message::EnterNoteDesk` / `Message::BackToDictate`; the auto-morph is
-    /// a later phase.
+    /// (see `crate::note_desk`), whose view short-circuits the normal nav-rail
+    /// + header shell wholesale; `None` is the normal Hub.
     pub note_desk: Option<crate::note_desk::NoteDeskState>,
     /// The "Add from a link" modal dialog's state (`crate::link_import`), or
     /// `None` when the dialog is closed. Opened by `Message::LinkImportOpen`.
@@ -334,16 +331,13 @@ pub enum Message {
     /// The user clicked a nav-rail entry: switches which screen renders to
     /// the right of the rail (see `Screen`).
     TabSelected(Screen),
-    /// The user asked to open the full-screen longform "note desk" mode (see
-    /// `crate::note_desk`). Manual entry scaffolding for now -- a later phase
-    /// replaces it with an automatic morph. Handled by `crate::note_desk`.
+    /// The user asked to open the full-screen longform "note desk" mode
+    /// (manual entry scaffolding for now). Handled by `crate::note_desk`.
     EnterNoteDesk,
     /// The user asked to leave the note desk and return to the normal Hub
     /// (see `crate::note_desk`). Handled by `crate::note_desk`.
     BackToDictate,
-    /// The user clicked a segment of the note desk's transcript filter
-    /// (`Key / All / Kept`), changing which rows the transcript column shows
-    /// (see `crate::note_desk`). Handled by `crate::note_desk`.
+    /// The note desk's `Key / All / Kept` transcript filter changed (`crate::note_desk`).
     SetTranscriptFilter(crate::note_desk::TranscriptFilter),
     /// The user clicked a Settings sub-nav entry: switches which section's
     /// form renders (see `SettingsSection`).
