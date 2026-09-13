@@ -31,22 +31,13 @@ impl WhisperLocal {
         }
     }
 
-    /// Resolves the GGML model path to use: an explicit path (e.g. from a
-    /// `--model` flag or `whspr-config`'s `[whisper].model_path`) takes
-    /// priority. If none is given, falls back to the `WHISPER_MODEL_PATH`
-    /// environment variable. whspr is bring-your-own-model — it doesn't
-    /// ship or fetch a checkpoint for you, so point this env var (or
-    /// `[whisper].model_path`) at a GGML file you've downloaded yourself
-    /// (e.g. from <https://huggingface.co/ggerganov/whisper.cpp>). That's a
-    /// deliberate, explicit escape hatch, not a user-changeable app
-    /// setting, so reading it here doesn't run afoul of `whspr-config`'s
-    /// "no env vars" rule — that rule is specifically about app settings
-    /// silently overriding the config file (see that crate's module doc
-    /// comment).
-    ///
-    /// Returns `None` if neither is available; callers should surface that
-    /// as a clear "no model configured" error rather than constructing a
-    /// `WhisperLocal` pointed at a path that doesn't exist.
+    /// Resolves the GGML model path: an explicit path (`--model` /
+    /// `[whisper].model_path`) wins, else the `WHISPER_MODEL_PATH` env var
+    /// (whspr is bring-your-own-model — point it at a GGML file you downloaded,
+    /// e.g. from <https://huggingface.co/ggerganov/whisper.cpp>). That env var
+    /// is a deliberate escape hatch, not an app setting, so it doesn't break
+    /// `whspr-config`'s "no env vars" rule. `None` when neither is set — callers
+    /// should surface a clear "no model configured" error.
     pub fn resolve_model_path(explicit: Option<PathBuf>) -> Option<PathBuf> {
         explicit.or_else(|| std::env::var_os("WHISPER_MODEL_PATH").map(PathBuf::from))
     }
@@ -126,16 +117,23 @@ fn transcribe_blocking(
         patience: -1.0,
     });
     params.set_language(language);
-    // J-10: translate the transcription to English rather than leaving it
-    // in the detected/fixed source language.
+    // J-10: translate to English rather than the detected source language.
     params.set_translate(translate);
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
-    // Forward whisper.cpp's own 0..=100 progress to the caller's channel (for a
-    // UI bar); best-effort, a closed channel just means nobody's watching.
+    // Anti-hallucination (whisper.cpp can lock into repeating one phrase): don't
+    // condition on prior text, and enable temperature fallback so a high-entropy
+    // / low-logprob segment is re-decoded hotter instead of looping.
+    params.set_no_context(true);
+    params.set_temperature(0.0);
+    params.set_temperature_inc(0.2);
+    params.set_entropy_thold(2.4);
+    params.set_logprob_thold(-1.0);
+
+    // Forward whisper.cpp's 0..=100 progress to the caller's channel (best-effort).
     if let Some(tx) = progress {
         params.set_progress_callback_safe(move |percent: i32| {
             let _ = tx.send(percent.clamp(0, 100) as u8);
