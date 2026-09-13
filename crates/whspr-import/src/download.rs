@@ -54,12 +54,15 @@ impl ClipRange {
 /// Downloads `url`'s audio to a fresh 16kHz mono WAV and returns its path.
 ///
 /// With `clip`, only that section is fetched (`--download-sections`). With
-/// [`CookiesFrom::Browser`], authenticates via `--cookies-from-browser`.
-/// The caller owns and must delete the returned file (see the module docs).
+/// [`CookiesFrom::Browser`], authenticates via `--cookies-from-browser`. When
+/// `progress` is set, yt-dlp's `[download] N%` line is streamed to it as a
+/// `0..=100` percentage (best-effort). The caller owns and must delete the
+/// returned file (see the module docs).
 pub async fn download_audio(
     url: &str,
     clip: Option<ClipRange>,
     cookies: CookiesFrom,
+    progress: Option<tokio::sync::mpsc::UnboundedSender<u8>>,
 ) -> Result<PathBuf> {
     let ytdlp = resolve_tool(Tool::YtDlp).ok_or_else(|| {
         WhsprError::Other("yt-dlp not found: install it or point WHSPR_YTDLP at it".to_string())
@@ -83,6 +86,8 @@ pub async fn download_audio(
         // Force the extract-audio ffmpeg pass to emit 16kHz mono directly.
         .arg("--postprocessor-args")
         .arg("ExtractAudio:-ar 16000 -ac 1")
+        // One progress line per update (no `\r`), so stdout can be streamed.
+        .arg("--newline")
         .arg("--ffmpeg-location")
         .arg(&ffmpeg)
         .arg("-o")
@@ -95,15 +100,44 @@ pub async fn download_audio(
         cmd.arg("--cookies-from-browser").arg(browser);
     }
     cmd.arg(url);
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
 
-    let output = cmd
-        .output()
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| WhsprError::Other(format!("failed to run yt-dlp: {e}")))?;
+
+    // Drain stderr concurrently so a chatty yt-dlp can't deadlock on a full
+    // pipe while we read progress from stdout.
+    let stderr = child.stderr.take();
+    let stderr_task = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt;
+        let mut buf = String::new();
+        if let Some(mut s) = stderr {
+            let _ = s.read_to_string(&mut buf).await;
+        }
+        buf
+    });
+
+    if let Some(stdout) = child.stdout.take() {
+        use tokio::io::AsyncBufReadExt;
+        let mut lines = tokio::io::BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let (Some(tx), Some(pct)) = (progress.as_ref(), parse_download_percent(&line)) {
+                let _ = tx.send(pct);
+            }
+        }
+    }
+
+    let status = child
+        .wait()
         .await
         .map_err(|e| WhsprError::Other(format!("failed to run yt-dlp: {e}")))?;
-    if !output.status.success() {
+    let stderr = stderr_task.await.unwrap_or_default();
+    if !status.success() {
         return Err(WhsprError::Other(format!(
             "yt-dlp audio download failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr.trim()
         )));
     }
     if !wav_path.exists() {
@@ -115,14 +149,23 @@ pub async fn download_audio(
     Ok(wav_path)
 }
 
+/// Parses a yt-dlp `--newline` progress line (`[download]  12.3% of …`) into a
+/// `0..=100` percentage; `None` for any other line.
+fn parse_download_percent(line: &str) -> Option<u8> {
+    let rest = line.trim_start().strip_prefix("[download]")?;
+    let pct: f32 = rest.trim_start().split('%').next()?.trim().parse().ok()?;
+    Some(pct.clamp(0.0, 100.0) as u8)
+}
+
 /// [`download_audio`] plus decode/resample: returns the WAV path (for the
 /// caller to delete) and the 16kHz mono [`AudioBuffer`] ready for whisper.
 pub async fn download_to_audio(
     url: &str,
     clip: Option<ClipRange>,
     cookies: CookiesFrom,
+    progress: Option<tokio::sync::mpsc::UnboundedSender<u8>>,
 ) -> Result<(PathBuf, AudioBuffer)> {
-    let wav = download_audio(url, clip, cookies).await?;
+    let wav = download_audio(url, clip, cookies, progress).await?;
     let decoded = whspr_audio::decode_wav(&wav)?;
     let audio = whspr_audio::resample_to_16k_mono(&decoded)?;
     Ok((wav, audio))
@@ -171,6 +214,17 @@ mod tests {
     fn download_section_uses_star_time_range() {
         assert_eq!(ClipRange::new(4.5, 10.0).to_download_section(), "*4.5-10");
         assert_eq!(ClipRange::new(0.0, 90.0).to_download_section(), "*0-90");
+    }
+
+    #[test]
+    fn parses_yt_dlp_download_percent() {
+        assert_eq!(
+            parse_download_percent("[download]  12.3% of ~16.00MiB at 1.20MiB/s ETA 00:10"),
+            Some(12)
+        );
+        assert_eq!(parse_download_percent("[download] 100% of 16.00MiB"), Some(100));
+        assert_eq!(parse_download_percent("[download] Destination: audio.webm"), None);
+        assert_eq!(parse_download_percent("[youtube] extracting url"), None);
     }
 
     #[test]
