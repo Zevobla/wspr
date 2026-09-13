@@ -1,8 +1,8 @@
-//! The note desk's header band: the desk title + a live meter on the left,
-//! the elapsed timer, a primary Stop button (square icon, a visual stub this
-//! phase) and a ghost Back-to-Dictate button on the right, closed by the
-//! system 2px rule. Stop's finalize handler lands in a later phase; Back
-//! emits `Message::BackToDictate`.
+//! The note desk's header band: the desk title on the left; a word count and a
+//! ghost Back-to-Dictate button on the right, closed by the system 2px rule.
+//! The desk shows a finished, imported note (no live capture yet), so it
+//! carries no live meter / running timer / Stop control. Back emits
+//! `Message::BackToDictate`.
 
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Element, Length};
@@ -10,35 +10,29 @@ use iced::{Alignment, Element, Length};
 use crate::note_desk::NoteDeskState;
 use crate::state::Message;
 use crate::theme::styles::button as button_style;
-use crate::theme::widgets::{self, meter};
-use crate::theme::{color, icons, spacing, type_scale};
+use crate::theme::widgets;
+use crate::theme::{color, spacing, type_scale};
 
 /// The header band, `HEADER_H` tall, closed by the system 2px rule.
 pub(super) fn view<'a>(
     nd: &'a NoteDeskState,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
-    let left = row![
-        text(nd.title.clone())
-            .size(type_scale::TITLE_LARGE.size)
-            .font(type_scale::TITLE_LARGE.font())
-            .color(scheme.on_surface),
-        // Static level this phase -- no live audio wired into the desk yet.
-        meter(0.55, 20, 28.0, scheme),
-    ]
-    .spacing(spacing::LG)
+    let left = row![text(nd.title.clone())
+        .size(type_scale::TITLE_LARGE.size)
+        .font(type_scale::TITLE_LARGE.font())
+        .color(scheme.on_surface),]
     .align_y(Alignment::Center)
     .width(Length::Fill);
 
     let right = row![
-        text(elapsed_label(nd.timer_start.elapsed()))
+        text(format!("{} words", word_count(nd)))
             .size(type_scale::TITLE_MEDIUM.size)
             .font(type_scale::TITLE_MEDIUM.font())
-            .color(scheme.on_surface),
-        stop_button(scheme),
+            .color(scheme.on_surface_variant),
         back_button(scheme),
     ]
-    .spacing(spacing::SM)
+    .spacing(spacing::MD)
     .align_y(Alignment::Center);
 
     let bar = container(
@@ -54,22 +48,12 @@ pub(super) fn view<'a>(
     column![bar, widgets::hr(scheme)].width(Length::Fill).into()
 }
 
-/// The primary Stop button -- a visual stub this phase (the finalize handler
-/// lands later), so it carries no `on_press` but keeps its active look.
-fn stop_button<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
-    button(
-        row![
-            icons::icon(icons::SQUARE, 12.0, scheme.on_primary),
-            text("Stop")
-                .size(type_scale::LABEL_LARGE.size)
-                .font(type_scale::LABEL_LARGE.font()),
-        ]
-        .spacing(spacing::SM)
-        .align_y(Alignment::Center),
-    )
-    .padding([spacing::SM, spacing::MD])
-    .style(move |_theme, _status| button_style::filled(scheme, button::Status::Active))
-    .into()
+/// Total words across the transcript rows, for the header's `N words` readout.
+fn word_count(nd: &NoteDeskState) -> usize {
+    nd.rows
+        .iter()
+        .map(|r| r.text.split_whitespace().count())
+        .sum()
 }
 
 /// The ghost Back-to-Dictate button (left-arrow), returning to the normal Hub.
@@ -92,20 +76,14 @@ fn back_button<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
     .into()
 }
 
-/// Formats an elapsed duration as `MM:SS` (tabular).
-fn elapsed_label(elapsed: std::time::Duration) -> String {
-    let secs = elapsed.as_secs();
-    format!("{:02}:{:02}", secs / 60, secs % 60)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn elapsed_label_is_mm_ss() {
-        assert_eq!(elapsed_label(std::time::Duration::from_secs(0)), "00:00");
-        assert_eq!(elapsed_label(std::time::Duration::from_secs(754)), "12:34");
+    fn word_count_sums_row_words() {
+        let nd = NoteDeskState::sample();
+        assert!(word_count(&nd) > 0);
     }
 
     #[test]

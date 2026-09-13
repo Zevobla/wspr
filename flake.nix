@@ -202,8 +202,12 @@
           # to be reloaded"). With deno on PATH yt-dlp solves it anonymously, so
           # "Transcribe here" works without borrowed browser cookies. The macOS
           # bundle must ship deno beside yt-dlp for the same reason.
+          #
+          # typst compiles the note desk's exported `.typ` document to PDF
+          # (`typst compile in.typ out.pdf`); the note desk shells out to it,
+          # matching the yt-dlp/ffmpeg pattern. The bundle must ship it too.
           packages = [ toolchain pkgs.pkg-config ] ++ nativeCTools
-            ++ lib.optionals pkgs.stdenv.isDarwin [ ytdlpBundled pkgs.deno ];
+            ++ lib.optionals pkgs.stdenv.isDarwin [ ytdlpBundled pkgs.deno pkgs.typst ];
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;

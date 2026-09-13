@@ -69,8 +69,6 @@ pub struct NoteDeskState {
     /// Kept chapter headings (from a link import), shown in the notes column;
     /// empty for the manual-entry `sample()` desk.
     pub headings: Vec<NoteHeading>,
-    /// When the session started -- the header timer reads `elapsed()`.
-    pub timer_start: std::time::Instant,
 }
 
 /// Formats a timestamp in seconds as `MM:SS` (minutes uncapped, e.g. `73:04`).
@@ -120,7 +118,6 @@ impl NoteDeskState {
             title: title.to_string(),
             headings,
             rows,
-            timer_start: std::time::Instant::now(),
         }
     }
 
@@ -132,7 +129,6 @@ impl NoteDeskState {
         let student = Some("Student".to_string());
         Self {
             title: "Statistical Mechanics · 7".to_string(),
-            timer_start: std::time::Instant::now(),
             headings: vec![],
             rows: vec![
                 TranscriptRow {
