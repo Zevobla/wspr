@@ -98,6 +98,9 @@ pub struct NoteDeskState {
     /// Kept chapter headings (from a link import), shown in the notes column;
     /// empty for the manual-entry `sample()` desk.
     pub headings: Vec<NoteHeading>,
+    /// Which rows the `Key / All / Kept` segmented filter is showing (see
+    /// [`TranscriptFilter`]); `Key` by default, matching the comp.
+    pub filter: TranscriptFilter,
 }
 
 /// Formats a timestamp in seconds as `MM:SS` (minutes uncapped, e.g. `73:04`).
@@ -147,6 +150,7 @@ impl NoteDeskState {
             title: title.to_string(),
             headings,
             rows,
+            filter: TranscriptFilter::default(),
         }
     }
 
@@ -158,6 +162,7 @@ impl NoteDeskState {
         let student = Some("Student".to_string());
         Self {
             title: "Statistical Mechanics · 7".to_string(),
+            filter: TranscriptFilter::default(),
             headings: vec![],
             rows: vec![
                 TranscriptRow {
