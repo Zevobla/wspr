@@ -5,7 +5,7 @@
 //! speaker label. Static this phase -- keep/dismiss, reassign and re-rank
 //! land in later phases.
 
-use iced::widget::{column, container, row, text, Space};
+use iced::widget::{column, container, row, scrollable, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
 use crate::note_desk::{Gutter, NoteDeskState, TranscriptRow};
@@ -26,12 +26,18 @@ const MARK: f32 = 13.0;
 /// The inset accent left rule's width on kept rows.
 const RULE_W: f32 = 3.0;
 
-/// The transcript column: a fixed width, a header band, then the rows.
+/// The transcript column: a fixed width, a fixed header band, then the rows
+/// in a `scrollable` so a long transcript (hundreds of rows) scrolls within
+/// the column instead of overflowing it (the header stays pinned above).
 pub(super) fn view<'a>(
     nd: &'a NoteDeskState,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
-    column![header(scheme), widgets::hr(scheme), rows(nd, scheme)]
+    let body = scrollable(rows(nd, scheme))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_theme, status| styles::scrollable::rail(scheme, status));
+    column![header(scheme), widgets::hr(scheme), body]
         .width(Length::Fixed(TRANSCRIPT_W))
         .height(Length::Fill)
         .into()
@@ -125,7 +131,6 @@ fn rows<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a
     }
     container(col)
         .width(Length::Fill)
-        .height(Length::Fill)
         .padding([0.0, spacing::LG])
         .into()
 }
