@@ -34,10 +34,11 @@ const RAIL_ITEM_H: f32 = 38.0;
 /// `view` dispatch shape (the theme it drives is already resolved into
 /// `scheme`); `nd` is the desk's own state.
 pub fn view<'a>(
-    _state: &'a State,
+    state: &'a State,
     nd: &'a NoteDeskState,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
+    let device = state.selected_device.as_deref().unwrap_or("No input");
     let body = row![
         transcript::view(nd, scheme),
         widgets::vrule(spacing::layout::RULE, scheme),
@@ -52,7 +53,7 @@ pub fn view<'a>(
 
     container(
         row![
-            rail(scheme),
+            rail(device, scheme),
             widgets::vrule(spacing::layout::RULE, scheme),
             main,
         ]
@@ -66,8 +67,8 @@ pub fn view<'a>(
 }
 
 /// The collapsed nav rail: a brand square, numbered items 01-05 (01 active),
-/// and a bottom mic-status block.
-fn rail<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+/// and a bottom mic-status block showing the current input `device`.
+fn rail<'a>(device: &'a str, scheme: &'static color::Scheme) -> Element<'a, Message> {
     container(
         column![
             rail_brand(scheme),
@@ -75,7 +76,7 @@ fn rail<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
             rail_items(scheme),
             Space::new().height(Length::Fill),
             widgets::hr(scheme),
-            rail_status(scheme),
+            rail_status(device, scheme),
         ]
         .width(Length::Fill)
         .align_x(Alignment::Center),
@@ -144,12 +145,13 @@ fn rail_number<'a>(n: u8, active: bool, scheme: &'static color::Scheme) -> Eleme
     }
 }
 
-/// The rail's bottom status: an accent dot over a vertical mic label.
-fn rail_status<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+/// The rail's bottom status: an accent dot over a vertical label of the current
+/// input `device` (uppercased). iced can't rotate text, so the glyphs stack.
+fn rail_status<'a>(device: &'a str, scheme: &'static color::Scheme) -> Element<'a, Message> {
     container(
         column![
             widgets::status_square(Mark::Solid, 10.0, scheme),
-            vertical_label("MACBOOK PRO MIC", scheme),
+            vertical_label(&device.to_uppercase(), scheme),
         ]
         .spacing(spacing::SM)
         .align_x(Alignment::Center),

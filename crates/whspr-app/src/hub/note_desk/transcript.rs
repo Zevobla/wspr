@@ -107,7 +107,7 @@ fn seg_control<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
 /// The section heading + the transcript rows, with a speaker label above each
 /// speaker's run.
 fn rows<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let mut col = column![section_heading(scheme)].width(Length::Fill);
+    let mut col = column![section_heading(nd, scheme)].width(Length::Fill);
     let mut prev_speaker: Option<&str> = None;
     let last = nd.rows.len().saturating_sub(1);
     for (i, r) in nd.rows.iter().enumerate() {
@@ -130,16 +130,20 @@ fn rows<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a
         .into()
 }
 
-/// A placeholder section heading ("N · Title" + "from MM:SS" + a rule). The
-/// transcript rows carry no section field yet, so the label is sample data
-/// this phase (real sectioning is a later phase).
-fn section_heading<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+/// The section heading: the first kept chapter's title + start time + a rule,
+/// from the imported [`NoteHeading`]s. Full per-row sectioning is a later
+/// phase; with no chapters (e.g. a manual desk) it collapses to a small gap so
+/// the transcript doesn't butt against the header rule.
+fn section_heading<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    let Some(first) = nd.headings.first() else {
+        return Space::new().height(Length::Fixed(spacing::MD)).into();
+    };
     row![
-        text("2 · Microstates")
+        text(first.title.clone())
             .size(type_scale::TITLE_MEDIUM.size)
             .font(type_scale::TITLE_MEDIUM.font())
             .color(scheme.on_surface),
-        text("from 11:40")
+        text(format!("from {}", first.time_label))
             .size(type_scale::LABEL_MEDIUM.size)
             .font(type_scale::LABEL_MEDIUM.font())
             .color(scheme.on_surface_variant),
