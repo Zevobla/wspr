@@ -56,6 +56,35 @@ pub struct NoteHeading {
     pub title: String,
 }
 
+/// Which transcript rows the note desk's `Key / All / Kept` segmented filter
+/// shows. `Key` (the default, matching the comp) is the signal-first view:
+/// kept lines plus high-signal candidates; `All` shows every line; `Kept`
+/// narrows to only the lines kept into the notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TranscriptFilter {
+    /// Kept lines plus any high-signal line (`keep_score >= 2`) -- the
+    /// default, signal-first view.
+    #[default]
+    Key,
+    /// Every transcript line, chatter included.
+    All,
+    /// Only the lines kept into the notes (`Gutter::Kept`).
+    Kept,
+}
+
+impl TranscriptFilter {
+    /// Whether `row` is shown under this filter: `All` keeps everything,
+    /// `Kept` only kept rows, and `Key` kept rows plus any high-signal line
+    /// (`keep_score >= 2`).
+    pub fn keeps(self, row: &TranscriptRow) -> bool {
+        match self {
+            TranscriptFilter::All => true,
+            TranscriptFilter::Kept => row.gutter == Gutter::Kept,
+            TranscriptFilter::Key => row.gutter == Gutter::Kept || row.keep_score >= 2,
+        }
+    }
+}
+
 /// All state for the note-desk mode. `title` heads the desk, `rows` are the
 /// transcript lines, and `timer_start` drives the header's elapsed timer. The
 /// Typst preview is a static placeholder this phase (real rendering is a later
@@ -283,6 +312,45 @@ mod tests {
         assert_eq!(nd.rows[0].gutter, Gutter::Candidate);
         assert_eq!(nd.rows[1].time_label, "01:05");
         assert!(nd.rows[1].speaker_id.is_none());
+    }
+
+    /// A `TranscriptRow` with just the fields the filter reads set.
+    fn row_with(gutter: Gutter, keep_score: u8) -> TranscriptRow {
+        TranscriptRow {
+            time_label: "00:00".to_string(),
+            text: String::new(),
+            speaker_id: None,
+            gutter,
+            keep_score,
+        }
+    }
+
+    #[test]
+    fn filter_all_keeps_every_row() {
+        for gutter in [Gutter::Kept, Gutter::Candidate, Gutter::Chatter] {
+            for score in 0..=3 {
+                assert!(TranscriptFilter::All.keeps(&row_with(gutter, score)));
+            }
+        }
+    }
+
+    #[test]
+    fn filter_kept_keeps_only_kept_rows() {
+        assert!(TranscriptFilter::Kept.keeps(&row_with(Gutter::Kept, 0)));
+        assert!(!TranscriptFilter::Kept.keeps(&row_with(Gutter::Candidate, 3)));
+        assert!(!TranscriptFilter::Kept.keeps(&row_with(Gutter::Chatter, 3)));
+    }
+
+    #[test]
+    fn filter_key_includes_high_score_candidates() {
+        assert!(TranscriptFilter::Key.keeps(&row_with(Gutter::Kept, 0)));
+        assert!(TranscriptFilter::Key.keeps(&row_with(Gutter::Candidate, 2)));
+        assert!(!TranscriptFilter::Key.keeps(&row_with(Gutter::Candidate, 1)));
+    }
+
+    #[test]
+    fn filter_default_is_key() {
+        assert_eq!(TranscriptFilter::default(), TranscriptFilter::Key);
     }
 
     #[test]
