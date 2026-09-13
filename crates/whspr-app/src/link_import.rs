@@ -37,12 +37,10 @@ pub struct LinkImport {
     /// The last resolve error, shown in the dialog; `None` when there's none.
     pub error: Option<String>,
     /// Import published captions (`true`) or transcribe locally (`false`).
-    /// Defaulted on resolve: captions when a human track exists.
     pub use_captions: bool,
     /// The caption language code the captions path would use, if any.
     pub caption_lang: Option<String>,
-    /// Per-chapter "include as a note heading" flags, parallel to
-    /// `media.chapters`. Seeded all-true on resolve.
+    /// Per-chapter "include as a note heading" flags; all-true on resolve.
     pub chapters_included: Vec<bool>,
     /// Live contents of the "clip from" `MM:SS` input.
     pub clip_start: String,
@@ -295,7 +293,7 @@ fn start_import(state: &mut State) -> Task<Message> {
             if use_captions {
                 "Fetching captions\u{2026}"
             } else {
-                "Downloading audio + transcribing\u{2026} this can take a while"
+                "Downloading audio + transcribing\u{2026}"
             }
             .to_string(),
         );
@@ -324,9 +322,11 @@ fn start_import(state: &mut State) -> Task<Message> {
                     }
                 }
             } else {
-                let (wav, audio) = whspr_import::download_to_audio(&url, clip, cookies)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                // Both phases share the bar: download fills it 0..100, then whisper.
+                let (wav, audio) =
+                    whspr_import::download_to_audio(&url, clip, cookies, Some(progress_tx.clone()))
+                        .await
+                        .map_err(|e| e.to_string())?;
                 let asr = crate::worker::build_asr_backend(&config)?;
                 let language =
                     whspr_config::effective_language(&config.language_settings, &config.language);

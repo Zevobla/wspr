@@ -28,9 +28,10 @@ use crate::transcribe_file::{run_transcribe_audio, TranscribeOutcome};
 // unused rather than trip clippy's `-D warnings` dead-code lint.
 #[allow(dead_code)]
 pub async fn run_transcribe_url(url: String, config: Config) -> Result<TranscribeOutcome, String> {
-    let (wav, audio) = whspr_import::download_to_audio(&url, None, whspr_import::CookiesFrom::None)
-        .await
-        .map_err(|e| with_install_hint(e.to_string()))?;
+    let (wav, audio) =
+        whspr_import::download_to_audio(&url, None, whspr_import::CookiesFrom::None, None)
+            .await
+            .map_err(|e| with_install_hint(e.to_string()))?;
     let outcome = run_transcribe_audio(audio, config).await;
     // Best-effort temp cleanup: `whspr-import` hands ownership of the WAV to
     // us and never reaps it. A failed delete isn't worth failing an

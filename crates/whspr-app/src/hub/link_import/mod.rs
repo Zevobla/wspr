@@ -183,7 +183,7 @@ fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
             .width(Length::Fill)
     };
     let note: Element<'a, Message> = match (&li.importing, li.import_progress) {
-        (Some(_), Some(percent)) => column![
+        (Some(phase), Some(percent)) => column![
             progress_bar(0.0..=1.0, percent as f32 / 100.0)
                 .girth(Length::Fixed(6.0))
                 .style(move |_theme| progress_bar::Style {
@@ -191,7 +191,7 @@ fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
                     bar: Background::Color(scheme.primary),
                     border: Border::default().rounded(shape::NONE),
                 }),
-            status(format!("Transcribing\u{2026} {percent}%"), scheme.primary),
+            status(format!("{phase}  \u{00b7}  {percent}%"), scheme.primary),
         ]
         .spacing(spacing::XS)
         .width(Length::Fill)
