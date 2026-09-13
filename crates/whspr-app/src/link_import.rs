@@ -236,6 +236,12 @@ fn apply_imported(state: &mut State, result: &Result<Box<ImportedNote>, String>)
     match result {
         Ok(payload) => {
             let (title, headings, transcript) = payload.as_ref();
+            // An import is a transcription too: record it to History (with the
+            // video title as a prefix so the row is identifiable), like the
+            // record/file-transcribe paths do.
+            let duration = transcript.segments.last().map(|s| s.end_secs);
+            let history_text = format!("{title}\n{}", transcript.text);
+            crate::history::record_completed(state, history_text, duration, None);
             state.note_desk = Some(NoteDeskState::from_import(
                 title,
                 headings.clone(),
