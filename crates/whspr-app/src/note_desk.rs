@@ -9,6 +9,8 @@
 //! `crate::hub::settings::update` are) so app.rs stays under its line cap and
 //! carries no note-desk arms inline.
 
+use std::path::PathBuf;
+
 use iced::Task;
 
 use crate::state::{Message, State};
@@ -253,8 +255,138 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             }
             Some(Task::none())
         }
+        Message::NoteDeskToggleViewCode => {
+            if let Some(nd) = state.note_desk.as_mut() {
+                nd.view_code = !nd.view_code;
+            }
+            Some(Task::none())
+        }
+        Message::NoteDeskExportTyp => Some(start_export_typ(state)),
+        Message::NoteDeskExportTypDone(result) => {
+            apply_export_status(state, result, "Typst");
+            Some(Task::none())
+        }
+        Message::NoteDeskExportPdf => Some(start_export_pdf(state)),
+        Message::NoteDeskExportPdfDone(result) => {
+            apply_export_status(state, result, "PDF");
+            Some(Task::none())
+        }
         _ => None,
     }
+}
+
+/// Generates the `.typ` source now (while the desk is borrowed) and kicks off
+/// a save-dialog + write off the UI thread. A no-op if the desk has closed.
+fn start_export_typ(state: &mut State) -> Task<Message> {
+    let Some(nd) = state.note_desk.as_mut() else {
+        return Task::none();
+    };
+    let source = crate::note_export::document_typ(nd);
+    let file_name = suggested_file_name(&nd.title, "typ");
+    nd.export_status = Some("Exporting .typ\u{2026}".to_string());
+    Task::perform(save_typ(source, file_name), Message::NoteDeskExportTypDone)
+}
+
+/// The `.typ` save path: opens a native save dialog (cancel -> `Ok(None)`),
+/// then writes the source to the chosen path.
+async fn save_typ(source: String, file_name: String) -> Result<Option<PathBuf>, String> {
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .add_filter("Typst source", &["typ"])
+        .set_file_name(file_name)
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let path = handle.path().to_path_buf();
+    std::fs::write(&path, source).map_err(|e| e.to_string())?;
+    Ok(Some(path))
+}
+
+/// Generates the source and kicks off a save-dialog + `typst compile` for a
+/// PDF off the UI thread. A no-op if the desk has closed.
+fn start_export_pdf(state: &mut State) -> Task<Message> {
+    let Some(nd) = state.note_desk.as_mut() else {
+        return Task::none();
+    };
+    let source = crate::note_export::document_typ(nd);
+    let file_name = suggested_file_name(&nd.title, "pdf");
+    nd.export_status = Some("Exporting PDF\u{2026}".to_string());
+    Task::perform(save_pdf(source, file_name), Message::NoteDeskExportPdfDone)
+}
+
+/// The PDF save path: opens a native save dialog (cancel -> `Ok(None)`),
+/// writes the Typst to a temp file, then shells out to `typst compile`. The
+/// compile runs on a blocking thread so it never stalls the async runtime,
+/// and the temp file is removed either way.
+async fn save_pdf(source: String, file_name: String) -> Result<Option<PathBuf>, String> {
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .add_filter("PDF document", &["pdf"])
+        .set_file_name(file_name)
+        .save_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let pdf_path = handle.path().to_path_buf();
+    let tmp = temp_typ_path();
+    std::fs::write(&tmp, source).map_err(|e| e.to_string())?;
+    let compile = {
+        let (tmp, pdf_path) = (tmp.clone(), pdf_path.clone());
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new("typst")
+                .arg("compile")
+                .arg(&tmp)
+                .arg(&pdf_path)
+                .output()
+        })
+        .await
+    };
+    let _ = std::fs::remove_file(&tmp);
+    let output = compile
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("could not run typst: {e}"))?;
+    if output.status.success() {
+        Ok(Some(pdf_path))
+    } else {
+        Err(format!(
+            "typst compile failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+/// Folds an export result into the desk's status line. Cancellation
+/// (`Ok(None)`) just clears any "Exporting…" note without a success line.
+fn apply_export_status(state: &mut State, result: &Result<Option<PathBuf>, String>, kind: &str) {
+    let Some(nd) = state.note_desk.as_mut() else {
+        return;
+    };
+    nd.export_status = match result {
+        Ok(Some(path)) => Some(format!("Saved {kind} to {}", path.display())),
+        Ok(None) => None,
+        Err(error) => Some(format!("{kind} export failed: {error}")),
+    };
+}
+
+/// A default file name from the note title, sanitized for the save dialog.
+fn suggested_file_name(title: &str, ext: &str) -> String {
+    let stem: String = title
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\') || c.is_control() { '-' } else { c })
+        .collect();
+    let stem = stem.trim();
+    let stem = if stem.is_empty() { "note" } else { stem };
+    format!("{stem}.{ext}")
+}
+
+/// A unique scratch path for the `.typ` handed to `typst compile`.
+fn temp_typ_path() -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("whspr-note-{}-{nanos}.typ", std::process::id()))
 }
 
 #[cfg(test)]
@@ -295,6 +427,61 @@ mod tests {
     fn update_ignores_unrelated_messages() {
         let mut state = State::new(Config::default());
         assert!(update(&mut state, &Message::ThemeToggled).is_none());
+    }
+
+    #[test]
+    fn toggle_view_code_flips_the_flag() {
+        let mut state = State::new(Config::default());
+        state.note_desk = Some(NoteDeskState::sample());
+        assert!(!state.note_desk.as_ref().unwrap().view_code);
+        assert!(update(&mut state, &Message::NoteDeskToggleViewCode).is_some());
+        assert!(state.note_desk.as_ref().unwrap().view_code);
+        assert!(update(&mut state, &Message::NoteDeskToggleViewCode).is_some());
+        assert!(!state.note_desk.as_ref().unwrap().view_code);
+    }
+
+    #[test]
+    fn export_done_ok_records_the_saved_path() {
+        let mut state = State::new(Config::default());
+        state.note_desk = Some(NoteDeskState::sample());
+        let path = PathBuf::from("/tmp/note.typ");
+        assert!(update(&mut state, &Message::NoteDeskExportTypDone(Ok(Some(path)))).is_some());
+        assert_eq!(
+            state.note_desk.as_ref().unwrap().export_status.as_deref(),
+            Some("Saved Typst to /tmp/note.typ")
+        );
+    }
+
+    #[test]
+    fn export_done_cancel_clears_status() {
+        let mut state = State::new(Config::default());
+        let mut nd = NoteDeskState::sample();
+        nd.export_status = Some("Exporting PDF\u{2026}".to_string());
+        state.note_desk = Some(nd);
+        assert!(update(&mut state, &Message::NoteDeskExportPdfDone(Ok(None))).is_some());
+        assert!(state.note_desk.as_ref().unwrap().export_status.is_none());
+    }
+
+    #[test]
+    fn export_done_err_records_the_failure() {
+        let mut state = State::new(Config::default());
+        state.note_desk = Some(NoteDeskState::sample());
+        assert!(update(
+            &mut state,
+            &Message::NoteDeskExportPdfDone(Err("boom".to_string()))
+        )
+        .is_some());
+        assert_eq!(
+            state.note_desk.as_ref().unwrap().export_status.as_deref(),
+            Some("PDF export failed: boom")
+        );
+    }
+
+    #[test]
+    fn suggested_file_name_sanitizes_and_falls_back() {
+        assert_eq!(suggested_file_name("Lecture 7", "typ"), "Lecture 7.typ");
+        assert_eq!(suggested_file_name("a/b\\c", "pdf"), "a-b-c.pdf");
+        assert_eq!(suggested_file_name("   ", "typ"), "note.typ");
     }
 
     #[test]
