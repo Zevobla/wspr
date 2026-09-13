@@ -237,6 +237,12 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             state.note_desk = None;
             Some(Task::none())
         }
+        Message::SetTranscriptFilter(filter) => {
+            if let Some(nd) = state.note_desk.as_mut() {
+                nd.filter = *filter;
+            }
+            Some(Task::none())
+        }
         _ => None,
     }
 }
@@ -261,6 +267,18 @@ mod tests {
         state.note_desk = Some(NoteDeskState::sample());
         assert!(update(&mut state, &Message::BackToDictate).is_some());
         assert!(state.note_desk.is_none());
+    }
+
+    #[test]
+    fn set_transcript_filter_updates_the_active_desk() {
+        let mut state = State::new(Config::default());
+        state.note_desk = Some(NoteDeskState::sample());
+        let msg = Message::SetTranscriptFilter(TranscriptFilter::Kept);
+        assert!(update(&mut state, &msg).is_some());
+        assert_eq!(
+            state.note_desk.as_ref().expect("desk").filter,
+            TranscriptFilter::Kept
+        );
     }
 
     #[test]
