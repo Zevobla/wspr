@@ -100,6 +100,13 @@ pub struct NoteDeskState {
     /// Which rows the `Key / All / Kept` segmented filter is showing (see
     /// [`TranscriptFilter`]); `Key` by default, matching the comp.
     pub filter: TranscriptFilter,
+    /// Whether the Typst column shows the raw `.typ` source (monospace) rather
+    /// than the rendered note. Toggled by the "View code"/"View note" button
+    /// (see `crate::hub::note_desk::notes_pane`).
+    pub view_code: bool,
+    /// The most recent `.typ`/PDF export outcome, shown in the Typst column's
+    /// header. `None` until an export runs (or is cancelled).
+    pub export_status: Option<String>,
 }
 
 /// Formats a timestamp in seconds as `MM:SS` (minutes uncapped, e.g. `73:04`).
@@ -150,6 +157,8 @@ impl NoteDeskState {
             headings,
             rows,
             filter: TranscriptFilter::default(),
+            view_code: false,
+            export_status: None,
         }
     }
 
@@ -163,6 +172,8 @@ impl NoteDeskState {
             title: "Statistical Mechanics · 7".to_string(),
             filter: TranscriptFilter::default(),
             headings: vec![],
+            view_code: false,
+            export_status: None,
             rows: vec![
                 TranscriptRow {
                     time_label: "11:52".to_string(),
