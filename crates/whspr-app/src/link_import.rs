@@ -118,9 +118,20 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             apply_imported(state, result);
             Some(Task::none())
         }
-        Message::LinkImportProgress(percent) => {
+        Message::LinkImportProgress {
+            downloading,
+            percent,
+        } => {
             if let Some(li) = state.link_import.as_mut() {
                 li.import_progress = Some(*percent);
+                li.importing = Some(
+                    if *downloading {
+                        "Downloading audio\u{2026}"
+                    } else {
+                        "Transcribing\u{2026}"
+                    }
+                    .to_string(),
+                );
             }
             Some(Task::none())
         }
@@ -300,8 +311,9 @@ fn start_import(state: &mut State) -> Task<Message> {
     }
     state.transcribe_status = Some("Importing\u{2026}".to_string());
 
-    // Only the transcribe path sends whisper progress on this channel.
-    let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+    // The transcribe path reports on two channels: audio download, then whisper.
+    let (dl_tx, dl_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+    let (tr_tx, tr_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
 
     let import = Task::perform(
         async move {
@@ -324,7 +336,7 @@ fn start_import(state: &mut State) -> Task<Message> {
             } else {
                 // Both phases share the bar: download fills it 0..100, then whisper.
                 let (wav, audio) =
-                    whspr_import::download_to_audio(&url, clip, cookies, Some(progress_tx.clone()))
+                    whspr_import::download_to_audio(&url, clip, cookies, Some(dl_tx))
                         .await
                         .map_err(|e| e.to_string())?;
                 let asr = crate::worker::build_asr_backend(&config)?;
@@ -335,7 +347,7 @@ fn start_import(state: &mut State) -> Task<Message> {
                     translate: config.capture.translate,
                 };
                 let transcribed = asr
-                    .transcribe_with_progress(&audio, &opts, progress_tx)
+                    .transcribe_with_progress(&audio, &opts, tr_tx)
                     .await
                     .map_err(|e| e.to_string());
                 let _ = std::fs::remove_file(&wav);
@@ -346,16 +358,26 @@ fn start_import(state: &mut State) -> Task<Message> {
         Message::LinkImportImported,
     );
 
-    Task::batch([import, import_progress_task(progress_rx)])
+    Task::batch([
+        import,
+        import_progress_task(dl_rx, true),
+        import_progress_task(tr_rx, false),
+    ])
 }
 
-/// Bridges the whisper-progress channel into iced messages (mirrors
-/// `crate::hf_progress::progress_task`); ends when the import drops its sender.
-fn import_progress_task(rx: tokio::sync::mpsc::UnboundedReceiver<u8>) -> Task<Message> {
+/// Bridges an import progress channel (audio download when `downloading`, else
+/// whisper) into iced messages; ends when the import drops its sender.
+fn import_progress_task(
+    rx: tokio::sync::mpsc::UnboundedReceiver<u8>,
+    downloading: bool,
+) -> Task<Message> {
     let updates = iced::futures::stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|percent| (percent, rx))
     });
-    Task::run(updates, Message::LinkImportProgress)
+    Task::run(updates, move |percent| Message::LinkImportProgress {
+        downloading,
+        percent,
+    })
 }
 
 /// Parses an `MM:SS` (or bare-seconds) clip field into seconds. Blank or
@@ -384,217 +406,7 @@ fn parse_clip_range(start: &str, end: &str) -> Option<whspr_import::ClipRange> {
     (end > start).then(|| whspr_import::ClipRange::new(start, end))
 }
 
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use whspr_config::Config;
-    use whspr_import::{Chapter, Lang, MediaInfo};
-
-    fn open_state() -> State {
-        let mut state = State::new(Config::default());
-        assert!(update(&mut state, &Message::LinkImportOpen).is_some());
-        state
-    }
-
-    fn sample_media(human: bool) -> MediaInfo {
-        MediaInfo {
-            title: "Lecture".to_string(),
-            chapters: vec![
-                Chapter {
-                    title: "One".to_string(),
-                    start_secs: 0.0,
-                    end_secs: 60.0,
-                },
-                Chapter {
-                    title: "Two".to_string(),
-                    start_secs: 60.0,
-                    end_secs: 120.0,
-                },
-            ],
-            human_captions: if human {
-                vec![Lang {
-                    code: "en".to_string(),
-                    name: Some("English".to_string()),
-                    url: Some("https://example.com/en.vtt".to_string()),
-                    ext: Some("vtt".to_string()),
-                }]
-            } else {
-                Vec::new()
-            },
-            auto_captions: vec![Lang {
-                code: "de".to_string(),
-                name: None,
-                url: Some("https://example.com/de.json3".to_string()),
-                ext: Some("json3".to_string()),
-            }],
-            ..MediaInfo::default()
-        }
-    }
-
-    #[test]
-    fn open_seeds_a_dialog_and_cancel_clears_it() {
-        let mut state = open_state();
-        assert!(state.link_import.is_some());
-        assert!(update(&mut state, &Message::LinkImportCancel).is_some());
-        assert!(state.link_import.is_none());
-    }
-
-    #[test]
-    fn url_edits_are_stored() {
-        let mut state = open_state();
-        assert!(update(&mut state, &Message::LinkImportUrl("https://x".to_string())).is_some());
-        assert_eq!(state.link_import.as_ref().unwrap().url, "https://x");
-    }
-
-    #[test]
-    fn resolved_seeds_all_chapters_included() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
-        )
-        .is_some());
-        let li = state.link_import.as_ref().unwrap();
-        assert_eq!(li.chapters_included, vec![true, true]);
-        assert!(li.media.is_some());
-        assert!(!li.resolving);
-    }
-
-    #[test]
-    fn resolved_defaults_to_captions_when_a_human_track_exists() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
-        )
-        .is_some());
-        let li = state.link_import.as_ref().unwrap();
-        assert!(li.use_captions);
-        assert_eq!(li.caption_lang.as_deref(), Some("en"));
-    }
-
-    #[test]
-    fn resolved_defaults_to_the_auto_caption_when_no_human_track() {
-        // With only auto captions, still default to the (instant, direct-URL)
-        // caption path — it imports even when the audio stream is bot-walled.
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Ok(Box::new(sample_media(false))))
-        )
-        .is_some());
-        let li = state.link_import.as_ref().unwrap();
-        assert!(li.use_captions);
-        assert_eq!(li.caption_lang.as_deref(), Some("de"));
-    }
-
-    #[test]
-    fn resolved_defaults_to_transcribe_without_any_captions() {
-        let mut state = open_state();
-        let mut media = sample_media(false);
-        media.auto_captions.clear();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Ok(Box::new(media)))
-        )
-        .is_some());
-        let li = state.link_import.as_ref().unwrap();
-        assert!(!li.use_captions);
-        assert_eq!(li.caption_lang, None);
-    }
-
-    #[test]
-    fn resolved_error_is_recorded() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Err("boom".to_string()))
-        )
-        .is_some());
-        let li = state.link_import.as_ref().unwrap();
-        assert_eq!(li.error.as_deref(), Some("boom"));
-        assert!(li.media.is_none());
-    }
-
-    #[test]
-    fn toggle_chapter_flips_one_flag() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
-        )
-        .is_some());
-        assert!(update(&mut state, &Message::LinkImportToggleChapter(0)).is_some());
-        assert_eq!(
-            state.link_import.as_ref().unwrap().chapters_included,
-            vec![false, true]
-        );
-    }
-
-    #[test]
-    fn confirm_starts_import_and_keeps_the_dialog_open() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
-        )
-        .is_some());
-        assert!(update(&mut state, &Message::LinkImportUrl("https://x".to_string())).is_some());
-        assert!(update(&mut state, &Message::LinkImportConfirm).is_some());
-        // The dialog stays open while the async import runs; the returned task
-        // is never polled in a unit test (no iced runtime), so no network runs.
-        assert!(state.link_import.is_some());
-        assert!(state.transcribe_status.is_some());
-    }
-
-    #[test]
-    fn parse_clip_range_needs_both_bounds() {
-        assert!(parse_clip_range("", "").is_none());
-        assert!(parse_clip_range("1:00", "").is_none());
-        let clip = parse_clip_range("1:00", "1:30").expect("both bounds parse");
-        assert_eq!(clip.start_secs, 60.0);
-        assert_eq!(clip.end_secs, 90.0);
-    }
-
-    #[test]
-    fn parse_clip_range_rejects_empty_or_inverted_ranges() {
-        assert!(parse_clip_range("1:30", "1:00").is_none());
-        assert!(parse_clip_range("1:00", "1:00").is_none());
-    }
-
-    #[test]
-    fn update_ignores_unrelated_messages() {
-        let mut state = open_state();
-        assert!(update(&mut state, &Message::ThemeToggled).is_none());
-    }
-
-    #[test]
-    fn imported_ok_enters_the_note_desk() {
-        let mut state = open_state();
-        let transcript = whspr_core::Transcript {
-            text: "hello world".to_string(),
-            ..Default::default()
-        };
-        let payload = Box::new(("Lecture".to_string(), Vec::new(), transcript));
-        assert!(update(&mut state, &Message::LinkImportImported(Ok(payload))).is_some());
-        assert!(state.link_import.is_none());
-        assert!(state.note_desk.is_some());
-        assert!(state.transcribe_status.is_none());
-    }
-
-    #[test]
-    fn imported_err_keeps_the_dialog_open_with_the_error() {
-        let mut state = open_state();
-        assert!(update(
-            &mut state,
-            &Message::LinkImportImported(Err("boom".to_string()))
-        )
-        .is_some());
-        let li = state
-            .link_import
-            .as_ref()
-            .expect("dialog stays open on error");
-        assert_eq!(li.error.as_deref(), Some("boom"));
-        assert!(state.note_desk.is_none());
-    }
-}
+#[path = "link_import_tests.rs"]
+mod tests;
