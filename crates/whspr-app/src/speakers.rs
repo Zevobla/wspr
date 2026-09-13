@@ -3,10 +3,81 @@
 //! (see that module) but for `whspr_config::SpeakerDb` instead of the
 //! history JSONL.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use whspr_config::{SpeakerDb, SpeakerEmbeddingChoice};
-use whspr_core::Diarizer;
+use whspr_config::{Config, SpeakerDb, SpeakerEmbeddingChoice};
+use whspr_core::{AudioBuffer, Diarizer, Transcript};
+
+/// Labels each transcript segment with a local `Speaker N` by diarizing the
+/// audio and clustering the turns' embeddings, then attributing by time
+/// overlap. Best-effort: a no-op (segments keep their `None` speaker) when
+/// speaker attribution is disabled or no sherpa diarization model is
+/// installed, so a note desk still works without one.
+pub async fn attribute_transcript(transcript: &mut Transcript, audio: &AudioBuffer, config: &Config) {
+    if !config.speaker.enabled {
+        return;
+    }
+    let Some(dir) =
+        whspr_diarize::SherpaDiarizer::resolve_model_dir(config.speaker.model_dir.clone())
+    else {
+        return;
+    };
+    let choice = config.speaker.embedding_model;
+    let audio = audio.clone();
+    let labeled = tokio::task::spawn_blocking(move || diarize_labels(&dir, choice, &audio))
+        .await
+        .ok()
+        .flatten();
+    let Some(labeled) = labeled else {
+        return;
+    };
+    for seg in &mut transcript.segments {
+        let mid = (seg.start_secs + seg.end_secs) / 2.0;
+        if let Some((_, _, label)) = labeled.iter().find(|(s, e, _)| mid >= *s && mid < *e) {
+            seg.speaker = Some(label.clone());
+        }
+    }
+}
+
+/// Diarizes `audio` and greedily clusters turns by embedding cosine similarity
+/// into `(start, end, "Speaker N")`. `None` if the model fails to load or
+/// diarization errors.
+fn diarize_labels(
+    dir: &Path,
+    choice: SpeakerEmbeddingChoice,
+    audio: &AudioBuffer,
+) -> Option<Vec<(f32, f32, String)>> {
+    let diarizer = whspr_diarize::SherpaDiarizer::new(dir, choice).ok()?;
+    let turns = diarizer.diarize(audio).ok()?;
+    let mut centroids: Vec<Vec<f32>> = Vec::new();
+    Some(
+        turns
+            .into_iter()
+            .map(|t| {
+                let idx = centroids
+                    .iter()
+                    .position(|c| cosine(c, &t.embedding) > 0.5)
+                    .unwrap_or_else(|| {
+                        centroids.push(t.embedding.clone());
+                        centroids.len() - 1
+                    });
+                (t.start_secs, t.end_secs, format!("Speaker {}", idx + 1))
+            })
+            .collect(),
+    )
+}
+
+/// Cosine similarity of two embeddings (0.0 for a zero vector).
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let na = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let nb = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb)
+    }
+}
 
 /// The whspr speaker-database file's path in the platform data dir, if
 /// determinable on this platform. Mirrors `crate::history::history_file_path`.

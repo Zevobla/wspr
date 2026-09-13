@@ -352,12 +352,14 @@ fn start_import(state: &mut State) -> Task<Message> {
                     language,
                     translate: config.capture.translate,
                 };
-                let transcribed = asr
+                let mut transcript = asr
                     .transcribe_with_progress(&audio, &opts, tr_tx)
                     .await
-                    .map_err(|e| e.to_string());
+                    .map_err(|e| e.to_string())?;
+                // Best-effort speaker labels (no-op without a diarization model).
+                crate::speakers::attribute_transcript(&mut transcript, &audio, &config).await;
                 let _ = std::fs::remove_file(&wav);
-                transcribed?
+                transcript
             };
             Ok::<_, String>(Box::new((title, headings, transcript)))
         },
