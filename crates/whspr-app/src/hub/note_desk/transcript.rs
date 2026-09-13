@@ -5,10 +5,10 @@
 //! speaker label. Static this phase -- keep/dismiss, reassign and re-rank
 //! land in later phases.
 
-use iced::widget::{column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
-use crate::note_desk::{Gutter, NoteDeskState, TranscriptRow};
+use crate::note_desk::{Gutter, NoteDeskState, TranscriptFilter, TranscriptRow};
 use crate::state::Message;
 use crate::theme::widgets;
 use crate::theme::{color, spacing, styles, type_scale};
@@ -37,15 +37,15 @@ pub(super) fn view<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(move |_theme, status| styles::scrollable::rail(scheme, status));
-    column![header(scheme), widgets::hr(scheme), body]
+    column![header(nd, scheme), widgets::hr(scheme), body]
         .width(Length::Fixed(TRANSCRIPT_W))
         .height(Length::Fill)
         .into()
 }
 
-/// The 47px header band: the "TRANSCRIPT" kicker and a static segmented
-/// filter (Key active, matching the comp).
-fn header<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
+/// The 47px header band: the "TRANSCRIPT" kicker and the interactive
+/// segmented filter (the active option accent-filled, matching the comp).
+fn header<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
     container(
         row![
             text("TRANSCRIPT")
@@ -53,7 +53,7 @@ fn header<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
                 .font(type_scale::KICKER.font())
                 .color(scheme.on_surface_variant)
                 .width(Length::Fill),
-            seg_control(scheme),
+            seg_control(nd.filter, scheme),
         ]
         .align_y(Alignment::Center),
     )
@@ -64,30 +64,30 @@ fn header<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
     .into()
 }
 
-/// A static segmented control (no re-filtering this phase). Mirrors
-/// `widgets::segmented`'s look with plain containers so it needs no message.
-fn seg_control<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let opts = [("Key", true), ("All", false), ("Kept", false)];
+/// The `Key / All / Kept` segmented filter: a bordered row of `button`s, the
+/// one matching `active` accent-filled, each emitting a `SetTranscriptFilter`.
+fn seg_control<'a>(
+    active: TranscriptFilter,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
+    let opts = [
+        ("Key", TranscriptFilter::Key),
+        ("All", TranscriptFilter::All),
+        ("Kept", TranscriptFilter::Kept),
+    ];
     let last = opts.len() - 1;
     let mut r = row![].align_y(Alignment::Center);
-    for (i, (label, active)) in opts.into_iter().enumerate() {
-        let (bg, fg) = if active {
-            (Some(Background::Color(scheme.primary)), scheme.on_primary)
-        } else {
-            (None, scheme.on_surface)
-        };
+    for (i, (label, filter)) in opts.into_iter().enumerate() {
+        let is_active = filter == active;
         r = r.push(
-            container(
+            button(
                 text(label)
                     .size(type_scale::KICKER.size)
-                    .font(type_scale::LABEL_LARGE.font())
-                    .color(fg),
+                    .font(type_scale::LABEL_LARGE.font()),
             )
             .padding([3.0, 8.0])
-            .style(move |_theme| container::Style {
-                background: bg,
-                ..container::Style::default()
-            }),
+            .on_press(Message::SetTranscriptFilter(filter))
+            .style(move |_theme, status| seg_style(scheme, is_active, status)),
         );
         if i != last {
             r = r.push(
@@ -108,6 +108,36 @@ fn seg_control<'a>(scheme: &'static color::Scheme) -> Element<'a, Message> {
             ..container::Style::default()
         })
         .into()
+}
+
+/// One segment's style: the active option is an accent fill with paper text;
+/// the rest are transparent with an ink hover/press wash.
+fn seg_style(
+    scheme: &'static color::Scheme,
+    active: bool,
+    status: button::Status,
+) -> button::Style {
+    if active {
+        return button::Style {
+            background: Some(Background::Color(scheme.primary)),
+            text_color: scheme.on_primary,
+            border: Border::default().rounded(0.0),
+            ..button::Style::default()
+        };
+    }
+    let base = button::Style {
+        background: None,
+        text_color: scheme.on_surface,
+        border: Border::default().rounded(0.0),
+        ..button::Style::default()
+    };
+    match status {
+        button::Status::Hovered | button::Status::Pressed => button::Style {
+            background: Some(Background::Color(color::wash(scheme.on_surface, 0.07))),
+            ..base
+        },
+        _ => base,
+    }
 }
 
 /// The section heading + the transcript rows, with a speaker label above each
@@ -285,5 +315,22 @@ mod tests {
         for g in [Gutter::Kept, Gutter::Candidate, Gutter::Chatter] {
             let _: Element<'_, Message> = gutter_mark(g, &color::LIGHT);
         }
+    }
+
+    #[test]
+    fn active_segment_uses_accent_fill() {
+        let style = seg_style(&color::LIGHT, true, button::Status::Active);
+        assert_eq!(
+            style.background,
+            Some(Background::Color(color::LIGHT.primary))
+        );
+        assert_eq!(style.text_color, color::LIGHT.on_primary);
+    }
+
+    #[test]
+    fn inactive_segment_is_transparent() {
+        let style = seg_style(&color::LIGHT, false, button::Status::Active);
+        assert!(style.background.is_none());
+        assert_eq!(style.text_color, color::LIGHT.on_surface);
     }
 }
