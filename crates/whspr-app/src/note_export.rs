@@ -106,3 +106,98 @@ fn escape_markup(s: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::note_desk::{NoteDeskState, NoteHeading};
+
+    #[test]
+    fn document_carries_the_title() {
+        let nd = NoteDeskState::sample();
+        let doc = document_typ(&nd);
+        assert!(doc.contains(&format!("= {}", nd.title)));
+        assert!(doc.contains(&format!("#set document(title: \"{}\"", nd.title)));
+    }
+
+    #[test]
+    fn document_lists_kept_chapters() {
+        let mut nd = NoteDeskState::sample();
+        nd.headings = vec![NoteHeading {
+            time_label: "00:00".to_string(),
+            title: "Intro".to_string(),
+        }];
+        let doc = document_typ(&nd);
+        assert!(doc.contains("== Chapters"));
+        assert!(doc.contains("- *00:00* Intro"));
+    }
+
+    #[test]
+    fn document_has_a_transcript_paragraph_per_row() {
+        let nd = NoteDeskState::sample();
+        let doc = document_typ(&nd);
+        assert!(doc.contains("== Transcript"));
+        for row in &nd.rows {
+            assert!(doc.contains(&row.text), "missing transcript line: {}", row.text);
+        }
+    }
+
+    #[test]
+    fn kept_rows_get_an_accent_timestamp() {
+        let nd = NoteDeskState::sample();
+        let doc = document_typ(&nd);
+        // The sample's first row is Kept at 11:52.
+        assert!(doc.contains(&format!("#text(fill: rgb(\"{ACCENT}\"))[*11:52*]")));
+    }
+
+    #[test]
+    fn markup_metacharacters_in_text_are_escaped() {
+        let mut nd = NoteDeskState::sample();
+        nd.title = "Budget #1 [draft]".to_string();
+        let doc = document_typ(&nd);
+        assert!(doc.contains("= Budget \\#1 \\[draft\\]"));
+    }
+
+    #[test]
+    fn typst_string_escapes_quotes_and_backslashes() {
+        assert_eq!(typst_string("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn empty_headings_omit_the_chapters_section() {
+        let mut nd = NoteDeskState::sample();
+        nd.headings.clear();
+        assert!(!document_typ(&nd).contains("== Chapters"));
+    }
+
+    /// End-to-end: the generated source compiles cleanly with the system
+    /// `typst` binary. Skipped when `typst` isn't on PATH (e.g. a CI sandbox)
+    /// so it never fails the gate where the tool is absent.
+    #[test]
+    fn generated_document_compiles_with_typst() {
+        if std::process::Command::new("typst")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("skipping: `typst` not on PATH");
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let src = dir.path().join("note.typ");
+        let pdf = dir.path().join("note.pdf");
+        std::fs::write(&src, document_typ(&NoteDeskState::sample())).expect("write .typ");
+        let output = std::process::Command::new("typst")
+            .arg("compile")
+            .arg(&src)
+            .arg(&pdf)
+            .output()
+            .expect("run typst");
+        assert!(
+            output.status.success(),
+            "typst compile failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(pdf.exists(), "no PDF produced");
+    }
+}
