@@ -1,5 +1,5 @@
-//! ASR backends implementing `whspr_core::AsrBackend`: `WhisperLocal`
-//! (whisper-rs), `OpenAiAsr`, and `DeepgramAsr`.
+//! ASR backends (`whspr_core::AsrBackend`): `WhisperLocal` (whisper-rs),
+//! `OpenAiAsr`, `DeepgramAsr`, and macOS `AppleSpeech` (`SFSpeechRecognizer`).
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -12,14 +12,18 @@ use whspr_core::{
 
 mod tokens;
 
+#[cfg(target_os = "macos")]
+mod apple_speech;
+#[cfg(target_os = "macos")]
+pub use apple_speech::AppleSpeech;
+
 use tokens::strip_special_tokens;
 
 /// Local transcription via whisper.cpp (whisper-rs).
 ///
-/// `transcribe` assumes the `AudioBuffer` it receives is already 16kHz mono
-/// f32 PCM, per the contract documented on `whspr_core::AudioBuffer` (capture/
-/// decode/resample all normalize to that shape before anything touches an
-/// `AsrBackend`) — no resampling happens in here.
+/// `transcribe` assumes the `AudioBuffer` is already 16kHz mono f32 PCM, per
+/// the `whspr_core::AudioBuffer` contract (capture/decode/resample normalize to
+/// that shape upstream) — no resampling happens in here.
 pub struct WhisperLocal {
     pub model_path: PathBuf,
 }
@@ -33,20 +37,18 @@ impl WhisperLocal {
 
     /// Resolves the GGML model path: an explicit path (`--model` /
     /// `[whisper].model_path`) wins, else the `WHISPER_MODEL_PATH` env var
-    /// (whspr is bring-your-own-model — point it at a GGML file you downloaded,
-    /// e.g. from <https://huggingface.co/ggerganov/whisper.cpp>). That env var
-    /// is a deliberate escape hatch, not an app setting, so it doesn't break
-    /// `whspr-config`'s "no env vars" rule. `None` when neither is set — callers
-    /// should surface a clear "no model configured" error.
+    /// (bring-your-own-model — point it at a GGML file you downloaded, e.g. from
+    /// <https://huggingface.co/ggerganov/whisper.cpp>). That env var is a
+    /// deliberate escape hatch, not an app setting. `None` when neither is set —
+    /// callers should surface a clear "no model configured" error.
     pub fn resolve_model_path(explicit: Option<PathBuf>) -> Option<PathBuf> {
         explicit.or_else(|| std::env::var_os("WHISPER_MODEL_PATH").map(PathBuf::from))
     }
 }
 
 impl WhisperLocal {
-    /// Shared body of both transcribe entrypoints: validates the model path,
-    /// then runs whisper.cpp on a blocking-pool thread (its types are
-    /// `Send + Sync`), optionally forwarding its `0..=100` progress to `progress`.
+    /// Shared body of both transcribe entrypoints: validates the model path, then
+    /// runs whisper.cpp on a blocking-pool thread, forwarding `0..=100` progress.
     async fn run(
         &self,
         audio: &AudioBuffer,
