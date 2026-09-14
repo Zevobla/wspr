@@ -109,6 +109,16 @@ pub(crate) fn build_asr_backend(
             })?;
             Ok(Box::new(DeepgramAsr::new(api_key)))
         }
+        AsrChoice::AppleSpeech => {
+            #[cfg(target_os = "macos")]
+            {
+                Ok(Box::new(whspr_asr::AppleSpeech::new(config.language.clone())))
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                Err("Apple Speech is only available on macOS".to_string())
+            }
+        }
     }
 }
 

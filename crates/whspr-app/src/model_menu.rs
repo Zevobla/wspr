@@ -42,15 +42,19 @@ pub enum AsrOption {
     Local(PathBuf),
     /// A cloud ASR backend (`AsrChoice::OpenAi` or `AsrChoice::Deepgram`).
     Cloud(AsrChoice),
+    /// Apple's built-in on-device recognizer (`AsrChoice::AppleSpeech`, macOS).
+    /// No file and no API key — the OS provides the model.
+    AppleSpeech,
 }
 
 impl fmt::Display for AsrOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AsrOption::Local(path) => write!(f, "{} · local", local_label(path)),
+            AsrOption::AppleSpeech => f.write_str("Apple Speech (on-device)"),
             AsrOption::Cloud(AsrChoice::OpenAi) => f.write_str("OpenAI (cloud)"),
             AsrOption::Cloud(AsrChoice::Deepgram) => f.write_str("Deepgram (cloud)"),
-            // WhisperLocal/Mock are never wrapped in `Cloud`; total match only.
+            // WhisperLocal/Mock/AppleSpeech are never wrapped in `Cloud`; total match only.
             AsrOption::Cloud(_) => f.write_str("Local whisper model"),
         }
     }
@@ -62,7 +66,10 @@ impl fmt::Display for AsrOption {
 /// isn't in the scan (a path outside the scanned dirs), it's appended so the
 /// pick_list can still show it as the selection.
 pub fn asr_options(models: &ScanResult, config: &Config) -> Vec<AsrOption> {
+    // Apple Speech leads: it's the zero-setup, on-device option (no model
+    // download, no API key), then the cloud backends, then local whisper files.
     let mut options = vec![
+        AsrOption::AppleSpeech,
         AsrOption::Cloud(AsrChoice::OpenAi),
         AsrOption::Cloud(AsrChoice::Deepgram),
     ];
@@ -83,6 +90,7 @@ pub fn selected_asr(config: &Config) -> Option<AsrOption> {
         AsrChoice::WhisperLocal => config.whisper.model_path.clone().map(AsrOption::Local),
         AsrChoice::OpenAi => Some(AsrOption::Cloud(AsrChoice::OpenAi)),
         AsrChoice::Deepgram => Some(AsrOption::Cloud(AsrChoice::Deepgram)),
+        AsrChoice::AppleSpeech => Some(AsrOption::AppleSpeech),
         AsrChoice::Mock => None,
     }
 }
@@ -97,6 +105,7 @@ pub fn apply_asr(config: &mut Config, option: &AsrOption) {
             config.whisper.model_path = Some(path.clone());
         }
         AsrOption::Cloud(choice) => config.asr = *choice,
+        AsrOption::AppleSpeech => config.asr = AsrChoice::AppleSpeech,
     }
 }
 
@@ -249,13 +258,25 @@ mod tests {
         };
 
         let options = asr_options(&models, &config);
-        assert_eq!(options[0], AsrOption::Cloud(AsrChoice::OpenAi));
-        assert_eq!(options[1], AsrOption::Cloud(AsrChoice::Deepgram));
+        assert_eq!(options[0], AsrOption::AppleSpeech);
+        assert_eq!(options[1], AsrOption::Cloud(AsrChoice::OpenAi));
+        assert_eq!(options[2], AsrOption::Cloud(AsrChoice::Deepgram));
         assert!(options.contains(&AsrOption::Local(PathBuf::from("/models/ggml-base.bin"))));
         // The configured model lives outside the scan, so it's appended.
         assert!(options.contains(&AsrOption::Local(PathBuf::from(
             "/elsewhere/ggml-small.bin"
         ))));
+    }
+
+    #[test]
+    fn apply_asr_apple_speech_roundtrips() {
+        let mut config = Config::default();
+        apply_asr(&mut config, &AsrOption::AppleSpeech);
+        assert_eq!(config.asr, AsrChoice::AppleSpeech);
+        assert_eq!(selected_asr(&config), Some(AsrOption::AppleSpeech));
+        // On-device: it must appear in the picker with no model or key set.
+        let options = asr_options(&ScanResult::default(), &config);
+        assert!(options.contains(&AsrOption::AppleSpeech));
     }
 
     #[test]
@@ -296,5 +317,11 @@ mod tests {
         assert!(AsrOption::Local(PathBuf::from("/x/ggml-base.bin"))
             .to_string()
             .contains("local"));
+        // Apple Speech reads as on-device and is distinct from the cloud labels.
+        assert!(AsrOption::AppleSpeech.to_string().contains("on-device"));
+        assert_ne!(
+            AsrOption::AppleSpeech.to_string(),
+            AsrOption::Cloud(AsrChoice::OpenAi).to_string()
+        );
     }
 }
