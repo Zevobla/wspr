@@ -20,14 +20,17 @@
         toolchain = fenix.packages.${system}.stable.toolchain;
         craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
 
-        # crane's cleanCargoSource keeps only Rust/Cargo files, which drops two
-        # kinds of source this build needs, so both are allowed back in:
+        # crane's cleanCargoSource keeps only Rust/Cargo files, which drops
+        # several kinds of source this build needs, so each is allowed back in:
         #   * crates/whspr-app/assets/icon.svg -- the vector whspr-app's build
         #     script rasterizes into the window icon.
         #   * crates/whspr-asr/src/apple_speech.mm -- the Objective-C++ shim over
         #     Apple's on-device speech recognizer that whspr-asr's build.rs
         #     compiles with `cc` on macOS.
-        # Both are read by a build script in the sandboxed crane build (`nix
+        #   * crates/whspr-refine/src/apple_foundation.swift -- the Swift shim
+        #     over Apple's Foundation Models LLM that whspr-refine's build.rs
+        #     compiles with swiftc on macOS.
+        # Each is read by a build script in the sandboxed crane build (`nix
         # build`/`nix flake check`). The Archivo fonts don't need to be
         # in-source: build.rs reads them from ARCHIVO_DIR (a Nix store path).
         src = lib.cleanSourceWith {
@@ -35,6 +38,7 @@
           filter = path: type:
             (lib.hasSuffix ".svg" path)
             || (lib.hasSuffix ".mm" path)
+            || (lib.hasSuffix ".swift" path)
             || (craneLib.filterCargoSources path type);
           name = "source";
         };
