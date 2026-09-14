@@ -14,6 +14,12 @@ serde_json.workspace = true
 tokio = { workspace = true }
 whisper-rs.workspace = true
 
+# macOS-only: compiles the Objective-C shim (src/apple_speech.m) that bridges
+# to Apple's on-device SFSpeechRecognizer. Kept a leaf-crate, target-gated
+# build dependency (like whspr-hf's `metal`) so non-mac builds never pull it.
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 wiremock.workspace = true
 tokio = { workspace = true, features = ["macros"] }

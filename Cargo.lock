@@ -9263,6 +9263,7 @@ name = "whspr-asr"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "cc",
  "hound",
  "reqwest 0.13.1",
  "serde",
