@@ -115,6 +115,9 @@ pub fn apply_asr(config: &mut Config, option: &AsrOption) {
 pub enum RefineOption {
     /// No refinement -- the raw transcript (`RefineChoice::Noop`).
     None,
+    /// Apple's on-device Foundation Models system LLM (`RefineChoice::AppleFoundation`,
+    /// macOS 26+). Only listed when the machine can actually run it.
+    AppleFoundation,
     /// A cloud refiner (`RefineChoice::OpenAi` or `RefineChoice::Anthropic`).
     Cloud(RefineChoice),
     /// A GGUF LLM file on disk. Selecting it sets `refine = LlamaLocal` and
@@ -126,6 +129,7 @@ impl fmt::Display for RefineOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RefineOption::None => f.write_str("None (raw transcript)"),
+            RefineOption::AppleFoundation => f.write_str("Apple Foundation Models (on-device)"),
             RefineOption::Cloud(RefineChoice::OpenAi) => f.write_str("OpenAI (cloud)"),
             RefineOption::Cloud(RefineChoice::Anthropic) => f.write_str("Anthropic (cloud)"),
             // Noop/LlamaLocal are never wrapped in `Cloud`; total match only.
@@ -140,11 +144,15 @@ impl fmt::Display for RefineOption {
 /// configured local model outside the scan is appended so it still shows as
 /// selected.
 pub fn refine_options(models: &ScanResult, config: &Config) -> Vec<RefineOption> {
-    let mut options = vec![
-        RefineOption::None,
-        RefineOption::Cloud(RefineChoice::OpenAi),
-        RefineOption::Cloud(RefineChoice::Anthropic),
-    ];
+    let mut options = vec![RefineOption::None];
+    // Apple's on-device model leads the real refiners, but only on a machine
+    // that can run it (macOS 26+, Apple Intelligence on, model present) — this
+    // is the "show it only if capable" gate.
+    if whspr_refine::apple_foundation_available() {
+        options.push(RefineOption::AppleFoundation);
+    }
+    options.push(RefineOption::Cloud(RefineChoice::OpenAi));
+    options.push(RefineOption::Cloud(RefineChoice::Anthropic));
     options.extend(
         models
             .llm
@@ -165,6 +173,7 @@ pub fn refine_options(models: &ScanResult, config: &Config) -> Vec<RefineOption>
 pub fn selected_refine(config: &Config) -> Option<RefineOption> {
     match config.refine {
         RefineChoice::Noop => Some(RefineOption::None),
+        RefineChoice::AppleFoundation => Some(RefineOption::AppleFoundation),
         RefineChoice::OpenAi => Some(RefineOption::Cloud(RefineChoice::OpenAi)),
         RefineChoice::Anthropic => Some(RefineOption::Cloud(RefineChoice::Anthropic)),
         RefineChoice::LlamaLocal => config
@@ -181,6 +190,7 @@ pub fn selected_refine(config: &Config) -> Option<RefineOption> {
 pub fn apply_refine(config: &mut Config, option: &RefineOption) {
     match option {
         RefineOption::None => config.refine = RefineChoice::Noop,
+        RefineOption::AppleFoundation => config.refine = RefineChoice::AppleFoundation,
         RefineOption::Cloud(choice) => config.refine = *choice,
         RefineOption::Local(path) => {
             config.refine = RefineChoice::LlamaLocal;
@@ -294,6 +304,17 @@ mod tests {
             Some(PathBuf::from("/models/qwen.gguf"))
         );
         assert_eq!(selected_refine(&config), Some(option));
+    }
+
+    #[test]
+    fn apply_refine_apple_foundation_roundtrips() {
+        let mut config = Config::default();
+        apply_refine(&mut config, &RefineOption::AppleFoundation);
+        assert_eq!(config.refine, RefineChoice::AppleFoundation);
+        assert_eq!(selected_refine(&config), Some(RefineOption::AppleFoundation));
+        assert!(RefineOption::AppleFoundation
+            .to_string()
+            .contains("on-device"));
     }
 
     #[test]
