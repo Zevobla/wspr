@@ -51,6 +51,11 @@ pub enum AsrChoice {
     WhisperLocal,
     OpenAi,
     Deepgram,
+    /// Apple's built-in on-device speech recognizer (`SFSpeechRecognizer`,
+    /// macOS only). No model download and no network — the OS ships the
+    /// dictation model. Selecting it on a non-macOS build surfaces a clear
+    /// "macOS only" error at backend construction.
+    AppleSpeech,
     /// Deterministic, offline stand-in (`whspr_core::testkit::MockAsr`) -
     /// never a real transcription backend. An explicit opt-in only (e.g.
     /// `whspr transcribe --asr mock`), so tests and CI can ask for it by
@@ -66,6 +71,7 @@ impl FromStr for AsrChoice {
             "whisper-local" | "whisper_local" | "whisperloca" => Ok(AsrChoice::WhisperLocal),
             "openai" | "open-ai" | "open_ai" => Ok(AsrChoice::OpenAi),
             "deepgram" => Ok(AsrChoice::Deepgram),
+            "apple-speech" | "apple_speech" | "applespeech" | "apple" => Ok(AsrChoice::AppleSpeech),
             "mock" => Ok(AsrChoice::Mock),
             _ => Err(format!("unknown ASR choice: {}", s)),
         }
@@ -366,6 +372,32 @@ mod tests {
     fn asr_choice_from_str_accepts_mock() {
         assert_eq!(AsrChoice::from_str("mock"), Ok(AsrChoice::Mock));
         assert_eq!(AsrChoice::from_str("MOCK"), Ok(AsrChoice::Mock));
+    }
+
+    #[test]
+    fn asr_choice_from_str_accepts_apple_speech() {
+        for s in ["apple-speech", "apple_speech", "AppleSpeech", "apple"] {
+            assert_eq!(
+                AsrChoice::from_str(s),
+                Ok(AsrChoice::AppleSpeech),
+                "expected {s:?} to parse as AppleSpeech"
+            );
+        }
+    }
+
+    #[test]
+    fn apple_speech_choice_round_trips_through_toml() {
+        let cfg = Config {
+            asr: AsrChoice::AppleSpeech,
+            ..Default::default()
+        };
+        let toml_string = toml::to_string_pretty(&cfg).expect("serialize");
+        assert!(
+            toml_string.contains("asr = \"apple-speech\""),
+            "AppleSpeech should serialize kebab-case: {toml_string}"
+        );
+        let round_tripped: Config = toml::from_str(&toml_string).expect("deserialize");
+        assert_eq!(round_tripped.asr, AsrChoice::AppleSpeech);
     }
 
     #[test]
