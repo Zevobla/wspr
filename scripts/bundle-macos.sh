@@ -473,7 +473,10 @@ iconutil -c icns "$APPS_ICONSET" -o "$APPS_ICNS"
 # compressed read-only .dmg.
 echo "==> building styled dmg -> $DMG"
 
-VOLNAME="whspr $VERSION"
+# Volume name = the title-bar text + the /Volumes mount point. Kept to just
+# "whspr" (no version) so the DMG window's title bar reads cleanly; the .dmg
+# *file* still carries the version (see DMG= above).
+VOLNAME="whspr"
 STAGE="$WORK_DIR/dmg-root"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/.background"
