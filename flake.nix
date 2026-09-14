@@ -47,9 +47,9 @@
         # stubs (https://nixos.org/manual/nixpkgs/stable/#sec-darwin-legacy-frameworks);
         # the whole SDK — headers for every framework we need (AudioUnit,
         # CoreAudio, AppKit, Metal, ...) — now comes from this one derivation.
-        darwinFrameworks = lib.optionals pkgs.stdenv.isDarwin [ pkgs.apple-sdk ];
+        darwinFrameworks = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.apple-sdk ];
 
-        linuxLibs = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+        linuxLibs = lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [
           alsa-lib
           libxkbcommon
           wayland
@@ -69,7 +69,7 @@
 
         libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
 
-        bindgenExtraClangArgs = lib.optionalString pkgs.stdenv.isDarwin
+        bindgenExtraClangArgs = lib.optionalString pkgs.stdenv.hostPlatform.isDarwin
           "-isysroot ${pkgs.apple-sdk}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
 
         # The three static Archivo faces whspr-app embeds (see
@@ -165,7 +165,7 @@
         # Env vars that point whspr-refine's build.rs (and the whspr-app/whspr-cli
         # build scripts) at the Swift toolchain + macOS-26 SDK. Empty off darwin,
         # where the shim compiles out and the refiner is simply unavailable.
-        appleFmEnv = lib.optionalAttrs pkgs.stdenv.isDarwin {
+        appleFmEnv = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
           WHSPR_SWIFTC = "${swiftToolchain}/usr/bin/swiftc";
           WHSPR_MACOS26_SDK = macos26Sdk;
         };
@@ -258,7 +258,7 @@
           # (`typst compile in.typ out.pdf`); the note desk shells out to it,
           # matching the yt-dlp/ffmpeg pattern. The bundle must ship it too.
           packages = [ toolchain pkgs.pkg-config ] ++ nativeCTools
-            ++ lib.optionals pkgs.stdenv.isDarwin [ ytdlpBundled pkgs.deno pkgs.typst ];
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ ytdlpBundled pkgs.deno pkgs.typst ];
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenExtraClangArgs;
