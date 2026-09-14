@@ -1,0 +1,24 @@
+[package]
+name = "whspr-setup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "whspr-setup"
+path = "src/main.rs"
+
+[dependencies]
+# The installer is a standalone iced binary. "tokio" backs iced's executor;
+# "svg" turns on the resvg-backed `svg` widget the logo mark is drawn with;
+# "image" is enabled to match the app's feature set. All three are feature
+# flags on the existing workspace `iced` dep -- no new workspace dependency
+# and no system library (resvg is pure Rust). See `crate::logo`.
+iced = { workspace = true, features = ["tokio", "svg", "image"] }
+# PNG encoder for the env-gated headless screenshot self-validation path (see
+# `crate::screenshot`): `WHSPR_SETUP_SCREENSHOT=<path>` captures the window to
+# a PNG and exits. A leaf, pure-Rust dep declared directly here (not a shared
+# workspace dependency) exactly like `whspr-app` declares it -- this crate's
+# own verification concern only.
+png = "0.17"

@@ -9429,6 +9429,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "whspr-setup"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "png 0.17.16",
+]
+
+[[package]]
 name = "whspr-typst"
 version = "0.1.0"
 dependencies = [
