@@ -233,6 +233,11 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 	<string>whspr records your voice while you hold the dictation hotkey, then transcribes it to text.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>whspr inserts transcribed text into the app you are working in.</string>
+	<!-- Speech Recognition: required (macOS aborts the process on the first
+	     SFSpeechRecognizer call otherwise) when the user picks the on-device
+	     "Apple Speech" ASR backend. Recognition stays on-device. -->
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>whspr uses Apple's on-device speech recognizer to transcribe your dictation to text on your Mac.</string>
 </dict>
 </plist>
 PLIST
