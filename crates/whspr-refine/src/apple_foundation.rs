@@ -1,18 +1,22 @@
 //! Apple Foundation Models refiner — on-device system LLM cleanup (macOS 26+).
 //!
 //! Thin Rust wrapper over the Swift shim in `apple_foundation.swift` (compiled
-//! and linked by `build.rs`). Present only when the shim was built (the
-//! `whspr_apple_fm` cfg); the framework is weak-linked, so on macOS 14-25
-//! [`is_available`] returns `false` and the refiner is simply never selected.
-
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
+//! and linked by `build.rs`). The type and [`is_available`] exist in every
+//! build so callers have a stable, `cfg`-free API; the actual FFI is gated on
+//! `whspr_apple_fm` (set only when the shim was built). The framework is
+//! weak-linked, so on macOS 14-25 [`is_available`] returns `false` and the
+//! refiner is never selected; when the shim isn't built at all, `refine`
+//! returns a clean "not available" error.
 
 use async_trait::async_trait;
 use whspr_core::{RefineContext, Result, TextRefiner, WhsprError};
 
-use crate::build_cleanup_prompt;
+#[cfg(whspr_apple_fm)]
+use std::ffi::{CStr, CString};
+#[cfg(whspr_apple_fm)]
+use std::os::raw::c_char;
 
+#[cfg(whspr_apple_fm)]
 extern "C" {
     fn whspr_fm_available() -> i32;
     fn whspr_fm_refine(
@@ -23,13 +27,20 @@ extern "C" {
     fn whspr_fm_string_free(s: *mut c_char);
 }
 
-/// Whether Apple's on-device model is usable right now: macOS 26+, an
-/// Apple-Intelligence-capable device with it enabled, and the model present.
-/// `false` on older macOS — the framework is weak-linked and absent there, so
-/// this stays safe to call (it returns `-1` from the shim, mapped to `false`).
+/// Whether Apple's on-device model is usable right now: the shim was built into
+/// this binary AND the machine can run it (macOS 26+, Apple Intelligence on,
+/// model present). `false` on older macOS (the framework is weak-linked and
+/// absent there) or when the shim wasn't compiled — always safe to call.
 pub fn is_available() -> bool {
-    // SAFETY: the probe takes no arguments and only reads OS/model state.
-    unsafe { whspr_fm_available() == 1 }
+    #[cfg(whspr_apple_fm)]
+    {
+        // SAFETY: the probe takes no arguments and only reads OS/model state.
+        unsafe { whspr_fm_available() == 1 }
+    }
+    #[cfg(not(whspr_apple_fm))]
+    {
+        false
+    }
 }
 
 /// On-device cleanup via Apple's Foundation Models system LLM (macOS 26+).
@@ -44,6 +55,7 @@ impl AppleFoundation {
 }
 
 /// Calls the shim on the current (blocking) thread, marshalling its C strings.
+#[cfg(whspr_apple_fm)]
 fn refine_blocking(instructions: &str, prompt: &str) -> Result<String> {
     let instr = CString::new(instructions)
         .map_err(|_| WhsprError::Refine("instructions contained a NUL byte".into()))?;
@@ -76,16 +88,26 @@ fn refine_blocking(instructions: &str, prompt: &str) -> Result<String> {
 #[async_trait]
 impl TextRefiner for AppleFoundation {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        // The full cleanup rules live in the prompt (as with the other
-        // backends); the session gets a short system instruction on top.
-        let instructions =
-            "You clean up raw speech-to-text. Output only the cleaned text, with no preamble.";
-        let prompt = build_cleanup_prompt(raw, ctx);
-        // Foundation Models inference is synchronous from our side (the shim
-        // blocks); keep it off the async runtime, like the llama-local path.
-        tokio::task::spawn_blocking(move || refine_blocking(instructions, &prompt))
-            .await
-            .map_err(|e| WhsprError::Refine(format!("apple-foundation task panicked: {e}")))?
+        #[cfg(whspr_apple_fm)]
+        {
+            // The full cleanup rules live in the prompt (as with the other
+            // backends); the session gets a short system instruction on top.
+            let instructions =
+                "You clean up raw speech-to-text. Output only the cleaned text, with no preamble.";
+            let prompt = crate::build_cleanup_prompt(raw, ctx);
+            // Foundation Models inference is synchronous from our side (the shim
+            // blocks); keep it off the async runtime, like the llama-local path.
+            tokio::task::spawn_blocking(move || refine_blocking(instructions, &prompt))
+                .await
+                .map_err(|e| WhsprError::Refine(format!("apple-foundation task panicked: {e}")))?
+        }
+        #[cfg(not(whspr_apple_fm))]
+        {
+            let _ = (raw, ctx);
+            Err(WhsprError::Refine(
+                "Apple Foundation Models was not built into this binary".into(),
+            ))
+        }
     }
 
     fn id(&self) -> &'static str {
@@ -104,16 +126,16 @@ mod tests {
 
     #[test]
     fn availability_probe_links_and_does_not_crash() {
-        // Calls across the C ABI into the Swift shim. On macOS < 26 the weak
-        // framework is absent and this must return false (never crash) — which
-        // proves the shim compiled, linked, and loads.
+        // When the shim is built this calls across the C ABI into Swift; on
+        // macOS < 26 the weak framework is absent and it must return false
+        // (never crash) — proving the shim compiled, linked, and loads.
         let _ = is_available();
     }
 
     #[tokio::test]
     async fn refine_when_unavailable_errors_without_panicking() {
-        // On a machine without the model (e.g. macOS < 26 / CI), refine must
-        // surface a clean error rather than panicking.
+        // On a machine/build without the model, refine must surface a clean
+        // error rather than panicking.
         if is_available() {
             return;
         }

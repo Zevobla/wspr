@@ -9,7 +9,6 @@
 //! `NormalizingRefiner` (in `normalize/`) wraps any of the above and applies
 //! rule-based number/date/time normalization to its output.
 
-#[cfg(whspr_apple_fm)]
 mod apple_foundation;
 mod llama_local;
 mod local_llm;
@@ -19,7 +18,6 @@ mod tokens;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-#[cfg(whspr_apple_fm)]
 pub use apple_foundation::AppleFoundation;
 pub use llama_local::LlamaLocal;
 pub use local_llm::{GenOpts, LocalLlm};
@@ -30,14 +28,7 @@ pub use local_llm::{GenOpts, LocalLlm};
 /// `false` when the shim wasn't built, so callers can gate the UI/pipeline on a
 /// single call without a `cfg`.
 pub fn apple_foundation_available() -> bool {
-    #[cfg(whspr_apple_fm)]
-    {
-        apple_foundation::is_available()
-    }
-    #[cfg(not(whspr_apple_fm))]
-    {
-        false
-    }
+    apple_foundation::is_available()
 }
 pub use normalize::NormalizingRefiner;
 use tokens::strip_special_tokens;
