@@ -157,6 +157,17 @@ fn build_refiner(
                 })?;
             Box::new(LlamaLocal::new(model_path))
         }
+        RefineChoice::AppleFoundation => {
+            if whspr_refine::apple_foundation_available() {
+                Box::new(whspr_refine::AppleFoundation::new())
+            } else {
+                anyhow::bail!(
+                    "Apple Foundation Models is unavailable — it needs macOS 26 with Apple \
+                     Intelligence enabled (and a build that includes it); pass --refine noop \
+                     or another backend"
+                );
+            }
+        }
     };
 
     Ok(Box::new(NormalizingRefiner::new(
