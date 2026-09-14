@@ -124,6 +124,48 @@
           '';
         };
 
+        # Apple's Foundation Models framework (the on-device system LLM) is
+        # Swift-only and macOS-26. nixpkgs pins Swift 5.10.1 (all channels),
+        # which can't parse its Swift-6 module interface, so we fetch the exact
+        # swift.org release toolchain that built it (6.3.2) and unpack it. The
+        # component .pkg's Payload is a gzip'd cpio (NOT pbzx). whspr-refine's
+        # build.rs compiles the shim with this against `apple-sdk_26`; nothing
+        # here touches the main Rust/C build, which stays on `apple-sdk` (14.4).
+        # Referenced only through the darwin-only env vars below, so non-darwin
+        # evals never realize it.
+        swiftToolchain = pkgs.stdenvNoCC.mkDerivation {
+          pname = "swift-org-toolchain";
+          version = "6.3.2";
+          src = pkgs.fetchurl {
+            url = "https://download.swift.org/swift-6.3.2-release/xcode/swift-6.3.2-RELEASE/swift-6.3.2-RELEASE-osx.pkg";
+            hash = "sha256-Pdjac2MYtvCl18AbA53YUR95lMq6v5sQU03OGxnM3Kc=";
+          };
+          nativeBuildInputs = [ pkgs.xar pkgs.cpio pkgs.gzip ];
+          unpackPhase = ''
+            runHook preUnpack
+            xar -xf "$src"
+            runHook postUnpack
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p "$out"
+            gzip -dc swift-6.3.2-RELEASE-osx-package.pkg/Payload | (cd "$out" && cpio -idm)
+            runHook postInstall
+          '';
+          dontFixup = true;
+        };
+
+        # The macOS-26 SDK path whspr-refine's Swift shim compiles against.
+        macos26Sdk = "${pkgs.apple-sdk_26}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
+
+        # Env vars that point whspr-refine's build.rs (and the whspr-app/whspr-cli
+        # build scripts) at the Swift toolchain + macOS-26 SDK. Empty off darwin,
+        # where the shim compiles out and the refiner is simply unavailable.
+        appleFmEnv = lib.optionalAttrs pkgs.stdenv.isDarwin {
+          WHSPR_SWIFTC = "${swiftToolchain}/usr/bin/swiftc";
+          WHSPR_MACOS26_SDK = macos26Sdk;
+        };
+
         commonArgs = {
           inherit src;
           strictDeps = true;
@@ -154,7 +196,7 @@
           # load ExtraBold into usvg's fontdb for icon rasterization), so it
           # has to be visible to the crane build itself, not just devShell.
           ARCHIVO_DIR = "${archivoDir}";
-        };
+        } // appleFmEnv;
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
@@ -196,7 +238,7 @@
           });
         };
 
-        devShells.default = pkgs.mkShell {
+        devShells.default = pkgs.mkShell ({
           inputsFrom = [ whspr-cli ];
           # inputsFrom only carries over buildInputs/nativeBuildInputs, not
           # arbitrary env vars, so cmake/clang and LIBCLANG_PATH/
@@ -221,6 +263,6 @@
           # ARCHIVO_DIR is repeated here the same way LIBCLANG_PATH/
           # BINDGEN_EXTRA_CLANG_ARGS are above.
           ARCHIVO_DIR = "${archivoDir}";
-        };
+        } // appleFmEnv);
       });
 }
