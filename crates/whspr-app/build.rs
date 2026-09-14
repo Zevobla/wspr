@@ -37,6 +37,8 @@ const ARCHIVO_FACES: [&str; 3] = [
 ];
 
 fn main() {
+    emit_foundation_models_link_arg();
+
     let manifest_dir =
         std::env::var("CARGO_MANIFEST_DIR").expect("cargo always sets CARGO_MANIFEST_DIR");
     let svg_path = Path::new(&manifest_dir).join("assets/icon.svg");
@@ -113,4 +115,19 @@ fn main() {
     let out_path = out_dir.join("icon.rgba");
     std::fs::write(&out_path, pixmap.data())
         .unwrap_or_else(|e| panic!("failed to write {}: {e}", out_path.display()));
+}
+
+/// whspr-refine statically links a Swift shim that weak-links the macOS-26
+/// FoundationModels framework (see its build.rs). The framework search path
+/// propagates from that crate, but the `-weak_framework` linker arg does not
+/// reach this final binary — so re-emit it here whenever the macOS-26 SDK is
+/// present (the flake sets `WHSPR_MACOS26_SDK` exactly when the shim is built).
+/// Weak-linking keeps the app loading on macOS 14-25.
+fn emit_foundation_models_link_arg() {
+    println!("cargo:rerun-if-env-changed=WHSPR_MACOS26_SDK");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+        && std::env::var("WHSPR_MACOS26_SDK").is_ok()
+    {
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,FoundationModels");
+    }
 }
