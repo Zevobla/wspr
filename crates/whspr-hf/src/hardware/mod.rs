@@ -20,6 +20,7 @@
 //! KV-cache-aware figure instead, from the model's real
 //! layer/embedding/head counts and context length.
 
+mod dxgi;
 mod metal;
 
 use sysinfo::System;
@@ -239,10 +240,17 @@ fn unified_memory_fraction(total_ram: u64) -> u64 {
 
 /// The usable GPU/unified-memory budget for this machine: the Metal default
 /// device's `recommendedMaxWorkingSetSize` on Apple Silicon (mirrors LM
-/// Studio -- see [`metal::recommended_working_set`]), or, off macOS or when
-/// no Metal device is found, [`unified_memory_fraction`] of `total_ram`.
+/// Studio -- see [`metal::recommended_working_set`]), else the primary
+/// discrete GPU's DXGI dedicated VRAM on Windows (see
+/// [`dxgi::dedicated_vram_bytes`]), or, when neither signal is available (off
+/// both platforms, no Metal device, or an integrated-only Windows box),
+/// [`unified_memory_fraction`] of `total_ram`. Each platform probe is a no-op
+/// (`None`) off its own OS, so this reduces to the RAM fraction everywhere the
+/// live signal is absent.
 pub fn gpu_budget(total_ram: u64) -> u64 {
-    metal::recommended_working_set().unwrap_or_else(|| unified_memory_fraction(total_ram))
+    metal::recommended_working_set()
+        .or_else(dxgi::dedicated_vram_bytes)
+        .unwrap_or_else(|| unified_memory_fraction(total_ram))
 }
 
 /// The budget [`fits`] actually judges a model against: the tighter of the
