@@ -257,6 +257,19 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         ),
         Message::RecordingPicked(None) => Task::none(),
         Message::RecordingPicked(Some(path)) => {
+            // Honest diarization: only diarize when a real model resolves.
+            // With none, reuse the needs-speaker-model prompt and say so
+            // plainly, rather than running a MockDiarizer that fakes turns.
+            if whspr_diarize::SherpaDiarizer::resolve_model_dir(
+                state.config.speaker.model_dir.clone(),
+            )
+            .is_none()
+            {
+                state.needs_speaker_model = true;
+                state.diarize_status =
+                    Some(crate::speakers::DIARIZE_UNAVAILABLE_MESSAGE.to_string());
+                return Task::none();
+            }
             state.diarize_status = Some(format!("Diarizing {}...", path.display()));
             match crate::speakers::speaker_db_path() {
                 Some(db_path) => Task::perform(

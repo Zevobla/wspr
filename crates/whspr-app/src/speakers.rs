@@ -8,6 +8,16 @@ use std::path::{Path, PathBuf};
 use whspr_config::{Config, SpeakerDb, SpeakerEmbeddingChoice};
 use whspr_core::{AudioBuffer, Diarizer, Transcript};
 
+/// Surfaced (through `state.diarize_status`) when the user asks to diarize a
+/// recording but no real diarization backend is available -- no model
+/// directory configured or discoverable via `SPEAKER_MODEL_DIR`, or the
+/// aarch64-windows stub where sherpa ships no prebuilt. The shipping app
+/// never falls back to a fabricated `MockDiarizer` here: presenting synthetic
+/// speaker separation as real would be dishonest, so we say so plainly and
+/// enroll nothing.
+pub(crate) const DIARIZE_UNAVAILABLE_MESSAGE: &str =
+    "Speaker diarization unavailable -- install a speaker model in Models (or set SPEAKER_MODEL_DIR), then try again.";
+
 /// Labels each transcript segment with a local `Speaker N` by diarizing the
 /// audio and clustering the turns' embeddings, then attributing by time
 /// overlap. Best-effort: a no-op (segments keep their `None` speaker) when
@@ -138,16 +148,20 @@ pub fn attribute_speaker(
     Some(id)
 }
 
-/// Decodes + resamples `file`, runs it through a `Diarizer` (a real
-/// `SherpaDiarizer` if a model directory is available -- from `model_dir`,
-/// or else the `SPEAKER_MODEL_DIR` env var, see
-/// `SherpaDiarizer::resolve_model_dir` -- otherwise the deterministic
-/// `MockDiarizer`, same "explicit opt-in, else a safe default" philosophy
-/// as `whspr-cli`'s backend builders), matches every resulting turn
-/// against `speaker_db`, persists the updated db to `db_path`, and returns
-/// the updated db plus how many turns were found. Runs entirely on a
-/// blocking thread since decoding, resampling, and diarization are all
-/// synchronous/CPU-bound.
+/// Decodes + resamples `file`, runs it through the real sherpa
+/// `SherpaDiarizer` (loaded from the directory `model_dir` names, or else the
+/// `SPEAKER_MODEL_DIR` env var -- see `SherpaDiarizer::resolve_model_dir`),
+/// matches every resulting turn against `speaker_db`, persists the updated db
+/// to `db_path`, and returns the updated db plus how many turns were found.
+/// Runs entirely on a blocking thread since decoding, resampling, and
+/// diarization are all synchronous/CPU-bound.
+///
+/// Honest by construction: with no model directory resolvable (nor on the
+/// aarch64-windows stub, where `SherpaDiarizer::new` returns an error) it
+/// refuses with `Err(DIARIZE_UNAVAILABLE_MESSAGE)` and enrolls nothing,
+/// rather than fabricating speaker turns via a `MockDiarizer`. The GUI reuses
+/// the `needs_speaker_model` prompt for this state (see `crate::app`'s
+/// `RecordingPicked` handler).
 ///
 /// `enabled` should be `config.speaker.enabled`: when `false`, refuses
 /// before touching `file` or spawning the blocking task at all, mirroring
@@ -171,18 +185,23 @@ pub async fn run_diarize_scan(
         );
     }
 
+    // Honest diarization: only ever run the real sherpa diarizer. With no
+    // model directory resolvable (none configured, none in SPEAKER_MODEL_DIR)
+    // we refuse here -- before touching `file` or spawning a thread -- rather
+    // than fabricating speaker turns with a MockDiarizer.
+    let Some(model_dir) = whspr_diarize::SherpaDiarizer::resolve_model_dir(model_dir) else {
+        return Err(DIARIZE_UNAVAILABLE_MESSAGE.to_string());
+    };
+
     tokio::task::spawn_blocking(move || {
         let audio = whspr_audio::decode_wav(&file).map_err(|e| e.to_string())?;
         let audio = whspr_audio::resample_to_16k_mono(&audio).map_err(|e| e.to_string())?;
 
-        let diarizer: Box<dyn Diarizer> =
-            match whspr_diarize::SherpaDiarizer::resolve_model_dir(model_dir) {
-                Some(dir) => Box::new(
-                    whspr_diarize::SherpaDiarizer::new(dir, embedding_choice)
-                        .map_err(|e| e.to_string())?,
-                ),
-                None => Box::new(whspr_core::testkit::MockDiarizer::default()),
-            };
+        // The real backend only -- on aarch64-windows `new` returns an error
+        // (sherpa ships no prebuilt), which surfaces honestly rather than
+        // degrading to a mock.
+        let diarizer = whspr_diarize::SherpaDiarizer::new(model_dir, embedding_choice)
+            .map_err(|e| e.to_string())?;
 
         let turns = diarizer.diarize(&audio).map_err(|e| e.to_string())?;
         let scan_id = file.display().to_string();
@@ -226,28 +245,27 @@ mod tests {
         writer.finalize().expect("failed to finalize test wav");
     }
 
-    /// Covers both the mock-fallback path and the `SPEAKER_MODEL_DIR`
-    /// env-var-fallback path in one test (rather than two separate
-    /// `#[test]` fns), since `cargo test` runs tests in parallel threads by
-    /// default and this env var is process-global -- two tests mutating it
-    /// concurrently would race. Mirrors `whspr_asr::WhisperLocal`'s
-    /// identically-reasoned `resolve_model_path_precedence` test.
+    /// The honesty contract: with no model available the scan *refuses*
+    /// (clear "unavailable" error, nothing enrolled) instead of fabricating
+    /// turns via a MockDiarizer; and with `SPEAKER_MODEL_DIR` set it consults
+    /// that env var, failing on the *real* SherpaDiarizer's missing model
+    /// (mentioning the env-sourced path), never a silent mock success. Both
+    /// halves share one test since they mutate the process-global env var and
+    /// `cargo test` runs tests in parallel threads by default -- two tests
+    /// racing on it would flake.
     #[tokio::test]
-    async fn run_diarize_scan_mock_and_env_var_fallback() {
+    async fn run_diarize_scan_refuses_without_a_model() {
         let _env = ENV_LOCK.lock().await;
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let wav_path = dir.path().join("recording.wav");
         write_test_wav(&wav_path);
 
-        // No model_dir and SPEAKER_MODEL_DIR unset: falls back to the
-        // deterministic MockDiarizer. `MockDiarizer::default()`'s two
-        // canned embeddings are orthogonal (cosine similarity 0.0), so the
-        // real default similarity threshold
-        // (`SpeakerSettings::default().similarity_threshold`, 0.7) is
-        // enough to exercise two *distinct* speakers being enrolled.
+        // No model_dir and SPEAKER_MODEL_DIR unset: no real diarizer, so the
+        // scan surfaces the honest "unavailable" message and enrolls nothing
+        // -- no MockDiarizer fallback, no fabricated speakers db written.
         std::env::remove_var("SPEAKER_MODEL_DIR");
         let db_path = dir.path().join("speakers.json");
-        let (db, count) = run_diarize_scan(
+        let err = run_diarize_scan(
             wav_path.clone(),
             true,
             None,
@@ -257,10 +275,15 @@ mod tests {
             db_path.clone(),
         )
         .await
-        .expect("run_diarize_scan should succeed with the mock diarizer");
-        assert_eq!(count, 2);
-        assert_eq!(db.profiles.len(), 2);
-        assert!(db_path.is_file());
+        .expect_err("with no model, run_diarize_scan must refuse rather than mock");
+        assert!(
+            err.contains("unavailable"),
+            "expected the honest 'unavailable' message, got: {err}"
+        );
+        assert!(
+            !db_path.is_file(),
+            "a refused scan must not write a (fabricated) enrollment db"
+        );
 
         // No model_dir, but SPEAKER_MODEL_DIR set to a bogus path: should
         // attempt (and fail on) a real SherpaDiarizer rather than silently
