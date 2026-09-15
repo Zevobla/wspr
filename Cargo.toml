@@ -102,6 +102,13 @@ winreg = "0.52"
 # opt-in site (see `crates/whspr-hf/src/hardware/dxgi.rs`).
 windows = "0.58"
 
+# Build-dep (whspr-setup): embeds an `asInvoker` application manifest so the
+# installer isn't auto-elevated by Windows' "installer detection" heuristic (it
+# installs per-user into %LOCALAPPDATA%, no admin needed) — the "...setup.exe"
+# name would otherwise trigger a spurious UAC prompt. Pure-Rust, no external
+# tooling; used from crates/whspr-setup/build.rs under cfg(windows).
+embed-manifest = "1.4"
+
 # Scripting (macros) - a crate opts in with features = ["luajit", "vendored"]
 # to embed a JIT-compiled Lua engine; the vendored LuaJIT builds from source
 # via the existing cmake/clang toolchain, so no new system library is needed.
