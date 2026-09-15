@@ -2,7 +2,8 @@
 //! the whspr-core `Pipeline` into the iced GUI via a `Subscription`.
 //!
 //! This is the actual "hold hotkey, speak, get text" loop: press the
-//! (fixed, Ctrl+Space -- see `crate::hotkey_capture`) hotkey to start
+//! configured push-to-talk hotkey (`config.hotkey`, or the platform default
+//! -- see `crate::hotkey_capture`) to start
 //! recording, release it to stop, transcribe, refine, and inject the
 //! result into whatever has focus. `build_asr_backend`/`build_refiner`
 //! select real backends from `Config` (mirroring whspr-cli's own
@@ -285,7 +286,15 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
         }
     });
 
-    let listener = match GlobalHotkeyListener::new() {
+    // Register the user's configured push-to-talk combo (persisted by the Hub
+    // as `config.hotkey`), falling back to the platform default when none is
+    // set. Read fresh from `config` here, so a rebind chosen in Settings takes
+    // effect on the next launch.
+    let listener_result = match config.hotkey.as_deref() {
+        Some(label) => GlobalHotkeyListener::from_label(label),
+        None => GlobalHotkeyListener::new(),
+    };
+    let listener = match listener_result {
         Ok(listener) => listener,
         Err(error) => {
             let _ = output
