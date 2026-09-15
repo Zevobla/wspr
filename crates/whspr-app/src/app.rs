@@ -400,13 +400,20 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             .as_ref()
             .and_then(crate::tray::Handle::poll_action)
         {
+            // Re-show: un-hide (the close button hides to the tray -- see
+            // `hide_or_exit_hub`) *and* raise/focus, so "Show Hub" works
+            // whether the window is merely behind others or hidden.
             Some(crate::tray::Action::ShowHub) => match state.hub_window {
-                Some(id) => window::gain_focus(id),
+                Some(id) => Task::batch([
+                    window::set_mode(id, window::Mode::Windowed),
+                    window::gain_focus(id),
+                ]),
                 None => Task::none(),
             },
             Some(crate::tray::Action::Quit) => iced::exit(),
             None => Task::none(),
         },
+        Message::HubCloseRequested => hide_or_exit_hub(state),
         Message::TrayDoneTick => {
             if !tray_done_active(state.tray_done_until, std::time::Instant::now()) {
                 state.tray_done_until = None;
@@ -422,8 +429,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         },
         // The Windows caption controls (the borderless window has no system
         // title bar -- see `crate::hub::window_settings`). Each drives an
-        // iced 0.14 window command; `close` routes through the same clean
-        // `iced::exit` the tray "Quit" action uses.
+        // iced 0.14 window command; `close` hides to the tray (like a native
+        // close request), leaving the tray "Quit" as the only exit.
         #[cfg(target_os = "windows")]
         Message::MinimizeHubWindow => match state.hub_window {
             Some(id) => window::minimize(id, true),
@@ -435,7 +442,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             None => Task::none(),
         },
         #[cfg(target_os = "windows")]
-        Message::CloseHubWindow => iced::exit(),
+        Message::CloseHubWindow => hide_or_exit_hub(state),
         #[cfg(target_os = "windows")]
         Message::ResizeHubWindow(direction) => match state.hub_window {
             Some(id) => window::drag_resize(id, direction),
@@ -470,6 +477,26 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 },
             },
         },
+    }
+}
+
+/// A close request's outcome: hide the Hub window to the tray on platforms
+/// that have one (macOS, Windows), leaving the app running in the background
+/// so the tray "Quit" is the only thing that exits (matching the installer's
+/// "whspr lives in your system tray" promise). Where there's no tray (Linux),
+/// a close exits the app, since there'd be no way to bring it back.
+fn hide_or_exit_hub(state: &State) -> Task<Message> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        match state.hub_window {
+            Some(id) => window::set_mode(id, window::Mode::Hidden),
+            None => Task::none(),
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = state;
+        iced::exit()
     }
 }
 
@@ -560,9 +587,18 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
         tray_done_subscription(state),
         mic_level_subscription(state),
         link_import_key_subscription(state),
+        hub_close_subscription(state),
         crate::screenshot::subscription(state),
         crate::system_theme::subscription(state),
     ])
+}
+
+/// Intercepts the Hub window's OS close request (`exit_on_close_request` is
+/// off -- see `crate::hub::window_settings`) so `Message::HubCloseRequested`
+/// can hide it to the tray instead of quitting (macOS/Windows) or exit
+/// cleanly (Linux). Without this the daemon would strand a closed window.
+fn hub_close_subscription(_state: &State) -> iced::Subscription<Message> {
+    iced::window::close_requests().map(|_id| Message::HubCloseRequested)
 }
 
 /// While the "Add from a link" modal is open, listens for keyboard events so

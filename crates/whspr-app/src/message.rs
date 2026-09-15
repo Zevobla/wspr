@@ -272,9 +272,10 @@ pub enum Message {
     /// Windows only: the custom caption's maximize/restore button was pressed.
     #[cfg(target_os = "windows")]
     ToggleMaximizeHubWindow,
-    /// Windows only: the custom caption's close button was pressed. Routes
-    /// through the app's clean-exit path (`iced::exit`), the same one the
-    /// tray "Quit" action uses.
+    /// Windows only: the custom caption's close button was pressed. Hides the
+    /// window to the tray (the app keeps running in the background); only the
+    /// tray "Quit" actually exits. Same behavior as a native close request
+    /// (`HubCloseRequested`).
     #[cfg(target_os = "windows")]
     CloseHubWindow,
     /// Windows only: a press began on one of the borderless window's resize
@@ -284,6 +285,12 @@ pub enum Message {
     /// `crate::hub::caption_windows`).
     #[cfg(target_os = "windows")]
     ResizeHubWindow(iced::window::Direction),
+    /// The Hub window's OS close was requested (macOS traffic-light close,
+    /// Alt+F4, a window-manager close). Rather than quitting, this hides the
+    /// window to the tray on macOS/Windows -- the app keeps running and only
+    /// the tray "Quit" exits (the installer's Done screen promises "whspr
+    /// lives in your system tray"). On Linux, where there's no tray, it exits.
+    HubCloseRequested,
     /// Fired shortly after the Hub first renders when `WHSPR_SCREENSHOT` is
     /// set: triggers the one-shot window capture (see `crate::screenshot`).
     TakeScreenshot,

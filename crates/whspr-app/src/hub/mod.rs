@@ -142,6 +142,9 @@ pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
         size: DEFAULT_WINDOW_SIZE,
         position: iced::window::Position::Centered,
+        // The close button hides the window to the tray rather than quitting
+        // (see `crate::app`'s close handling); only the tray "Quit" exits.
+        exit_on_close_request: false,
         platform_specific: iced::window::settings::PlatformSpecific {
             title_hidden: true,
             titlebar_transparent: true,
@@ -166,6 +169,9 @@ pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
         size: DEFAULT_WINDOW_SIZE,
         position: iced::window::Position::Centered,
+        // The (custom) close control hides the window to the tray rather than
+        // quitting (see `crate::app`); only the tray "Quit" exits.
+        exit_on_close_request: false,
         decorations: false,
         platform_specific: iced::window::settings::PlatformSpecific {
             corner_preference: iced::window::settings::platform::CornerPreference::Round,
@@ -181,6 +187,11 @@ pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
         size: DEFAULT_WINDOW_SIZE,
         position: iced::window::Position::Centered,
+        // No tray on Linux (see `crate::tray`), so a close still exits -- but
+        // route it through `crate::app`'s close handler (which calls
+        // `iced::exit`) rather than letting the daemon strand itself with a
+        // destroyed window and no way back.
+        exit_on_close_request: false,
         icon: window_icon(),
         ..iced::window::Settings::default()
     }
