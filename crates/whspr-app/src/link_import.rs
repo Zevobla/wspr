@@ -126,6 +126,7 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             Some(Task::none())
         }
         Message::LinkImportConfirm => Some(start_import(state)),
+        Message::LinkImportTranscribeToDictate => Some(start_transcribe_to_dictate(state)),
         Message::LinkImportImported(result) => {
             apply_imported(state, result);
             Some(Task::none())
@@ -383,6 +384,42 @@ fn start_import(state: &mut State) -> Task<Message> {
         import_progress_task(dl_rx, true),
         import_progress_task(tr_rx, false),
     ])
+}
+
+/// Downloads the resolved link's audio and transcribes it straight into the
+/// Dictate transcript + History, routed through [`Message::FileTranscribed`]
+/// so it reuses the exact file-transcribe display, history record, and speaker
+/// attribution (see `crate::transcribe_url`). Unlike [`start_import`], this
+/// lands a plain transcript on the Dictate screen instead of building a note
+/// desk, so it closes the dialog and switches to Dictate where that transcript
+/// shows. No-op if nothing has resolved yet or the URL is blank.
+fn start_transcribe_to_dictate(state: &mut State) -> Task<Message> {
+    let Some(li) = state.link_import.as_ref() else {
+        return Task::none();
+    };
+    let Some(media) = li.media.as_ref() else {
+        return Task::none();
+    };
+    let url = li.url.trim().to_string();
+    if url.is_empty() {
+        return Task::none();
+    }
+    let title = media.title.clone();
+    let cookies = cookies_from(&state.config);
+    let config = state.config.clone();
+
+    // Close the dialog and reveal the Dictate screen so the transcript lands
+    // where a file transcription would; seed the same in-flight status the
+    // file-picker path shows (`Message::FileTranscribed` then completes it).
+    state.link_import = None;
+    state.screen = crate::state::Screen::Dictate;
+    state.transcribed_text = None;
+    state.transcribe_status = Some(format!("Transcribing {title}\u{2026}"));
+
+    Task::perform(
+        crate::transcribe_url::run_transcribe_url(url, cookies, config),
+        Message::FileTranscribed,
+    )
 }
 
 /// Bridges an import progress channel (audio download when `downloading`, else

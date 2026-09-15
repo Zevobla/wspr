@@ -195,6 +195,36 @@ fn confirm_starts_import_and_keeps_the_dialog_open() {
 }
 
 #[test]
+fn transcribe_to_dictate_closes_dialog_and_lands_on_dictate() {
+    let mut state = open_state();
+    // Start elsewhere so the switch to Dictate is observable.
+    state.screen = crate::state::Screen::History;
+    assert!(update(
+        &mut state,
+        &Message::LinkImportResolved(Ok(Box::new(sample_media(true))))
+    )
+    .is_some());
+    assert!(update(&mut state, &Message::LinkImportUrl("https://x".to_string())).is_some());
+    assert!(update(&mut state, &Message::LinkImportTranscribeToDictate).is_some());
+    // The dialog closes and the transcript will land on the Dictate screen;
+    // the returned task is never polled in a unit test, so no network runs.
+    assert!(state.link_import.is_none());
+    assert_eq!(state.screen, crate::state::Screen::Dictate);
+    assert!(state.transcribe_status.is_some());
+    assert!(state.transcribed_text.is_none());
+}
+
+#[test]
+fn transcribe_to_dictate_is_a_noop_without_resolved_media() {
+    let mut state = open_state();
+    // No resolve happened, so there's nothing to download: the dialog stays
+    // open and no transcription status is armed.
+    assert!(update(&mut state, &Message::LinkImportTranscribeToDictate).is_some());
+    assert!(state.link_import.is_some());
+    assert!(state.transcribe_status.is_none());
+}
+
+#[test]
 fn parse_clip_range_needs_both_bounds() {
     assert!(parse_clip_range("", "").is_none());
     assert!(parse_clip_range("1:00", "").is_none());
