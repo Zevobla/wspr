@@ -271,6 +271,20 @@ mod tests {
         assert!(plist_path(&base).starts_with(base.home_dir()));
     }
 
+    /// The Windows Run value must quote the exe path (so a `C:\Program
+    /// Files\...` path with a space stays one `argv[0]`) and register under
+    /// the stable `whspr` name. Pure -- runs on every OS, including this
+    /// macOS gate.
+    #[test]
+    fn run_value_data_quotes_a_spaced_exe_path() {
+        let exe = Path::new(r"C:\Program Files\whspr\whspr-app.exe");
+        let data = run_value_data(exe);
+
+        assert_eq!(data, r#""C:\Program Files\whspr\whspr-app.exe""#);
+        assert!(data.starts_with('"') && data.ends_with('"'));
+        assert_eq!(RUN_VALUE_NAME, "whspr");
+    }
+
     // `Config`/`load_from` live in the crate root, not this module, but
     // these three exercise `AutostartSettings` through them the same way
     // `lib.rs`'s test module does for `SpeakerSettings`/`NormalizeSettings`.
