@@ -99,6 +99,18 @@ pub struct SherpaDiarizer {
     embedder: Mutex<EmbeddingExtractor>,
 }
 
+/// aarch64-windows stub of [`SherpaDiarizer`]. `sherpa-rs-sys 0.6.8` ships no
+/// prebuilt sherpa-onnx for `aarch64-pc-windows-msvc`, so on that one target
+/// this placeholder stands in with the identical public surface but no sherpa
+/// backing. It carries an opaque field so it can never be constructed outside
+/// this crate, and `new` (below) never constructs one either — every
+/// sherpa-requiring entry point degrades to a `WhsprError::Diarize`.
+#[cfg(all(windows, target_arch = "aarch64"))]
+#[derive(Debug)]
+pub struct SherpaDiarizer {
+    _private: (),
+}
+
 impl SherpaDiarizer {
     /// Resolves the model directory to use: an explicit path (e.g. from a
     /// `--model-dir` flag or `whspr-config`'s `[speaker].model_dir`) takes
@@ -214,6 +226,34 @@ impl SherpaDiarizer {
     }
 }
 
+/// aarch64-windows stub: sherpa-onnx ships no prebuilt for this target, so the
+/// sherpa-requiring entry points degrade to a `WhsprError::Diarize` rather
+/// than existing. `resolve_model_dir` (pure path logic) stays in the shared
+/// `impl` above and is unaffected.
+#[cfg(all(windows, target_arch = "aarch64"))]
+impl SherpaDiarizer {
+    /// Always returns `WhsprError::Diarize`: there is no sherpa-onnx prebuilt
+    /// for aarch64-windows, so no real diarizer can be loaded. Consumers in
+    /// `whspr-app` already treat a failed `new(..)` as "no diarization backend
+    /// configured", so this degrades gracefully with no caller changes.
+    pub fn new(
+        _model_dir: impl AsRef<Path>,
+        _embedding_choice: SpeakerEmbeddingChoice,
+    ) -> Result<Self> {
+        Err(WhsprError::Diarize(
+            "speaker diarization is unavailable on aarch64-windows (sherpa-onnx ships no prebuilt for this target)".into(),
+        ))
+    }
+
+    /// Always returns `WhsprError::Diarize` on aarch64-windows; see
+    /// [`new`](SherpaDiarizer::new).
+    pub fn embed_clip(&self, _audio: &AudioBuffer) -> Result<Vec<f32>> {
+        Err(WhsprError::Diarize(
+            "speaker diarization is unavailable on aarch64-windows (sherpa-onnx ships no prebuilt for this target)".into(),
+        ))
+    }
+}
+
 /// Clamps a turn's `[start_secs, end_secs)` span to a valid sample range
 /// within `total_samples` at `sample_rate`. Pure/deterministic so it can be
 /// unit-tested without touching the sherpa FFI boundary. Kept shared across
@@ -292,6 +332,24 @@ impl Diarizer for SherpaDiarizer {
         }
 
         Ok(turns)
+    }
+
+    fn id(&self) -> &'static str {
+        "sherpa"
+    }
+}
+
+/// aarch64-windows stub `Diarizer` impl: `diarize` degrades to a
+/// `WhsprError::Diarize` (there is no sherpa-onnx prebuilt for this target).
+/// Never actually invoked in practice, since `new` cannot construct a
+/// `SherpaDiarizer` on this target — it exists to keep the trait impl present
+/// so the public surface is identical across targets.
+#[cfg(all(windows, target_arch = "aarch64"))]
+impl Diarizer for SherpaDiarizer {
+    fn diarize(&self, _audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>> {
+        Err(WhsprError::Diarize(
+            "speaker diarization is unavailable on aarch64-windows (sherpa-onnx ships no prebuilt for this target)".into(),
+        ))
     }
 
     fn id(&self) -> &'static str {
