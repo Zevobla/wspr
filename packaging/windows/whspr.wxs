@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  whspr.wxs -- WiX (v4/v5) definition for the whspr Windows installer (MSI).
+  whspr.wxs: WiX (v4/v5) definition for the whspr Windows installer (MSI).
 
   A minimal PER-USER install: whspr-app.exe and the four sherpa/onnxruntime
   DLLs it load-time links are installed TOGETHER into %LOCALAPPDATA%\whspr,
