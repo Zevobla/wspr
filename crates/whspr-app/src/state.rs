@@ -74,6 +74,12 @@ pub struct State {
     /// The most recent error reported by the pipeline worker (hotkey
     /// listener startup, mic capture, or a pipeline run), if any.
     pub last_error: Option<String>,
+    /// Set when the worker reports `WorkerEvent::NeedsModel`: the default
+    /// local Whisper ASR is selected but no model file is installed yet -- a
+    /// first-run onboarding state, not a failure. Drives the calm onboarding
+    /// banner (see `crate::hub`'s status banner) instead of `last_error`'s red
+    /// worker-error banner.
+    pub needs_model: bool,
     /// The persisted speaker-enrollment database (see
     /// `whspr_config::SpeakerDb`): every distinct speaker discovered across
     /// past diarization scans. Loaded at boot, written back to
@@ -214,6 +220,7 @@ impl State {
             history_search: String::new(),
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
+            needs_model: false,
             speaker_db: whspr_config::SpeakerDb::default(),
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,

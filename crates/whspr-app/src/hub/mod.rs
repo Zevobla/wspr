@@ -179,7 +179,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     ))
     .on_press(Message::DragHubWindow);
 
-    let main = column![header, error_banner(state, scheme), body,]
+    let main = column![header, status_banner(state, scheme), body,]
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -424,23 +424,46 @@ fn header_trailing<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     .into()
 }
 
-/// A mono accent error notice under the header when a worker error exists.
-fn error_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    match &state.last_error {
-        Some(error) => container(
-            container(
-                text(format!("Last worker error: {error}"))
-                    .size(type_scale::BODY_MEDIUM.size)
-                    .font(type_scale::BODY_MEDIUM.font()),
-            )
-            .padding(spacing::MD)
-            .width(Length::Fill)
-            .style(move |_theme| styles::container::error_banner(scheme)),
+/// The under-header status banner. A genuine worker error takes precedence
+/// and shows the red error notice; a fresh install with no model yet shows a
+/// calm onboarding prompt instead; otherwise nothing. Keeping the two cases
+/// visually distinct means "no model configured" reads as first-run guidance,
+/// not as a failure (the bug this fixes).
+fn status_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    if let Some(error) = &state.last_error {
+        banner(
+            format!("Last worker error: {error}"),
+            styles::container::error_banner(scheme),
         )
-        .padding([spacing::SM, spacing::XXL])
-        .into(),
-        None => Space::new().into(),
+    } else if state.needs_model {
+        banner(
+            "Pick a speech model in Models to start dictating.".to_string(),
+            styles::container::onboarding_banner(scheme),
+        )
+    } else {
+        Space::new().into()
     }
+}
+
+/// A full-width notice band under the header, carrying `message` in the given
+/// container `style`. Shared by both the error and onboarding cases of
+/// [`status_banner`] so only the copy and style differ.
+fn banner<'a>(
+    message: String,
+    style: iced::widget::container::Style,
+) -> Element<'a, Message> {
+    container(
+        container(
+            text(message)
+                .size(type_scale::BODY_MEDIUM.size)
+                .font(type_scale::BODY_MEDIUM.font()),
+        )
+        .padding(spacing::MD)
+        .width(Length::Fill)
+        .style(move |_theme| style),
+    )
+    .padding([spacing::SM, spacing::XXL])
+    .into()
 }
 
 #[cfg(test)]

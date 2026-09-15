@@ -121,6 +121,24 @@ pub fn error_banner(scheme: &color::Scheme) -> Style {
     }
 }
 
+/// The onboarding notice: a calm neutral panel (neutral-200 tint, ink text,
+/// a hairline neutral border) for first-run guidance like "no model yet".
+/// Deliberately *not* the accent/red [`error_banner`] -- onboarding is a
+/// prompt, not a failure -- so a fresh install reads as an invitation rather
+/// than an alarm.
+pub fn onboarding_banner(scheme: &color::Scheme) -> Style {
+    Style {
+        background: Some(Background::Color(scheme.secondary_container)),
+        text_color: Some(scheme.on_secondary_container),
+        border: Border {
+            color: scheme.outline,
+            width: 1.0,
+            radius: shape::NONE.into(),
+        },
+        ..Style::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +179,20 @@ mod tests {
         let style = error_banner(scheme);
         assert_eq!(style.text_color, Some(scheme.on_error_container));
         assert_eq!(style.border.color, scheme.primary);
+    }
+
+    #[test]
+    fn onboarding_banner_is_calm_neutral_not_the_accent_error_notice() {
+        let scheme = &color::LIGHT;
+        let style = onboarding_banner(scheme);
+        // Neutral panel, ink text, hairline neutral border -- distinct from
+        // the accent/red error banner so onboarding never reads as an alarm.
+        assert_eq!(
+            style.background,
+            Some(Background::Color(scheme.secondary_container))
+        );
+        assert_eq!(style.text_color, Some(scheme.on_secondary_container));
+        assert_ne!(style.border.color, scheme.primary);
+        assert_ne!(style.background, error_banner(scheme).background);
     }
 }

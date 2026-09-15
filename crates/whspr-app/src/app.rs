@@ -215,6 +215,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
                 }
+                crate::worker::WorkerEvent::NeedsModel => {
+                    // Onboarding, not an error: no model installed yet. Kept
+                    // separate from `last_error` so the calm onboarding banner
+                    // shows instead of the red worker-error one.
+                    state.needs_model = true;
+                }
             }
             Task::none()
         }
