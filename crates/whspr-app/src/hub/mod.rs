@@ -359,6 +359,18 @@ fn status_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element
         .clone()
         .unwrap_or_else(|| "No microphone".to_string());
 
+    // Platform-aware "on this <machine>" wording for the offline badge:
+    // "Mac" on macOS, "PC" on Windows, a neutral "device" elsewhere. Written
+    // as a `cfg!` expression so every arm type-checks on every host and folds
+    // to the host's literal at build time.
+    let scope_tag = if cfg!(target_os = "macos") {
+        "On this Mac · offline"
+    } else if cfg!(target_os = "windows") {
+        "On this PC · offline"
+    } else {
+        "On this device · offline"
+    };
+
     column![
         row![
             widgets::status_square(widgets::Mark::Ink, 8.0, scheme),
@@ -373,7 +385,7 @@ fn status_block<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element
             .size(type_scale::LABEL_MEDIUM.size)
             .font(type_scale::LABEL_MEDIUM.font())
             .color(scheme.on_surface_variant),
-        widgets::tag(widgets::TagKind::Outline, "On this Mac · offline", scheme),
+        widgets::tag(widgets::TagKind::Outline, scope_tag, scheme),
     ]
     .spacing(spacing::SM)
     .padding([spacing::LG, 20.0])
