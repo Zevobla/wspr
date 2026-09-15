@@ -9,6 +9,8 @@ use std::path::PathBuf;
 
 use iced::window;
 
+use crate::install::Job;
+
 /// One of the installer's screens, carrying the state that screen needs.
 #[derive(Debug, Clone)]
 pub enum Screen {
@@ -21,13 +23,17 @@ pub enum Screen {
         start_menu: bool,
         desktop: bool,
     },
-    /// The progress screen: a bar walking 0->100 over ~2.5s while the step
-    /// label cycles. `progress` is a percentage.
+    /// The progress screen: a bar walking 0->100 while the step label cycles.
+    /// `progress` is a percentage, driven by the real install's steps (see
+    /// `crate::install`).
     Installing { progress: u8 },
     /// The success screen.
     Done,
-    /// The error screen (a write couldn't complete).
-    Failure,
+    /// The error screen (a step couldn't complete). `detail` carries the real
+    /// error when reached from a genuine install failure; `None` renders the
+    /// canned design (the `WHSPR_SETUP_SCREEN=failure` self-validation path).
+    /// `at` is the bar value the install stopped at, for the header status.
+    Failure { detail: Option<String>, at: u8 },
 }
 
 impl Screen {
@@ -123,7 +129,10 @@ pub fn screen_from_env() -> Screen {
         },
         "installing" => Screen::Installing { progress: 45 },
         "done" => Screen::Done,
-        "failure" | "error" => Screen::Failure,
+        "failure" | "error" => Screen::Failure {
+            detail: None,
+            at: 62,
+        },
         _ => Screen::install_default(),
     }
 }
@@ -145,10 +154,19 @@ pub enum Message {
     ToggleStartMenu,
     /// A "desktop shortcut" toggle press.
     ToggleDesktop,
-    /// The Install button was pressed -- begin the (simulated) install.
+    /// The Install button was pressed -- begin the real install.
     StartInstall,
-    /// A tick of the install progress timer.
-    Tick,
+    /// A real install step finished off the UI thread. `jobs` is the plan and
+    /// `index` the job that just ran; `result` is its outcome. On `Ok` the bar
+    /// advances and the next job dispatches (or `InstallSucceeded` fires); on
+    /// `Err` the installer routes to the Failure screen.
+    InstallStepped {
+        jobs: Vec<Job>,
+        index: usize,
+        result: Result<(), String>,
+    },
+    /// Every job completed -- switch to the Done screen.
+    InstallSucceeded,
     /// The "Open whspr" button was pressed.
     OpenApp,
     /// The "Retry" button was pressed -- back to the landing screen.
