@@ -14,6 +14,12 @@ use crate::screen::{Screen, SettingsSection};
 pub enum Message {
     /// The Hub window finished opening; `window::open` resolves with its id.
     HubOpened(window::Id),
+    /// The primary monitor's logical size, measured right after the Hub
+    /// window opens (`window::monitor_size`). Drives shrinking + re-centering
+    /// the window when the default size doesn't fit a small display; `None`
+    /// (e.g. headless) leaves the default in place. See
+    /// `crate::hub::fit_window_size`.
+    HubMonitorMeasured(Option<iced::Size>),
     /// The user picked a language override label in the Hub's `pick_list`
     /// ("auto" means no override, i.e. `config.language = None`). Persisted
     /// immediately -- see `crate::app::persist_config`.

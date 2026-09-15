@@ -94,8 +94,29 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.tray.is_none() {
                 state.tray = crate::tray::Handle::create(state.pipeline_state);
             }
-            Task::none()
+            // Measure the primary monitor now the window exists, so a display
+            // too small for the default size gets the window shrunk + re-
+            // centered to fit (see `Message::HubMonitorMeasured`). No-op on
+            // roomy monitors, where `Position::Centered` already placed it.
+            window::monitor_size(id).map(Message::HubMonitorMeasured)
         }
+        Message::HubMonitorMeasured(monitor) => match (state.hub_window, monitor) {
+            (Some(id), Some(monitor)) => {
+                let fit = crate::hub::fit_window_size(monitor);
+                if fit.width < crate::hub::DEFAULT_WINDOW_SIZE.width
+                    || fit.height < crate::hub::DEFAULT_WINDOW_SIZE.height
+                {
+                    // The primary monitor can't hold the full default size:
+                    // shrink to fit and re-center so the window opens fully
+                    // on-screen instead of overhanging an edge.
+                    let origin = crate::hub::centered_origin(monitor, fit);
+                    Task::batch([window::resize(id, fit), window::move_to(id, origin)])
+                } else {
+                    Task::none()
+                }
+            }
+            _ => Task::none(),
+        },
         Message::LanguageChanged(label) => {
             state.config.language = config_ui::language_from_label(&label);
             persist_config(state);
