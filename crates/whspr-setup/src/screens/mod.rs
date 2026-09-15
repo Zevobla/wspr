@@ -28,7 +28,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         } => install::view(*expanded, *autostart, *start_menu, *desktop),
         Screen::Installing { progress } => installing::view(*progress),
         Screen::Done => done::view(),
-        Screen::Failure => failure::view(),
+        Screen::Failure { detail, at } => failure::view(detail.as_deref(), *at),
     };
     container(content)
         .width(Length::Fill)

@@ -5,10 +5,15 @@
 //! state, drawn on a fixed 900x620 borderless window with a single close
 //! mark and a draggable header band (the same borderless-window idiom the
 //! app's Hub uses on Windows; see `whspr-app`'s `hub::window_settings` and
-//! `hub::caption_windows`). The install actions themselves (file copy,
-//! shortcuts, registry) are **simulated** this pass -- a timed progress that
-//! walks the steps -- behind a clearly marked seam (`begin_install`) so the
-//! real Windows logic can slot in later without touching the UI.
+//! `hub::caption_windows`). Pressing Install performs the **real** install
+//! (see `crate::install`): it copies the embedded app payload
+//! (`crate::payload`) into `%LOCALAPPDATA%\whspr`, creates the requested
+//! Start-menu / Desktop shortcuts, and writes the `HKCU\...\Run` autostart
+//! value. `begin_install` drives those steps off the UI thread via
+//! `Task::perform`, advancing the progress bar through the genuine steps and
+//! routing any error to the Failure screen. The Windows-specific work is
+//! `#[cfg(target_os = "windows")]`; off Windows (the macOS gate) the same UI
+//! runs a no-op walk so the crate still builds.
 //!
 //! Built on `iced::daemon` (like `whspr-app`'s `crate::app`) rather than
 //! `iced::application`: `daemon`'s `view` is handed the `window::Id`, which
@@ -21,7 +26,9 @@
 // macOS/Linux.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod install;
 mod logo;
+mod payload;
 mod screens;
 mod screenshot;
 mod state;
@@ -30,6 +37,7 @@ mod widgets;
 
 use iced::{window, Element, Size, Task};
 
+use install::Job;
 use state::{Message, Screen, State};
 
 /// The window title (shown in the taskbar / alt-tab; the frameless window
@@ -40,9 +48,10 @@ const TITLE: &str = "Install whspr";
 /// maximized.
 const WINDOW_SIZE: Size = Size::new(900.0, 620.0);
 
-/// The simulated install advances one percent every `TICK` and cycles the
-/// step label at the 25/50/75 thresholds, so a full 0->100 run takes ~2.5s.
-const TICK: std::time::Duration = std::time::Duration::from_millis(25);
+/// A short, deliberate pause before each real install step so the progress
+/// bar advances legibly rather than snapping through the (fast) file writes.
+/// The steps themselves are real; this only paces them.
+const STEP_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 fn main() -> iced::Result {
     iced::daemon(boot, update, view)
@@ -100,10 +109,15 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(id) => window::drag(id),
             None => Task::none(),
         },
-        // The lone close mark, and "Open whspr" on the Done screen, both
-        // exit cleanly for now. `// TODO: launch installed app` -- OpenApp
-        // will spawn the installed binary once the real install lands.
-        Message::Close | Message::OpenApp => iced::exit(),
+        // The lone close mark just exits.
+        Message::Close => iced::exit(),
+        // "Open whspr" on the Done screen launches the freshly installed app
+        // (Windows; a no-op elsewhere) then exits. Best-effort -- a launch
+        // failure still closes the installer rather than trapping the user.
+        Message::OpenApp => {
+            let _ = install::launch_installed_app();
+            iced::exit()
+        }
         Message::ToggleOptions => {
             if let Screen::Install { expanded, .. } = &mut state.screen {
                 *expanded = !*expanded;
@@ -128,17 +142,38 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
-        Message::StartInstall => {
-            begin_install(state);
-            Task::none()
-        }
-        Message::Tick => {
-            if let Screen::Installing { progress } = &mut state.screen {
-                *progress = progress.saturating_add(1);
-                if *progress >= 100 {
-                    state.screen = Screen::Done;
+        Message::StartInstall => begin_install(state),
+        Message::InstallStepped {
+            jobs,
+            index,
+            result,
+        } => match result {
+            // The job at `index` succeeded: advance the bar to the next job's
+            // position (or 100% once the plan is exhausted) and dispatch it.
+            Ok(()) => {
+                let next = index + 1;
+                if let Screen::Installing { progress } = &mut state.screen {
+                    *progress = jobs.get(next).map_or(100, |job| job.start_progress());
                 }
+                dispatch(jobs, next)
             }
+            // A real write failed: capture where the bar stopped and surface
+            // the error on the Failure screen. No panic, nothing half-applied
+            // is retried automatically.
+            Err(error) => {
+                let at = match &state.screen {
+                    Screen::Installing { progress } => *progress,
+                    _ => 0,
+                };
+                state.screen = Screen::Failure {
+                    detail: Some(error),
+                    at,
+                };
+                Task::none()
+            }
+        },
+        Message::InstallSucceeded => {
+            state.screen = Screen::Done;
             Task::none()
         }
         Message::Retry => {
@@ -163,36 +198,61 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     }
 }
 
-/// Kicks off the (simulated) install: switch to the progress screen at 0%.
-///
-/// **Real-install seam.** Today this only flips the screen; the
-/// `Message::Tick` subscription then walks the bar to 100%. The real Windows
-/// implementation slots in here -- spawn the actual copy/shortcut/registry
-/// work (behind `#[cfg(target_os = "windows")]`) reporting progress back
-/// through the same `Message::Tick`/progress channel, and route a genuine
-/// write error to `Screen::Failure` instead of `Screen::Done`. The three
-/// `Screen::Install` option bools (autostart / start_menu / desktop) are the
-/// inputs that logic will read.
-fn begin_install(state: &mut State) {
-    // TODO: real install -- replace the timed simulation below with the
-    // actual Windows file copy / shortcut creation / registry writes,
-    // reporting progress through `Message::Tick`.
-    state.screen = Screen::Installing { progress: 0 };
+/// Kicks off the **real** install. Reads the three option toggles off the
+/// landing screen, builds the ordered job plan (see `crate::install::plan`),
+/// switches to the progress screen at the first job's position, and dispatches
+/// that job off the UI thread. Each job then chains to the next via
+/// `Message::InstallStepped`, ending in `Message::InstallSucceeded` (Done) or a
+/// routed error (Failure). Only ever reached from the Install button press --
+/// never from screen selection -- so the screenshot harness performs no
+/// install.
+fn begin_install(state: &mut State) -> Task<Message> {
+    let (autostart, start_menu, desktop) = match &state.screen {
+        Screen::Install {
+            autostart,
+            start_menu,
+            desktop,
+            ..
+        } => (*autostart, *start_menu, *desktop),
+        // Install can only be pressed from the landing screen.
+        _ => return Task::none(),
+    };
+
+    let jobs = install::plan(autostart, start_menu, desktop);
+    let first = jobs.first().map_or(0, |job| job.start_progress());
+    state.screen = Screen::Installing { progress: first };
+    dispatch(jobs, 0)
 }
 
-/// Drives the simulated install and the headless screenshot. The install
-/// timer is suppressed while a screenshot is pending so the captured frame
-/// stays at the fixed progress the harness seeded (see
-/// `crate::state::screen_from_env`).
+/// Runs job `index` of `jobs` off the UI thread, reporting its outcome as
+/// `Message::InstallStepped`. When the plan is exhausted, emits
+/// `Message::InstallSucceeded` instead.
+fn dispatch(jobs: Vec<Job>, index: usize) -> Task<Message> {
+    match jobs.get(index).copied() {
+        None => Task::done(Message::InstallSucceeded),
+        Some(job) => Task::perform(run_job(job), move |result| Message::InstallStepped {
+            jobs,
+            index,
+            result,
+        }),
+    }
+}
+
+/// Performs a single install `job` on a blocking thread (so a slow disk write
+/// never stalls iced's executor), after a short `STEP_DELAY` pace so the bar
+/// reads legibly. Real work on Windows; a no-op elsewhere (see
+/// `crate::install::perform`).
+async fn run_job(job: Job) -> Result<(), String> {
+    tokio::time::sleep(STEP_DELAY).await;
+    tokio::task::spawn_blocking(move || install::perform(job))
+        .await
+        .map_err(|e| format!("install step failed to run: {e}"))?
+}
+
+/// Drives the headless screenshot. The real install advances itself through
+/// `Task`s (`crate::dispatch`), so no timer subscription is needed.
 fn subscription(state: &State) -> iced::Subscription<Message> {
-    let ticking = matches!(state.screen, Screen::Installing { .. })
-        && state.screenshot_path.is_none();
-    let install = if ticking {
-        iced::time::every(TICK).map(|_| Message::Tick)
-    } else {
-        iced::Subscription::none()
-    };
-    iced::Subscription::batch([install, screenshot::subscription(state)])
+    screenshot::subscription(state)
 }
 
 fn view(state: &State, _window: window::Id) -> Element<'_, Message> {
