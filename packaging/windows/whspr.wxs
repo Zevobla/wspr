@@ -56,8 +56,8 @@
          exe.
 
          The four sherpa/onnxruntime DLLs are x64-ONLY. On aarch64 (Windows-on-
-         ARM) whspr-app is self-contained -- sherpa is cfg'd out and openmp is
-         off -- so scripts/bundle-windows.ps1 stages ZERO DLLs there. Gating
+         ARM) whspr-app is self-contained (sherpa is cfg'd out and openmp is
+         off), so scripts/bundle-windows.ps1 stages ZERO DLLs there. Gating
          these components on $(sys.BUILDARCH) (the value of `wix build -arch`)
          keeps the x64 MSI byte-for-byte identical while letting the SAME .wxs
          build for `-arch arm64` without failing on absent DLL sources. -->
