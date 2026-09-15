@@ -216,6 +216,20 @@ fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
     .on_press(Message::LinkImportCancel);
 
     let importing = li.importing.is_some();
+    // A quieter, outlined sibling to the note-desk confirm: transcribes the
+    // audio straight into the Dictate transcript + History instead of building
+    // a note (see `crate::link_import::start_transcribe_to_dictate`).
+    let transcribe = button(
+        text("Transcribe to Dictate \u{2192}")
+            .size(type_scale::LABEL_LARGE.size)
+            .font(type_scale::LABEL_LARGE.font()),
+    )
+    .padding([spacing::SM, spacing::LG])
+    .style(move |_theme, status| styles::button::outlined(scheme, status))
+    .on_press_maybe(
+        (li.media.is_some() && !importing).then_some(Message::LinkImportTranscribeToDictate),
+    );
+
     let confirm = button(
         text(if importing {
             "Importing\u{2026}"
@@ -230,7 +244,7 @@ fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a,
     .on_press_maybe((li.media.is_some() && !importing).then_some(Message::LinkImportConfirm));
 
     container(
-        row![note, cancel, confirm]
+        row![note, cancel, transcribe, confirm]
             .spacing(spacing::MD)
             .align_y(Alignment::Center),
     )
