@@ -15,6 +15,12 @@
 //! the headless screenshot self-validation (`crate::screenshot`) needs to
 //! capture the window.
 
+// A frameless GUI installer: never attach a console. On Windows the default
+// subsystem is "console", which pops a stray terminal alongside the window;
+// force the "windows" subsystem so the installer launches clean. Inert on
+// macOS/Linux.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod logo;
 mod screens;
 mod screenshot;
