@@ -12,15 +12,24 @@ use whspr_core::testkit::MockDiarizer;
 use whspr_core::Diarizer;
 use whspr_diarize::SherpaDiarizer;
 
-/// Builds a diarization backend from config and command-line flags, falling
-/// back to `MockDiarizer` when no model directory is available from
-/// `--model-dir`, the config file's `[speaker].model_dir`, or the
-/// `SPEAKER_MODEL_DIR` environment variable (see
-/// `SherpaDiarizer::resolve_model_dir`) -- mirrors `main::build_asr_backend`'s
-/// "explicit opt-in, else a deterministic default" reasoning: a real
-/// `SherpaDiarizer` needs model files that aren't guaranteed present (whspr
-/// is bring-your-own-model, so nothing provisions them), so it's never
-/// constructed unless a model directory is available from *some* source.
+/// The opt-in env var that swaps in the synthetic `MockDiarizer`. It exists
+/// only so the deterministic diarize integration tests (speaker
+/// matching/persistence, JSON output shape) have a backend that needs no
+/// model files; a real user never sets it, and when it *is* set the command
+/// prints a loud "results are FABRICATED" warning to stderr so mock output is
+/// never mistaken for real diarization.
+const MOCK_DIARIZER_ENV: &str = "WHSPR_DIARIZE_MOCK";
+
+/// Builds a diarization backend from config and command-line flags. When no
+/// model directory is available from `--model-dir`, the config file's
+/// `[speaker].model_dir`, or the `SPEAKER_MODEL_DIR` environment variable
+/// (see `SherpaDiarizer::resolve_model_dir`), this *refuses* with an error
+/// rather than fabricating results: whspr is bring-your-own-model, so nothing
+/// provisions the speaker models, and a real `SherpaDiarizer` needs them.
+/// Silently falling back to a synthetic `MockDiarizer` would print invented
+/// speaker turns as if they were real, so the command errors out instead --
+/// unless the explicit `WHSPR_DIARIZE_MOCK` test hook is set (see
+/// [`MOCK_DIARIZER_ENV`]), which opts in loudly with a stderr warning.
 ///
 /// The embedding model itself is never hardcoded either: `--embedding`
 /// (falling back to `config.speaker.embedding_model`) picks a
@@ -48,7 +57,19 @@ fn build_diarizer(
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             Ok(Box::new(diarizer))
         }
-        None => Ok(Box::new(MockDiarizer::default())),
+        None if std::env::var_os(MOCK_DIARIZER_ENV).is_some() => {
+            eprintln!(
+                "WARNING: {MOCK_DIARIZER_ENV} is set -- using a synthetic mock diarizer. \
+                 Speaker turns are FABRICATED, not real. This is a test/development \
+                 affordance; unset it for real diarization."
+            );
+            Ok(Box::new(MockDiarizer::default()))
+        }
+        None => anyhow::bail!(
+            "no speaker model available: speaker diarization needs a model directory. \
+             Pass --model-dir, set [speaker].model_dir in the config, or set the \
+             SPEAKER_MODEL_DIR environment variable, then try again."
+        ),
     }
 }
 
@@ -159,6 +180,32 @@ mod tests {
         assert!(
             err.to_string().contains("disabled"),
             "expected a disabled-feature error, got: {err}"
+        );
+    }
+
+    /// With no model directory resolvable from any source, `build_diarizer`
+    /// must refuse rather than fall back to a synthetic `MockDiarizer` and
+    /// print invented speaker turns as if they were real.
+    #[test]
+    fn build_diarizer_refuses_without_a_model() {
+        // Clear the env source so `resolve_model_dir` sees no directory at all
+        // (the flag and config default are both None below), and clear the
+        // mock opt-in so we exercise the refusal, not the mock hook.
+        std::env::remove_var("SPEAKER_MODEL_DIR");
+        std::env::remove_var(MOCK_DIARIZER_ENV);
+        let config = whspr_config::Config::default();
+
+        // `Box<dyn Diarizer>` isn't `Debug`, so `.expect_err` won't compile;
+        // check `is_err()` then pull the error out to assert on its message.
+        let result = build_diarizer(&config, None, None);
+        assert!(
+            result.is_err(),
+            "build_diarizer should refuse with no model directory"
+        );
+        let err = result.err().unwrap();
+        assert!(
+            err.to_string().contains("no speaker model"),
+            "expected a no-model refusal, got: {err}"
         );
     }
 }

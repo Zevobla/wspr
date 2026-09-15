@@ -20,10 +20,11 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
         .unwrap()
         // SPEAKER_MODEL_DIR (see SherpaDiarizer::resolve_model_dir) is a
         // bring-your-own-model env var a developer's own shell might have
-        // set; clear it so this test exercises the MockDiarizer fallback
-        // it's named for, regardless of what environment `cargo test`
-        // happens to run in.
+        // set; clear it so no real backend is attempted, then opt into the
+        // deterministic MockDiarizer via the explicit WHSPR_DIARIZE_MOCK test
+        // hook (production refuses without a model rather than mocking).
         .env_remove("SPEAKER_MODEL_DIR")
+        .env("WHSPR_DIARIZE_MOCK", "1")
         .args([
             "diarize",
             fixture_path.to_str().unwrap(),
@@ -84,6 +85,7 @@ fn diarize_persists_speaker_matches_across_runs() {
     let output_1 = Command::cargo_bin("whspr")
         .unwrap()
         .env_remove("SPEAKER_MODEL_DIR")
+        .env("WHSPR_DIARIZE_MOCK", "1")
         .args([
             "diarize",
             fixture_path_1.to_str().unwrap(),
@@ -116,6 +118,7 @@ fn diarize_persists_speaker_matches_across_runs() {
     let output_2 = Command::cargo_bin("whspr")
         .unwrap()
         .env_remove("SPEAKER_MODEL_DIR")
+        .env("WHSPR_DIARIZE_MOCK", "1")
         .args([
             "diarize",
             fixture_path_2.to_str().unwrap(),
