@@ -118,3 +118,62 @@ if ($LASTEXITCODE -ne 0) {
 # The sherpa-rs-sys build script drops the ML DLLs into this same profile dir.
 $ProfileDir = Join-Path $RepoRoot (Join-Path 'target' (Join-Path $Target $Configuration))
 Write-Host "==> built into: $ProfileDir"
+
+# --- staging tree ----------------------------------------------------------
+# Everything the portable zip ships lives under a single top-level "whspr"
+# folder, so the archive extracts to whspr\whspr-app.exe (with its DLLs beside
+# it), mirroring the macOS bundler's --keepParent layout.
+if ([string]::IsNullOrWhiteSpace($OutDir)) {
+    $OutDir = Join-Path $RepoRoot 'dist'
+}
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+
+$StageDir = Join-Path $OutDir 'whspr'
+if (Test-Path -LiteralPath $StageDir) {
+    Remove-Item -LiteralPath $StageDir -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
+
+# The executable.
+$ExeName = 'whspr-app.exe'
+$ExeSrc  = Join-Path $ProfileDir $ExeName
+if (-not (Test-Path -LiteralPath $ExeSrc -PathType Leaf)) {
+    throw "expected binary not found at $ExeSrc"
+}
+Copy-Item -LiteralPath $ExeSrc -Destination (Join-Path $StageDir $ExeName)
+Write-Host "==> staged $ExeName"
+
+# --- DLL adjacency (load-time-linked ML libs) ------------------------------
+# whspr-app load-time links these sherpa/onnxruntime SHARED libraries. Windows
+# has no rpath, so whspr-app.exe will NOT start unless all four sit BESIDE it.
+# The sherpa-rs-sys build script drops them into the profile dir on a real
+# build; we copy every one next to the exe. A missing DLL is a hard error --
+# shipping a partial bundle would crash the app on launch before a window ever
+# shows, and the headless build gate never launches the GUI to catch it.
+$Dlls = @(
+    'onnxruntime.dll',
+    'onnxruntime_providers_shared.dll',
+    'sherpa-onnx-c-api.dll',
+    'sherpa-onnx-cxx-api.dll'
+)
+foreach ($dll in $Dlls) {
+    $dllSrc = Join-Path $ProfileDir $dll
+    if (-not (Test-Path -LiteralPath $dllSrc -PathType Leaf)) {
+        throw "required DLL '$dll' not found at $dllSrc; refusing to ship a broken bundle (the sherpa-rs-sys build script drops it into the target profile dir on a real build)."
+    }
+    Copy-Item -LiteralPath $dllSrc -Destination (Join-Path $StageDir $dll)
+    Write-Host "    + $dll"
+}
+
+# --- portable zip ----------------------------------------------------------
+$Zip = Join-Path $OutDir "whspr-$Version-$Arch.zip"
+if (Test-Path -LiteralPath $Zip) {
+    Remove-Item -LiteralPath $Zip -Force
+}
+Write-Host "==> zipping -> $Zip"
+Compress-Archive -Path $StageDir -DestinationPath $Zip -CompressionLevel Optimal
+
+Write-Host ''
+Write-Host '==> done. Outputs:'
+Write-Host "      staging: $StageDir"
+Write-Host "      zip:     $Zip"
