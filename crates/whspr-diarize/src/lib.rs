@@ -70,13 +70,19 @@
 //! which must stay offline and model-free).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
-
-use sherpa_rs::diarize::{Diarize, DiarizeConfig};
-use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
 
 use whspr_config::SpeakerEmbeddingChoice;
 use whspr_core::{AudioBuffer, Diarizer, Result, SpeakerTurn, WhsprError};
+
+// sherpa has no prebuilt for aarch64-windows, so its imports (and the
+// `Mutex`es that only guard sherpa handles) live only in the sherpa-backed
+// arm — keeping them at file top would be unused imports on the stub arm.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use std::sync::{Mutex, MutexGuard};
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use sherpa_rs::diarize::{Diarize, DiarizeConfig};
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
 
 /// Filename `model_dir` must contain for the pyannote segmentation model.
 /// There's only one segmentation model in use, so (unlike the embedding
@@ -86,6 +92,7 @@ pub const SEGMENTATION_MODEL_FILENAME: &str = "segmentation.onnx";
 /// `whspr_core::Diarizer` backed by sherpa-onnx (via `sherpa-rs`). See the
 /// module docs for exactly which model files it needs and how it derives
 /// per-turn embeddings.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 #[derive(Debug)]
 pub struct SherpaDiarizer {
     diarize: Mutex<Diarize>,
@@ -111,7 +118,13 @@ impl SherpaDiarizer {
     pub fn resolve_model_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
         explicit.or_else(|| std::env::var_os("SPEAKER_MODEL_DIR").map(PathBuf::from))
     }
+}
 
+/// The full, sherpa-onnx-backed constructor and clip-embedding path. Compiled
+/// on every target except aarch64-windows (where sherpa ships no prebuilt);
+/// the stub `impl` for that target lives in the companion `#[cfg]` block below.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+impl SherpaDiarizer {
     /// Loads the segmentation model, and the embedding model named by
     /// `embedding_choice`, from `model_dir`. See the module doc comment for
     /// the exact filenames expected.
@@ -203,7 +216,11 @@ impl SherpaDiarizer {
 
 /// Clamps a turn's `[start_secs, end_secs)` span to a valid sample range
 /// within `total_samples` at `sample_rate`. Pure/deterministic so it can be
-/// unit-tested without touching the sherpa FFI boundary.
+/// unit-tested without touching the sherpa FFI boundary. Kept shared across
+/// targets (its unit tests run everywhere), but only *called* from the
+/// sherpa-backed `diarize`, so it is dead outside those tests on the
+/// aarch64-windows stub arm.
+#[cfg_attr(all(windows, target_arch = "aarch64"), allow(dead_code))]
 fn segment_sample_range(
     start_secs: f32,
     end_secs: f32,
@@ -222,6 +239,7 @@ fn segment_sample_range(
     (start, end)
 }
 
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 impl Diarizer for SherpaDiarizer {
     fn diarize(&self, audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>> {
         let sample_rate = audio.sample_rate;
@@ -353,6 +371,10 @@ mod tests {
         assert!(matches!(err, WhsprError::Diarize(_)));
     }
 
+    // Asserts on the sherpa-backed `new`'s per-file "not found" messages, so
+    // it only applies where sherpa is compiled (the stub `new` returns a
+    // single "unavailable on aarch64-windows" error instead).
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[test]
     fn new_rejects_model_dir_missing_both_files() {
         let dir = tempfile::tempdir().unwrap();
@@ -366,6 +388,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[test]
     fn new_rejects_model_dir_missing_embedding_file_only() {
         let dir = tempfile::tempdir().unwrap();
@@ -384,6 +407,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[test]
     fn new_looks_up_the_selected_embedding_choice_filename() {
         let dir = tempfile::tempdir().unwrap();
