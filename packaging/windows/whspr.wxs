@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  whspr.wxs: WiX (v4/v5) definition for the whspr Windows installer (MSI).
+
+  A minimal PER-USER install: whspr-app.exe and the four sherpa/onnxruntime
+  DLLs it load-time links are installed TOGETHER into %LOCALAPPDATA%\whspr,
+  with a per-user Start-menu shortcut.
+
+  Why per-user: whspr is a user-level dictation tool that needs no admin
+  rights. A per-user MSI (Scope="perUser") installs into %LOCALAPPDATA% and
+  the per-user Start menu without elevation.
+
+  Why the four DLLs ship alongside the exe: Windows has no rpath, so
+  whspr-app.exe will not start unless onnxruntime.dll,
+  onnxruntime_providers_shared.dll, sherpa-onnx-c-api.dll and
+  sherpa-onnx-cxx-api.dll sit BESIDE it. They live in the same INSTALLFOLDER.
+
+  SINGLE-OWNER AUTOSTART RULE: this installer deliberately writes NO "Run"
+  autostart registry key. Launch-at-login is owned SOLELY by the app's own
+  in-app toggle (a separate crate feature); an installer-written Run key would
+  create a second owner of the same setting that silently disagrees with the
+  toggle's state.
+
+  Built in CI with the WiX toolset (`wix build`); see
+  .github/workflows/release.yml. Two preprocessor variables are supplied on
+  the command line with `-d`:
+    Version    the bare X.Y.Z product version (from the release tag).
+    BundleDir  the bundle staging dir holding the exe + the four DLLs
+               (scripts/bundle-windows.ps1 stages them into dist\whspr).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="whspr"
+      Manufacturer="Zevobla"
+      Version="$(var.Version)"
+      UpgradeCode="81BBD4A2-1211-4104-980F-BCD110FA5D92"
+      Scope="perUser"
+      Compressed="yes">
+
+    <!-- Block downgrades; replace an older per-user install in place. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of whspr is already installed." />
+
+    <!-- Single embedded cabinet, so the MSI is one self-contained file. -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- %LOCALAPPDATA%\whspr -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="whspr" />
+    </StandardDirectory>
+
+    <!-- Per-user Start menu (target of the shortcut below). -->
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- Payload: the exe + the four load-time-linked ML DLLs, installed
+         together into INSTALLFOLDER so the DLLs sit beside the exe. -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component>
+        <File Source="$(var.BundleDir)\whspr-app.exe" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="$(var.BundleDir)\onnxruntime.dll" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="$(var.BundleDir)\onnxruntime_providers_shared.dll" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="$(var.BundleDir)\sherpa-onnx-c-api.dll" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Source="$(var.BundleDir)\sherpa-onnx-cxx-api.dll" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Per-user Start-menu shortcut. Its own component with an HKCU registry
+         keypath is the correct MSI form for a per-user, non-advertised
+         shortcut (it gives the installer a per-user resource to track). The
+         shortcut sits directly in the Start menu root, so no RemoveFolder is
+         needed. -->
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+      <Shortcut Id="whsprShortcut"
+                Name="whspr"
+                Target="[INSTALLFOLDER]whspr-app.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\Zevobla\whspr"
+                     Name="installed"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="whspr" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

@@ -128,3 +128,203 @@ jobs:
           files: |
             dist/whspr-*-macos.dmg
             dist/whspr-*-macos.zip
+
+  # release-windows: portable zip + MSI installer for win-x64.
+  #
+  # DORMANT (same as .github/workflows/windows.yml): this job cannot run until
+  # GitHub Actions billing is restored on this repo. It is authored correctly
+  # for when it does run. Nix-free: like windows.yml it provisions a native
+  # Windows/MSVC toolchain, libclang and the pinned Archivo faces directly --
+  # the Archivo fetch+hash-verify+ARCHIVO_DIR steps are reused verbatim.
+  release-windows:
+    runs-on: windows-latest
+
+    # Use PowerShell Core for every `run:` step so hash verification, the
+    # $GITHUB_ENV/$GITHUB_OUTPUT writes, and the bundle script behave
+    # identically regardless of the runner's default shell.
+    defaults:
+      run:
+        shell: pwsh
+
+    # Authenticode signing is OPTIONAL, gated exactly like release-macos'
+    # signing: the signtool step runs only if this secret is set on the repo.
+    # GitHub's `secrets` context can't be used in `if:` directly, so it's
+    # surfaced as job env and the signing step gates on
+    # `env.WINDOWS_CERTIFICATE != ''`. Absent -> ship UNSIGNED.
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PWD: ${{ secrets.WINDOWS_CERTIFICATE_PWD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable) with the MSVC target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # The whisper-rs / llama-cpp-2 C/C++ tree is a slow first compile;
+      # caching the target dir and registry keeps re-runs cheap.
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-win-x64
+
+      # whisper-rs and llama-cpp-2 run bindgen, which needs libclang.
+      # windows-latest ships LLVM at C:\Program Files\LLVM; MSVC (VS2022) and
+      # CMake are preinstalled. Export LIBCLANG_PATH for the later build step.
+      - name: Point bindgen at libclang
+        run: |
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # crates/whspr-app/build.rs panics unless ARCHIVO_DIR holds the three
+      # static Archivo faces. Nix fetches them by content hash for the macOS
+      # build; here we fetch them at runtime and verify the SAME SHA-256s.
+      # The .ttf files are NOT committed (see .gitignore) and there is no
+      # build.rs network fetch -- the faces exist only for this job.
+      - name: Provide Archivo faces and set ARCHIVO_DIR
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Expected digests are Nix SRI base64: the raw 32-byte SHA-256,
+          # base64-encoded. Get-FileHash returns HEX, which would never
+          # compare equal to these -- so below we hash the file to raw bytes
+          # and base64-encode THOSE, producing a value directly comparable to
+          # the SRI base64 (no hex<->b64 conversion, no room for an
+          # encoding-mismatch false pass).
+          $faces = @(
+            @{ Name = 'Archivo-Regular.ttf';   Sri = 'Wfv9ipu0EwG/6VDnsJf9QtUq8iSgd2HiwbLJWaTJz5o=' },
+            @{ Name = 'Archivo-SemiBold.ttf';  Sri = 'ZZi27YFhWHZ6djO9+wHXja9UyrTNTZ08wM/ZlfRyMIM=' },
+            @{ Name = 'Archivo-ExtraBold.ttf'; Sri = 'n/9nkirivDdqnlxtZE7r+MWxf2Kg845fAW5LfjkDZi8=' }
+          )
+          $baseUrl = 'https://raw.githubusercontent.com/Omnibus-Type/Archivo/master/fonts/ttf'
+
+          $dir = Join-Path $env:RUNNER_TEMP 'archivo'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+          foreach ($face in $faces) {
+            $dest = Join-Path $dir $face.Name
+            $url  = "$baseUrl/$($face.Name)"
+            Write-Host "Downloading $url"
+            Invoke-WebRequest -Uri $url -OutFile $dest
+
+            $bytes  = [System.IO.File]::ReadAllBytes($dest)
+            $sha    = [System.Security.Cryptography.SHA256]::Create()
+            try {
+              $actual = [Convert]::ToBase64String($sha.ComputeHash($bytes))
+            } finally {
+              $sha.Dispose()
+            }
+
+            if ($actual -ne $face.Sri) {
+              throw "SHA-256 mismatch for $($face.Name): expected $($face.Sri), got $actual"
+            }
+            Write-Host "Verified $($face.Name)  ($actual)"
+          }
+
+          "ARCHIVO_DIR=$dir" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Determine version from tag
+        id: version
+        # v0.1.0 -> 0.1.0
+        run: |
+          "version=$($env:GITHUB_REF_NAME -replace '^v','')" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Builds whspr-app and stages whspr-app.exe + the four sherpa/onnxruntime
+      # DLLs into dist\whspr, then zips dist\whspr-<version>-x64.zip.
+      - name: Bundle portable zip
+        run: ./scripts/bundle-windows.ps1 -Version "${{ steps.version.outputs.version }}"
+
+      # Build the per-user MSI from packaging/windows/whspr.wxs with the WiX
+      # toolset (installed as a dotnet global tool). BundleDir points WiX at the
+      # exe + DLLs the bundle step just staged; Version stamps the ProductVersion.
+      - name: Build MSI (WiX)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+          $version   = '${{ steps.version.outputs.version }}'
+          $bundleDir = (Resolve-Path 'dist/whspr').Path
+          wix build packaging/windows/whspr.wxs `
+            -arch x64 `
+            -d Version=$version `
+            -d "BundleDir=$bundleDir" `
+            -o "dist/whspr-$version-x64.msi"
+
+      # Authenticode signing is OPTIONAL (mirrors release-macos): runs only when
+      # the cert secret is present. Signs the staged exe (then rebuilds the zip
+      # so the signed exe ships) and the MSI. Absent -> both stay UNSIGNED and
+      # SmartScreen warns on first run (see the release notes below).
+      - name: Sign with Authenticode (optional; only when the cert secret is present)
+        if: env.WINDOWS_CERTIFICATE != ''
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+
+          # Decode the base64 PFX secret to a temporary file.
+          $pfx = Join-Path $env:RUNNER_TEMP 'whspr-cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+
+          # Locate the newest signtool.exe from the installed Windows SDK(s).
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw 'signtool.exe not found in the Windows SDK' }
+
+          $signArgs = @(
+            'sign', '/f', $pfx, '/p', $env:WINDOWS_CERTIFICATE_PWD,
+            '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256'
+          )
+
+          # Sign the staged exe, then rebuild the portable zip so the signed
+          # exe ships inside it.
+          & $signtool.FullName @signArgs 'dist\whspr\whspr-app.exe'
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed on the exe (exit $LASTEXITCODE)" }
+          $zip = "dist/whspr-$version-x64.zip"
+          Remove-Item -LiteralPath $zip -Force
+          Compress-Archive -Path 'dist/whspr' -DestinationPath $zip -CompressionLevel Optimal
+
+          # Sign the MSI installer.
+          & $signtool.FullName @signArgs "dist\whspr-$version-x64.msi"
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed on the MSI (exit $LASTEXITCODE)" }
+
+      - name: Write release notes
+        id: notes
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $lines = @(
+            "## whspr $version (Windows)",
+            '',
+            "Windows (x64) build. Install with ``whspr-$version-x64.msi`` (per-user, no admin), or unzip ``whspr-$version-x64.zip`` and run ``whspr-app.exe`` in place.",
+            ''
+          )
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE)) {
+            $lines += '### Unsigned build'
+            $lines += ''
+            $lines += 'This build is **not Authenticode-signed**, so Windows SmartScreen may warn on first run. Click **More info**, then **Run anyway**.'
+          } else {
+            $lines += 'This build is Authenticode-signed.'
+          }
+          $notes = $lines -join "`n"
+
+          "notes<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $notes       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "EOF"        | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Uploads to the SAME release as release-macos (same tag). `append_body`
+      # adds the Windows notes to the release body instead of replacing the
+      # macOS notes.
+      - name: Add Windows artifacts to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.notes.outputs.notes }}
+          append_body: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/whspr-*-x64.zip
+            dist/whspr-*-x64.msi
