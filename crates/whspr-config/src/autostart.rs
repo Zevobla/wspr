@@ -9,23 +9,25 @@
 //! `Err` the caller can surface (e.g. via the Hub's `last_error`), rather
 //! than a silent no-op that leaves the user thinking the toggle worked.
 //!
-//! Two platforms are implemented:
+//! Three platforms are implemented:
 //! - **macOS**: a LaunchAgent plist at `~/Library/LaunchAgents/<id>.plist`
 //!   with `RunAtLoad`.
 //! - **Linux**: an XDG autostart entry at `~/.config/autostart/whspr.desktop`
 //!   (`directories::BaseDirs::config_dir()` resolves to `~/.config` there).
+//! - **Windows**: a `whspr` value under
+//!   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holding the quoted
+//!   executable path (written via the Windows-only `winreg` crate).
 //!
-//! **Windows is not implemented** -- it needs a `HKCU\...\Run` registry
-//! key, which means either a `winreg`-style crate (a new workspace
-//! dependency) or raw `windows-sys` FFI, neither of which is justified for
-//! one setting. `install_autostart`/`remove_autostart` return a clear
-//! error there instead of pretending to succeed.
-//!
-//! The path-building and file-writing helpers below are deliberately plain
-//! functions (no `#[cfg(target_os = ...)]`), so they're typechecked and
-//! unit-testable on every platform regardless of which one is actually
-//! running -- only the public `install_autostart`/`remove_autostart`
-//! branch on `cfg!(target_os = ...)` at runtime to pick which one to call.
+//! The macOS/Linux path-building and file-writing helpers below are
+//! deliberately plain functions (no `#[cfg(target_os = ...)]`), so they're
+//! typechecked and unit-testable on every platform, and the public
+//! `install_autostart`/`remove_autostart` pick between them with a runtime
+//! `cfg!(target_os = ...)` branch. The Windows arm is the exception: because
+//! `winreg` is a Windows-only crate, its registry code lives behind a
+//! compile-time `#[cfg(target_os = "windows")]` (paired with a stub off
+//! Windows) so it never has to typecheck elsewhere. Its one pure piece --
+//! `run_value_data`, which quotes the exe path -- stays a plain, all-OS
+//! testable helper like the others.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -134,7 +136,7 @@ fn home_dirs() -> Result<directories::BaseDirs> {
 
 fn unsupported_platform_err() -> WhsprError {
     WhsprError::Config(
-        "launch-at-login isn't implemented on this platform yet (only macOS and Linux are supported)"
+        "launch-at-login isn't implemented on this platform yet (only macOS, Linux, and Windows are supported)"
             .into(),
     )
 }
