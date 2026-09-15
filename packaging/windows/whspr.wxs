@@ -51,12 +51,21 @@
     <!-- Per-user Start menu (target of the shortcut below). -->
     <StandardDirectory Id="ProgramMenuFolder" />
 
-    <!-- Payload: the exe + the four load-time-linked ML DLLs, installed
-         together into INSTALLFOLDER so the DLLs sit beside the exe. -->
+    <!-- Payload: the exe, plus (on x64 only) the four load-time-linked ML
+         DLLs, installed together into INSTALLFOLDER so the DLLs sit beside the
+         exe.
+
+         The four sherpa/onnxruntime DLLs are x64-ONLY. On aarch64 (Windows-on-
+         ARM) whspr-app is self-contained -- sherpa is cfg'd out and openmp is
+         off -- so scripts/bundle-windows.ps1 stages ZERO DLLs there. Gating
+         these components on $(sys.BUILDARCH) (the value of `wix build -arch`)
+         keeps the x64 MSI byte-for-byte identical while letting the SAME .wxs
+         build for `-arch arm64` without failing on absent DLL sources. -->
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Component>
         <File Source="$(var.BundleDir)\whspr-app.exe" KeyPath="yes" />
       </Component>
+      <?if $(sys.BUILDARCH) = "x64" ?>
       <Component>
         <File Source="$(var.BundleDir)\onnxruntime.dll" KeyPath="yes" />
       </Component>
@@ -69,6 +78,7 @@
       <Component>
         <File Source="$(var.BundleDir)\sherpa-onnx-cxx-api.dll" KeyPath="yes" />
       </Component>
+      <?endif?>
     </ComponentGroup>
 
     <!-- Per-user Start-menu shortcut. Its own component with an HKCU registry
