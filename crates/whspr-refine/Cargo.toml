@@ -13,10 +13,23 @@ reqwest = { version = "0.13", features = ["json", "rustls", "rustls-native-certs
 serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-llama-cpp-2.workspace = true
 tracing.workspace = true
 mlua = { workspace = true, features = ["luajit", "vendored"] }
 
 [dev-dependencies]
 wiremock.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
+
+# llama-cpp-2 with its default features (incl. openmp) on every target EXCEPT
+# aarch64-windows.
+[target.'cfg(not(all(windows, target_arch = "aarch64")))'.dependencies]
+llama-cpp-2.workspace = true
+
+# aarch64-windows: build llama/ggml WITHOUT OpenMP. llama-cpp-sys-2 sets
+# GGML_OPENMP=ON when the openmp feature is on but only links the OpenMP runtime
+# for "gnu" triples, so clang-cl's __kmpc_*/omp_* symbols go unresolved on
+# windows-msvc. Dropping openmp (ggml then uses its internal threading, like
+# whisper-rs-sys already does) fixes the link with no libomp.dll to ship. `common`
+# is kept (real API feature); android-shared-stdcxx is Android-only, dropped.
+[target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
+llama-cpp-2 = { version = "0.1", default-features = false, features = ["common"] }
