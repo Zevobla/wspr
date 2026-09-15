@@ -17,10 +17,11 @@ set( CMAKE_C_COMPILER_TARGET   ${target} )
 set( CMAKE_CXX_COMPILER_TARGET ${target} )
 
 # clang cc1 flags routed through clang-cl with /clang: so the MSVC-style driver
-# forwards them. NOTE: -march=armv8.7-a matches the dev machine; for broad
-# Windows-on-ARM shipping compatibility consider lowering to the WoA baseline
-# (e.g. armv8.2-a). Verified building/running with armv8.7-a.
-set( arch_c_flags "/clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only" )
+# forwards them. -march=armv8.2-a is the Windows-on-ARM baseline (Cortex-A76 /
+# Snapdragon 8cx and up, plus Apple Silicon), so a shipped arm64 binary runs on
+# every WoA device rather than only recent SoCs -- the dev machine built/ran
+# fine at armv8.7-a, but a release wants the widest ISA floor.
+set( arch_c_flags "/clang:-march=armv8.2-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only" )
 set( warn_c_flags "-Wno-format -Wno-unused-variable -Wno-unused-function -Wno-gnu-zero-variadic-macro-arguments" )
 
 set( CMAKE_C_FLAGS_INIT   "${arch_c_flags} ${warn_c_flags}" )
