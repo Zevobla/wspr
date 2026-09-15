@@ -10,14 +10,20 @@ whspr-core.workspace = true
 # For `SpeakerEmbeddingChoice`: which embedding model to load is a
 # user-facing menu choice (see whspr-config), not a hardcoded filename.
 whspr-config.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# `sherpa-rs-sys 0.6.8` ships NO prebuilt sherpa-onnx native library for
+# `aarch64-pc-windows-msvc` (confirmed on a real ARM VM: "Target
+# aarch64-pc-windows-msvc not found"). So sherpa is pulled on EVERY target
+# EXCEPT that one, where this crate degrades to a stub (see `src/lib.rs`).
 # Not in [workspace.dependencies] (see root Cargo.toml's protocol for adding
 # new deps) — declared directly here. CPU-only: default features minus
 # `tts` (we don't need text-to-speech) and no `cuda`/`directml`.
 # `download-binaries` pulls prebuilt sherpa-onnx native libs instead of
 # compiling the C++ library from source.
+[target.'cfg(not(all(windows, target_arch = "aarch64")))'.dependencies]
 sherpa-rs = { version = "0.6.8", default-features = false, features = [
     "download-binaries",
 ] }
-
-[dev-dependencies]
-tempfile.workspace = true

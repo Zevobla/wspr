@@ -65,18 +65,37 @@
 //!   (sherpa-onnx model zoo, `speaker-recongition-models` release — note the
 //!   upstream release tag's spelling).
 //!
+//! # Platform note: aarch64-windows degradation
+//!
+//! `sherpa-rs-sys 0.6.8` ships no prebuilt sherpa-onnx native library for
+//! `aarch64-pc-windows-msvc`, so on that one target this crate is compiled
+//! *without* sherpa (see `Cargo.toml`'s target-gated dependency).
+//! [`SherpaDiarizer`] keeps its exact public surface there, but its
+//! sherpa-requiring entry points — `new`, `embed_clip`, and its `Diarizer`
+//! impl — return a `WhsprError::Diarize` instead of loading models. Every
+//! other target (macOS, Linux, x86_64-windows) is fully sherpa-backed and
+//! unchanged. Consumers already treat a failed `new(..)` as "no diarization
+//! backend configured", so the degradation is graceful with no caller
+//! changes.
+//!
 //! See `examples/verify.rs` in this crate for a manual, real-model
 //! verification harness (deliberately not part of `cargo test --workspace`,
 //! which must stay offline and model-free).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
-
-use sherpa_rs::diarize::{Diarize, DiarizeConfig};
-use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
 
 use whspr_config::SpeakerEmbeddingChoice;
 use whspr_core::{AudioBuffer, Diarizer, Result, SpeakerTurn, WhsprError};
+
+// sherpa has no prebuilt for aarch64-windows, so its imports (and the
+// `Mutex`es that only guard sherpa handles) live only in the sherpa-backed
+// arm — keeping them at file top would be unused imports on the stub arm.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use std::sync::{Mutex, MutexGuard};
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use sherpa_rs::diarize::{Diarize, DiarizeConfig};
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
 
 /// Filename `model_dir` must contain for the pyannote segmentation model.
 /// There's only one segmentation model in use, so (unlike the embedding
@@ -86,10 +105,23 @@ pub const SEGMENTATION_MODEL_FILENAME: &str = "segmentation.onnx";
 /// `whspr_core::Diarizer` backed by sherpa-onnx (via `sherpa-rs`). See the
 /// module docs for exactly which model files it needs and how it derives
 /// per-turn embeddings.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 #[derive(Debug)]
 pub struct SherpaDiarizer {
     diarize: Mutex<Diarize>,
     embedder: Mutex<EmbeddingExtractor>,
+}
+
+/// aarch64-windows stub of [`SherpaDiarizer`]. `sherpa-rs-sys 0.6.8` ships no
+/// prebuilt sherpa-onnx for `aarch64-pc-windows-msvc`, so on that one target
+/// this placeholder stands in with the identical public surface but no sherpa
+/// backing. It carries an opaque field so it can never be constructed outside
+/// this crate, and `new` (below) never constructs one either — every
+/// sherpa-requiring entry point degrades to a `WhsprError::Diarize`.
+#[cfg(all(windows, target_arch = "aarch64"))]
+#[derive(Debug)]
+pub struct SherpaDiarizer {
+    _private: (),
 }
 
 impl SherpaDiarizer {
@@ -111,7 +143,13 @@ impl SherpaDiarizer {
     pub fn resolve_model_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
         explicit.or_else(|| std::env::var_os("SPEAKER_MODEL_DIR").map(PathBuf::from))
     }
+}
 
+/// The full, sherpa-onnx-backed constructor and clip-embedding path. Compiled
+/// on every target except aarch64-windows (where sherpa ships no prebuilt);
+/// the stub `impl` for that target lives in the companion `#[cfg]` block below.
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+impl SherpaDiarizer {
     /// Loads the segmentation model, and the embedding model named by
     /// `embedding_choice`, from `model_dir`. See the module doc comment for
     /// the exact filenames expected.
@@ -201,9 +239,41 @@ impl SherpaDiarizer {
     }
 }
 
+/// aarch64-windows stub: sherpa-onnx ships no prebuilt for this target, so the
+/// sherpa-requiring entry points degrade to a `WhsprError::Diarize` rather
+/// than existing. `resolve_model_dir` (pure path logic) stays in the shared
+/// `impl` above and is unaffected.
+#[cfg(all(windows, target_arch = "aarch64"))]
+impl SherpaDiarizer {
+    /// Always returns `WhsprError::Diarize`: there is no sherpa-onnx prebuilt
+    /// for aarch64-windows, so no real diarizer can be loaded. Consumers in
+    /// `whspr-app` already treat a failed `new(..)` as "no diarization backend
+    /// configured", so this degrades gracefully with no caller changes.
+    pub fn new(
+        _model_dir: impl AsRef<Path>,
+        _embedding_choice: SpeakerEmbeddingChoice,
+    ) -> Result<Self> {
+        Err(WhsprError::Diarize(
+            "speaker diarization is unavailable on aarch64-windows (sherpa-onnx ships no prebuilt for this target)".into(),
+        ))
+    }
+
+    /// Always returns `WhsprError::Diarize` on aarch64-windows; see
+    /// [`new`](SherpaDiarizer::new).
+    pub fn embed_clip(&self, _audio: &AudioBuffer) -> Result<Vec<f32>> {
+        Err(WhsprError::Diarize(
+            "speaker diarization is unavailable on aarch64-windows (sherpa-onnx ships no prebuilt for this target)".into(),
+        ))
+    }
+}
+
 /// Clamps a turn's `[start_secs, end_secs)` span to a valid sample range
 /// within `total_samples` at `sample_rate`. Pure/deterministic so it can be
-/// unit-tested without touching the sherpa FFI boundary.
+/// unit-tested without touching the sherpa FFI boundary. Kept shared across
+/// targets (its unit tests run everywhere), but only *called* from the
+/// sherpa-backed `diarize`, so it is dead outside those tests on the
+/// aarch64-windows stub arm.
+#[cfg_attr(all(windows, target_arch = "aarch64"), allow(dead_code))]
 fn segment_sample_range(
     start_secs: f32,
     end_secs: f32,
@@ -222,6 +292,7 @@ fn segment_sample_range(
     (start, end)
 }
 
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 impl Diarizer for SherpaDiarizer {
     fn diarize(&self, audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>> {
         let sample_rate = audio.sample_rate;
@@ -274,6 +345,24 @@ impl Diarizer for SherpaDiarizer {
         }
 
         Ok(turns)
+    }
+
+    fn id(&self) -> &'static str {
+        "sherpa"
+    }
+}
+
+/// aarch64-windows stub `Diarizer` impl: `diarize` degrades to a
+/// `WhsprError::Diarize` (there is no sherpa-onnx prebuilt for this target).
+/// Never actually invoked in practice, since `new` cannot construct a
+/// `SherpaDiarizer` on this target — it exists to keep the trait impl present
+/// so the public surface is identical across targets.
+#[cfg(all(windows, target_arch = "aarch64"))]
+impl Diarizer for SherpaDiarizer {
+    fn diarize(&self, _audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>> {
+        Err(WhsprError::Diarize(
+            "speaker diarization is unavailable on aarch64-windows (sherpa-onnx ships no prebuilt for this target)".into(),
+        ))
     }
 
     fn id(&self) -> &'static str {
@@ -353,6 +442,10 @@ mod tests {
         assert!(matches!(err, WhsprError::Diarize(_)));
     }
 
+    // Asserts on the sherpa-backed `new`'s per-file "not found" messages, so
+    // it only applies where sherpa is compiled (the stub `new` returns a
+    // single "unavailable on aarch64-windows" error instead).
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[test]
     fn new_rejects_model_dir_missing_both_files() {
         let dir = tempfile::tempdir().unwrap();
@@ -366,6 +459,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[test]
     fn new_rejects_model_dir_missing_embedding_file_only() {
         let dir = tempfile::tempdir().unwrap();
@@ -384,6 +478,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[test]
     fn new_looks_up_the_selected_embedding_choice_filename() {
         let dir = tempfile::tempdir().unwrap();
