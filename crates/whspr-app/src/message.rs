@@ -323,6 +323,11 @@ pub enum Message {
     LinkImportClipEnd(String),
     /// "Open note desk": runs the chosen import, then enters the note desk.
     LinkImportConfirm,
+    /// "Transcribe to Dictate": downloads the resolved link's audio and runs
+    /// the same ASR pipeline as "Transcribe a file", landing the result in the
+    /// Dictate transcript + History (via [`Message::FileTranscribed`]) rather
+    /// than the note desk. Closes the dialog. Handled in `crate::link_import`.
+    LinkImportTranscribeToDictate,
     /// A `LinkImportConfirm` import finished (boxed like `LinkImportResolved`
     /// for `clippy::result_large_err`): the imported note, or an error.
     LinkImportImported(Result<Box<crate::link_import::ImportedNote>, String>),
