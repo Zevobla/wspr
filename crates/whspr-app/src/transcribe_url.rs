@@ -1,21 +1,24 @@
 //! Transcribe audio fetched from a media URL (YouTube, a podcast, a lecture
-//! link) straight to on-screen text for the Dictate screen's "Transcribe from
-//! URL..." action. This is the file-transcribe flow with a different front
+//! link) straight to on-screen text for the link-import dialog's "Transcribe
+//! to Dictate" action. This is the file-transcribe flow with a different front
 //! door: `whspr_import::download_to_audio` shells out to yt-dlp + ffmpeg to
 //! produce a 16kHz-mono `AudioBuffer`, then the *same* pipeline the file
 //! button and record button use (`crate::transcribe_file::run_transcribe_audio`)
 //! turns it into text. The result is routed back through
 //! `Message::FileTranscribed`, so on-screen display, history, and speaker
-//! attribution are all reused verbatim.
+//! attribution are all reused verbatim. The caller lives in
+//! `crate::link_import::start_transcribe_to_dictate`.
 
 use whspr_config::Config;
 
 use crate::transcribe_file::{run_transcribe_audio, TranscribeOutcome};
 
-/// Downloads the audio-only stream at `url` (anonymously, whole clip),
-/// transcodes it to 16kHz mono, transcribes + refines it with `config`'s
-/// backends, then best-effort deletes the temp WAV `whspr-import` handed back
-/// (the caller owns that file -- see `whspr_import`'s temp-file policy).
+/// Downloads the audio-only stream at `url` (whole clip, using `cookies` from
+/// the user's Privacy setting so gated media resolves the same way the
+/// note-desk import does), transcodes it to 16kHz mono, transcribes + refines
+/// it with `config`'s backends, then best-effort deletes the temp WAV
+/// `whspr-import` handed back (the caller owns that file -- see
+/// `whspr_import`'s temp-file policy).
 ///
 /// Runs entirely off the UI thread via `Task::perform`. Every failure -- a
 /// missing yt-dlp/ffmpeg, a bad URL, a download or inference error -- comes
@@ -23,15 +26,14 @@ use crate::transcribe_file::{run_transcribe_audio, TranscribeOutcome};
 /// and surfaces in the Dictate screen's status line. When the error is a
 /// missing-tool one, a short install hint is prepended so the message reads
 /// legibly to a user who hasn't set the tools up yet.
-// Reserved for a later stream (the note-desk transition reuses this URL
-// fetch+transcribe path). No caller wires it this phase, so allow it to sit
-// unused rather than trip clippy's `-D warnings` dead-code lint.
-#[allow(dead_code)]
-pub async fn run_transcribe_url(url: String, config: Config) -> Result<TranscribeOutcome, String> {
-    let (wav, audio) =
-        whspr_import::download_to_audio(&url, None, whspr_import::CookiesFrom::None, None)
-            .await
-            .map_err(|e| with_install_hint(e.to_string()))?;
+pub async fn run_transcribe_url(
+    url: String,
+    cookies: whspr_import::CookiesFrom,
+    config: Config,
+) -> Result<TranscribeOutcome, String> {
+    let (wav, audio) = whspr_import::download_to_audio(&url, None, cookies, None)
+        .await
+        .map_err(|e| with_install_hint(e.to_string()))?;
     let outcome = run_transcribe_audio(audio, config).await;
     // Best-effort temp cleanup: `whspr-import` hands ownership of the WAV to
     // us and never reaps it. A failed delete isn't worth failing an
@@ -44,7 +46,6 @@ pub async fn run_transcribe_url(url: String, config: Config) -> Result<Transcrib
 /// `whspr-import` (its yt-dlp/ffmpeg lookups report "... not found: ..."), so
 /// the status line tells a first-time user exactly what to do. Any other
 /// error is returned unchanged.
-#[allow(dead_code)]
 fn with_install_hint(error: String) -> String {
     if error.contains("not found") {
         format!("Install yt-dlp and ffmpeg (e.g. brew install yt-dlp ffmpeg). {error}")
