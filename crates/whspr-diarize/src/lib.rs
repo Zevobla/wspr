@@ -65,6 +65,19 @@
 //!   (sherpa-onnx model zoo, `speaker-recongition-models` release — note the
 //!   upstream release tag's spelling).
 //!
+//! # Platform note: aarch64-windows degradation
+//!
+//! `sherpa-rs-sys 0.6.8` ships no prebuilt sherpa-onnx native library for
+//! `aarch64-pc-windows-msvc`, so on that one target this crate is compiled
+//! *without* sherpa (see `Cargo.toml`'s target-gated dependency).
+//! [`SherpaDiarizer`] keeps its exact public surface there, but its
+//! sherpa-requiring entry points — `new`, `embed_clip`, and its `Diarizer`
+//! impl — return a `WhsprError::Diarize` instead of loading models. Every
+//! other target (macOS, Linux, x86_64-windows) is fully sherpa-backed and
+//! unchanged. Consumers already treat a failed `new(..)` as "no diarization
+//! backend configured", so the degradation is graceful with no caller
+//! changes.
+//!
 //! See `examples/verify.rs` in this crate for a manual, real-model
 //! verification harness (deliberately not part of `cargo test --workspace`,
 //! which must stay offline and model-free).
