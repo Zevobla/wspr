@@ -128,3 +128,108 @@ jobs:
           files: |
             dist/whspr-*-macos.dmg
             dist/whspr-*-macos.zip
+
+  # release-windows: portable zip + MSI installer for win-x64.
+  #
+  # DORMANT (same as .github/workflows/windows.yml): this job cannot run until
+  # GitHub Actions billing is restored on this repo. It is authored correctly
+  # for when it does run. Nix-free: like windows.yml it provisions a native
+  # Windows/MSVC toolchain, libclang and the pinned Archivo faces directly --
+  # the Archivo fetch+hash-verify+ARCHIVO_DIR steps are reused verbatim.
+  release-windows:
+    runs-on: windows-latest
+
+    # Use PowerShell Core for every `run:` step so hash verification, the
+    # $GITHUB_ENV/$GITHUB_OUTPUT writes, and the bundle script behave
+    # identically regardless of the runner's default shell.
+    defaults:
+      run:
+        shell: pwsh
+
+    # Authenticode signing is OPTIONAL, gated exactly like release-macos'
+    # signing: the signtool step runs only if this secret is set on the repo.
+    # GitHub's `secrets` context can't be used in `if:` directly, so it's
+    # surfaced as job env and the signing step gates on
+    # `env.WINDOWS_CERTIFICATE != ''`. Absent -> ship UNSIGNED.
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PWD: ${{ secrets.WINDOWS_CERTIFICATE_PWD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable) with the MSVC target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # The whisper-rs / llama-cpp-2 C/C++ tree is a slow first compile;
+      # caching the target dir and registry keeps re-runs cheap.
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-win-x64
+
+      # whisper-rs and llama-cpp-2 run bindgen, which needs libclang.
+      # windows-latest ships LLVM at C:\Program Files\LLVM; MSVC (VS2022) and
+      # CMake are preinstalled. Export LIBCLANG_PATH for the later build step.
+      - name: Point bindgen at libclang
+        run: |
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # crates/whspr-app/build.rs panics unless ARCHIVO_DIR holds the three
+      # static Archivo faces. Nix fetches them by content hash for the macOS
+      # build; here we fetch them at runtime and verify the SAME SHA-256s.
+      # The .ttf files are NOT committed (see .gitignore) and there is no
+      # build.rs network fetch -- the faces exist only for this job.
+      - name: Provide Archivo faces and set ARCHIVO_DIR
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Expected digests are Nix SRI base64: the raw 32-byte SHA-256,
+          # base64-encoded. Get-FileHash returns HEX, which would never
+          # compare equal to these -- so below we hash the file to raw bytes
+          # and base64-encode THOSE, producing a value directly comparable to
+          # the SRI base64 (no hex<->b64 conversion, no room for an
+          # encoding-mismatch false pass).
+          $faces = @(
+            @{ Name = 'Archivo-Regular.ttf';   Sri = 'Wfv9ipu0EwG/6VDnsJf9QtUq8iSgd2HiwbLJWaTJz5o=' },
+            @{ Name = 'Archivo-SemiBold.ttf';  Sri = 'ZZi27YFhWHZ6djO9+wHXja9UyrTNTZ08wM/ZlfRyMIM=' },
+            @{ Name = 'Archivo-ExtraBold.ttf'; Sri = 'n/9nkirivDdqnlxtZE7r+MWxf2Kg845fAW5LfjkDZi8=' }
+          )
+          $baseUrl = 'https://raw.githubusercontent.com/Omnibus-Type/Archivo/master/fonts/ttf'
+
+          $dir = Join-Path $env:RUNNER_TEMP 'archivo'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+          foreach ($face in $faces) {
+            $dest = Join-Path $dir $face.Name
+            $url  = "$baseUrl/$($face.Name)"
+            Write-Host "Downloading $url"
+            Invoke-WebRequest -Uri $url -OutFile $dest
+
+            $bytes  = [System.IO.File]::ReadAllBytes($dest)
+            $sha    = [System.Security.Cryptography.SHA256]::Create()
+            try {
+              $actual = [Convert]::ToBase64String($sha.ComputeHash($bytes))
+            } finally {
+              $sha.Dispose()
+            }
+
+            if ($actual -ne $face.Sri) {
+              throw "SHA-256 mismatch for $($face.Name): expected $($face.Sri), got $actual"
+            }
+            Write-Host "Verified $($face.Name)  ($actual)"
+          }
+
+          "ARCHIVO_DIR=$dir" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Determine version from tag
+        id: version
+        # v0.1.0 -> 0.1.0
+        run: |
+          "version=$($env:GITHUB_REF_NAME -replace '^v','')" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
