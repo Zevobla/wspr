@@ -96,6 +96,12 @@ metal = "0.32"
 # it (see `crates/whspr-config/src/autostart.rs`).
 winreg = "0.52"
 
+# Windows-only: DXGI adapter query for the dedicated-VRAM GPU budget (the
+# Windows analogue of `metal`'s working-set query). Opted into `whspr-hf` under
+# a `cfg(target_os = "windows")` target dependency; features are selected at the
+# opt-in site (see `crates/whspr-hf/src/hardware/dxgi.rs`).
+windows = "0.58"
+
 # Scripting (macros) - a crate opts in with features = ["luajit", "vendored"]
 # to embed a JIT-compiled Lua engine; the vendored LuaJIT builds from source
 # via the existing cmake/clang toolchain, so no new system library is needed.
