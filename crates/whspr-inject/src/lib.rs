@@ -52,6 +52,23 @@ pub(crate) fn default_hotkey_modifiers() -> Modifiers {
     }
 }
 
+/// Display label of the platform default hotkey (`"Ctrl+Space"`, or
+/// `"Ctrl+Shift+Space"` on Windows) — the single source of truth for UI hints
+/// so the label can never drift from what [`default_hotkey_modifiers`] and
+/// [`Code::Space`] actually register.
+///
+/// The Windows arm adds `Shift` because `Ctrl+Space` collides with the IME
+/// language toggle; macOS and Linux keep the plain `Ctrl+Space`. Written as a
+/// `cfg!` expression (not a `#[cfg]` pair) so both arms are type-checked on
+/// every host, then constant-folded to the host's value at build time.
+pub const fn default_hotkey_label() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "Ctrl+Shift+Space"
+    } else {
+        "Ctrl+Space"
+    }
+}
+
 /// Translates a `global-hotkey` press/release state into our own
 /// `HotkeyEvent`. Split out as a pure function so the translation can be
 /// unit tested without needing a real OS-level hotkey to fire.
@@ -388,6 +405,16 @@ mod tests {
         assert_eq!(mods, Modifiers::CONTROL | Modifiers::SHIFT);
         #[cfg(not(target_os = "windows"))]
         assert_eq!(mods, Modifiers::CONTROL);
+    }
+
+    #[test]
+    fn default_hotkey_label_matches_platform_modifiers() {
+        // The UI label must stay in lockstep with the modifiers actually
+        // registered: Windows adds Shift, everyone else is plain Ctrl+Space.
+        #[cfg(target_os = "windows")]
+        assert_eq!(default_hotkey_label(), "Ctrl+Shift+Space");
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(default_hotkey_label(), "Ctrl+Space");
     }
 
     #[test]
