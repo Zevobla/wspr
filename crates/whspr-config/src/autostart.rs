@@ -55,6 +55,29 @@ pub struct AutostartSettings {
 /// `install_autostart` overwrites rather than duplicates the entry.
 const AUTOSTART_ID: &str = "com.whspr.app";
 
+/// The `HKCU\...\Run` value NAME whspr registers itself under on Windows.
+/// Stable across installs (like `AUTOSTART_ID` for the LaunchAgent), so a
+/// repeat `install_autostart` overwrites the same value rather than piling
+/// up duplicates. Only read by the Windows arms and the unit test below --
+/// `allow(dead_code)` covers the macOS/Linux non-test build, where it's
+/// intentionally unreferenced but kept compiled so the test can assert it.
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+const RUN_VALUE_NAME: &str = "whspr";
+
+/// The `HKCU\...\Run` value DATA for `exe`: the executable path wrapped in
+/// double quotes so a path containing spaces (e.g.
+/// `C:\Program Files\whspr\whspr-app.exe`) stays a single `argv[0]` when
+/// Windows launches it at login, rather than being split on the space.
+///
+/// Parameterized on `exe` (rather than calling `current_exe()` itself) so
+/// it's a pure function unit-testable on every OS -- exactly like
+/// `launchagent_plist_contents`. The Windows install arm passes the real
+/// `std::env::current_exe()`.
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+fn run_value_data(exe: &Path) -> String {
+    format!("\"{}\"", exe.display())
+}
+
 /// Installs a "launch at login" entry pointing at `binary_path` (the
 /// running app's own executable -- callers should pass
 /// `std::env::current_exe()`).
