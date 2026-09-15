@@ -169,8 +169,10 @@ fn resolved_body<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Elem
     .into()
 }
 
-/// The footer: a muted privacy note, Cancel, and the (stubbed) "Open note
-/// desk" confirm (disabled until media resolves).
+/// The footer: a muted privacy note, Cancel, and the "Open note desk" confirm
+/// (disabled until media resolves). The confirm emits `LinkImportConfirm`,
+/// which runs the chosen import and opens the note desk (see
+/// `crate::link_import::update`).
 fn footer<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'a, Message> {
     // While an import runs, the note area becomes the live status (accent): a
     // real whisper progress bar once transcription reports, else just the

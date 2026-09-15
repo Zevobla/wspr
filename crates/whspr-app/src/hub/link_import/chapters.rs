@@ -154,8 +154,10 @@ fn clip_row<'a>(li: &'a LinkImport, scheme: &'static color::Scheme) -> Element<'
     .into()
 }
 
-/// "Rest of the playlist": a summary line and a (stubbed this phase) "Queue
-/// all as one course" button.
+/// "Rest of the playlist": a read-only summary line for the videos beyond this
+/// one. Importing a whole playlist "as one course" is a separate, larger
+/// feature (multi-video download + transcribe + merge), so there's no bulk
+/// action here yet -- an honest summary beats a button that does nothing.
 fn playlist_block<'a>(
     playlist: &'a Playlist,
     scheme: &'static color::Scheme,
@@ -171,21 +173,10 @@ fn playlist_block<'a>(
     } else {
         format!("{more} more videos.")
     };
-    // Stubbed this phase: the button has no action yet, so it renders inert.
-    // A later stream wires "queue the whole playlist as one course".
-    let queue = button(
-        text("Queue all as one course")
-            .size(type_scale::LABEL_MEDIUM.size)
-            .font(type_scale::LABEL_LARGE.font()),
-    )
-    .width(Length::Fill)
-    .padding([spacing::SM, spacing::MD])
-    .style(move |_theme, status| styles::button::outlined(scheme, status));
 
     column![
         kicker(scheme, "Rest of the playlist"),
         muted(scheme, summary),
-        queue,
     ]
     .spacing(spacing::SM)
     .into()
