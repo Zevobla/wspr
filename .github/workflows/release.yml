@@ -233,3 +233,98 @@ jobs:
         run: |
           "version=$($env:GITHUB_REF_NAME -replace '^v','')" |
             Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Builds whspr-app and stages whspr-app.exe + the four sherpa/onnxruntime
+      # DLLs into dist\whspr, then zips dist\whspr-<version>-x64.zip.
+      - name: Bundle portable zip
+        run: ./scripts/bundle-windows.ps1 -Version "${{ steps.version.outputs.version }}"
+
+      # Build the per-user MSI from packaging/windows/whspr.wxs with the WiX
+      # toolset (installed as a dotnet global tool). BundleDir points WiX at the
+      # exe + DLLs the bundle step just staged; Version stamps the ProductVersion.
+      - name: Build MSI (WiX)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+          $version   = '${{ steps.version.outputs.version }}'
+          $bundleDir = (Resolve-Path 'dist/whspr').Path
+          wix build packaging/windows/whspr.wxs `
+            -arch x64 `
+            -d Version=$version `
+            -d "BundleDir=$bundleDir" `
+            -o "dist/whspr-$version-x64.msi"
+
+      # Authenticode signing is OPTIONAL (mirrors release-macos): runs only when
+      # the cert secret is present. Signs the staged exe (then rebuilds the zip
+      # so the signed exe ships) and the MSI. Absent -> both stay UNSIGNED and
+      # SmartScreen warns on first run (see the release notes below).
+      - name: Sign with Authenticode (optional; only when the cert secret is present)
+        if: env.WINDOWS_CERTIFICATE != ''
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+
+          # Decode the base64 PFX secret to a temporary file.
+          $pfx = Join-Path $env:RUNNER_TEMP 'whspr-cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+
+          # Locate the newest signtool.exe from the installed Windows SDK(s).
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw 'signtool.exe not found in the Windows SDK' }
+
+          $signArgs = @(
+            'sign', '/f', $pfx, '/p', $env:WINDOWS_CERTIFICATE_PWD,
+            '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256'
+          )
+
+          # Sign the staged exe, then rebuild the portable zip so the signed
+          # exe ships inside it.
+          & $signtool.FullName @signArgs 'dist\whspr\whspr-app.exe'
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed on the exe (exit $LASTEXITCODE)" }
+          $zip = "dist/whspr-$version-x64.zip"
+          Remove-Item -LiteralPath $zip -Force
+          Compress-Archive -Path 'dist/whspr' -DestinationPath $zip -CompressionLevel Optimal
+
+          # Sign the MSI installer.
+          & $signtool.FullName @signArgs "dist\whspr-$version-x64.msi"
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed on the MSI (exit $LASTEXITCODE)" }
+
+      - name: Write release notes
+        id: notes
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $lines = @(
+            "## whspr $version (Windows)",
+            '',
+            "Windows (x64) build. Install with ``whspr-$version-x64.msi`` (per-user, no admin), or unzip ``whspr-$version-x64.zip`` and run ``whspr-app.exe`` in place.",
+            ''
+          )
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE)) {
+            $lines += '### Unsigned build'
+            $lines += ''
+            $lines += 'This build is **not Authenticode-signed**, so Windows SmartScreen may warn on first run. Click **More info**, then **Run anyway**.'
+          } else {
+            $lines += 'This build is Authenticode-signed.'
+          }
+          $notes = $lines -join "`n"
+
+          "notes<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $notes       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "EOF"        | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Uploads to the SAME release as release-macos (same tag). `append_body`
+      # adds the Windows notes to the release body instead of replacing the
+      # macOS notes.
+      - name: Add Windows artifacts to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.notes.outputs.notes }}
+          append_body: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/whspr-*-x64.zip
+            dist/whspr-*-x64.msi
