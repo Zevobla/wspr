@@ -194,6 +194,13 @@ pub struct Config {
     pub refine: RefineChoice,
     #[serde(default)]
     pub language: Option<String>,
+    /// The user's chosen push-to-talk hotkey, as a `global-hotkey`-parseable
+    /// combo label (e.g. `"Ctrl+Shift+D"`). `None` means "use the platform
+    /// default" (`whspr_inject::default_hotkey_label`). The hotkey listener
+    /// registers this combo at startup, so a change made in the Hub takes
+    /// effect on the next launch rather than live.
+    #[serde(default)]
+    pub hotkey: Option<String>,
     /// API keys for cloud backends, keyed by backend id (e.g. "openai",
     /// matching `AsrBackend::id()` / `TextRefiner::id()`), read from the
     /// config file's `[api_keys]` table.
