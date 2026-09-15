@@ -36,7 +36,9 @@ pub enum Message {
     SoundFeedbackToggled(bool),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
-    /// The user asked to preview a new hotkey by pressing it.
+    /// The user asked to rebind the push-to-talk hotkey by pressing a new
+    /// combo. The next captured combo is persisted to `config.hotkey` and
+    /// registered on the next launch (see `crate::hotkey_capture`).
     StartHotkeyCapture,
     /// A keyboard event arrived while capturing; only `KeyPressed` is acted
     /// on (see `update`), but the subscription hands over every event since
