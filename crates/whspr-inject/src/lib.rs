@@ -13,6 +13,7 @@ use whspr_core::{HotkeyEvent, HotkeyListener, Result, TextSink, WhsprError};
 
 mod clipboard;
 mod debounce;
+mod hotkey_config;
 
 // The OS-level hotkey listener has one file per platform: off Windows the
 // manager is `Send + Sync` and owned directly; on Windows it's `!Send +
@@ -32,6 +33,7 @@ pub use hotkey_windows::GlobalHotkeyListener;
 use clipboard::{stage_and_paste, ArboardClipboard, PasteOutcome};
 
 pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
+pub use hotkey_config::hotkey_supported;
 
 /// The fresh-install default global-hotkey modifiers.
 ///

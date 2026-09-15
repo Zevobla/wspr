@@ -6,12 +6,12 @@
 
 use std::sync::Arc;
 
-use global_hotkey::hotkey::{Code, HotKey};
+use global_hotkey::hotkey::HotKey;
 use global_hotkey::GlobalHotKeyManager;
 
 use whspr_core::{Result, WhsprError};
 
-use crate::default_hotkey_modifiers;
+use crate::hotkey_config::default_hotkey;
 
 /// Listens for the configured global hotkey via the OS-level hotkey APIs.
 ///
@@ -30,11 +30,17 @@ impl GlobalHotkeyListener {
     /// Creates a new global hotkey listener with the platform default hotkey
     /// (`Ctrl+Space`, or `Ctrl+Shift+Space` on Windows).
     pub fn new() -> Result<Self> {
+        Self::with_hotkey(default_hotkey())
+    }
+
+    /// Creates a listener that registers `hotkey` (rather than the platform
+    /// default), so the user's configured push-to-talk combo is what fires.
+    /// Shared by [`new`](Self::new) and
+    /// [`from_label`](crate::GlobalHotkeyListener::from_label).
+    pub(crate) fn with_hotkey(hotkey: HotKey) -> Result<Self> {
         let manager = GlobalHotKeyManager::new().map_err(|e| {
             WhsprError::Inject(format!("failed to create global hotkey manager: {}", e))
         })?;
-
-        let hotkey = HotKey::new(Some(default_hotkey_modifiers()), Code::Space);
 
         manager
             .register(hotkey)
