@@ -461,3 +461,44 @@ jobs:
         run: |
           "version=$($env:GITHUB_REF_NAME -replace '^v','')" |
             Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Builds whspr-app for arm64 and stages the portable zip
+      # (whspr-<version>-arm64.zip). The arm64 binary is SELF-CONTAINED, so the
+      # bundler stages the exe with NO adjacent DLLs (sherpa cfg'd out, openmp
+      # off). The cargo build must run under the arm64 MSVC + clang-cl
+      # environment (the windows.yml recipe), so this step uses cmd to `call
+      # vcvarsall.bat arm64` and sets the CMAKE_* / CXXFLAGS env, then invokes
+      # the pwsh bundler as a child (which inherits the batch env plus
+      # ARCHIVO_DIR / LIBCLANG_PATH from earlier steps).
+      - name: Bundle portable zip
+        shell: cmd
+        env:
+          CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/packaging/windows/arm64-clangcl.cmake
+          CMAKE_GENERATOR: Ninja
+          CXXFLAGS: /EHsc
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" arm64
+          if errorlevel 1 exit /b 1
+          pwsh -File scripts/bundle-windows.ps1 -Version "${{ steps.version.outputs.version }}" -Target aarch64-pc-windows-msvc
+
+      # Build the per-user MSI from packaging/windows/whspr.wxs for arm64. The
+      # `-arch arm64` flag both marks the package platform Arm64 and sets
+      # $(sys.BUILDARCH), which the .wxs uses to OMIT the x64-only
+      # sherpa/onnxruntime DLLs (absent from the self-contained arm64 bundle).
+      # BundleDir points WiX at the exe the bundle step just staged; Version
+      # stamps the ProductVersion. (WiX is a managed dotnet global tool; it runs
+      # on the runner's arm64 .NET runtime.)
+      - name: Build MSI (WiX)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+          $version   = '${{ steps.version.outputs.version }}'
+          $bundleDir = (Resolve-Path 'dist/whspr').Path
+          wix build packaging/windows/whspr.wxs `
+            -arch arm64 `
+            -d Version=$version `
+            -d "BundleDir=$bundleDir" `
+            -o "dist/whspr-$version-arm64.msi"
