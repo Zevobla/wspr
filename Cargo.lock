@@ -9436,6 +9436,8 @@ version = "0.1.0"
 dependencies = [
  "iced",
  "png 0.17.16",
+ "tokio",
+ "winreg 0.52.0",
 ]
 
 [[package]]

@@ -16,9 +16,23 @@ path = "src/main.rs"
 # flags on the existing workspace `iced` dep -- no new workspace dependency
 # and no system library (resvg is pure Rust). See `crate::logo`.
 iced = { workspace = true, features = ["tokio", "svg", "image"] }
+# The install runs off the UI thread inside iced's `Task::perform`: `time` for
+# the legibility pace between steps, the blocking pool for the file/registry
+# writes. Inherits the workspace's tokio features; `time` is already on via
+# iced's "tokio" feature above (same as `whspr-app`), so nothing new is pulled.
+tokio.workspace = true
 # PNG encoder for the env-gated headless screenshot self-validation path (see
 # `crate::screenshot`): `WHSPR_SETUP_SCREENSHOT=<path>` captures the window to
 # a PNG and exits. A leaf, pure-Rust dep declared directly here (not a shared
 # workspace dependency) exactly like `whspr-app` declares it -- this crate's
 # own verification concern only.
 png = "0.17"
+
+# The autostart ("launch at sign-in") toggle writes `HKCU\...\Run` via the
+# Windows-only `winreg` crate, mirroring `whspr-config`'s autostart. macOS/CI
+# builds never link it (the installer is Windows-only); the rest of the real
+# install -- LocalAppData copy, shortcut creation -- needs no extra crate
+# (`std` + PowerShell). Same `cfg(target_os = "windows")` opt-in precedent as
+# `whspr-config`.
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg.workspace = true
