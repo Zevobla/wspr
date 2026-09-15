@@ -95,14 +95,16 @@ fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Eleme
     .style(move |_theme, status| styles::button::text(scheme, status))
     .on_press(Message::StartHotkeyCapture);
 
-    // The fixed push-to-talk combo rendered as Modernist keycaps.
-    let keycaps = row![
-        widgets::kbd("Ctrl", scheme),
-        widgets::kbd("Space", scheme),
-        capture_button,
-    ]
-    .spacing(spacing::SM)
-    .align_y(Alignment::Center);
+    // The fixed push-to-talk combo rendered as Modernist keycaps. The keys
+    // are derived by splitting the same source of truth as the label
+    // (`whspr_inject::default_hotkey_label`) on `+`, so the displayed keycaps
+    // can never drift from the hotkey that's actually registered:
+    // "Ctrl+Space" on macOS/Linux, "Ctrl+Shift+Space" on Windows.
+    let mut keycaps = row![].spacing(spacing::SM).align_y(Alignment::Center);
+    for key in whspr_inject::default_hotkey_label().split('+') {
+        keycaps = keycaps.push(widgets::kbd(key, scheme));
+    }
+    let keycaps = keycaps.push(capture_button);
 
     let preview: Element<'_, Message> = match &state.captured_hotkey {
         Some(combo) => text(format!("Captured: {combo} (preview only, not yet applied)"))
