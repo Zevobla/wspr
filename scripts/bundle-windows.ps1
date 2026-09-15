@@ -13,12 +13,14 @@
 #     this script assumes the caller already did so -- it only re-asserts that
 #     ARCHIVO_DIR is set, because crates/whspr-app/build.rs panics without it.
 #
-#   * Stages whspr-app.exe together with the FOUR sherpa/onnxruntime shared
-#     libraries it load-time links. Windows has no rpath, so the exe will NOT
-#     start unless these DLLs sit BESIDE it; the sherpa-rs-sys build script
-#     drops them into the target profile dir, and we copy them next to the exe
-#     in the zip. A missing exe or DLL is a hard error -- a silent partial
-#     bundle would be a shipping bug.
+#   * Stages whspr-app.exe together with the ML DLLs it load-time links. On
+#     x64 that is the FOUR sherpa/onnxruntime shared libraries: Windows has no
+#     rpath, so the exe will NOT start unless these DLLs sit BESIDE it; the
+#     sherpa-rs-sys build script drops them into the target profile dir, and we
+#     copy them next to the exe in the zip. On aarch64 (Windows-on-ARM) the app
+#     is self-contained -- sherpa is cfg'd out and openmp is off -- so NO DLLs
+#     are bundled. A missing exe or a *required* DLL is a hard error -- a silent
+#     partial bundle would be a shipping bug.
 #
 #   * Produces a distributable portable zip: whspr-<version>-<arch>.zip. There
 #     is no installer here -- the MSI is built separately from
@@ -144,18 +146,40 @@ Copy-Item -LiteralPath $ExeSrc -Destination (Join-Path $StageDir $ExeName)
 Write-Host "==> staged $ExeName"
 
 # --- DLL adjacency (load-time-linked ML libs) ------------------------------
-# whspr-app load-time links these sherpa/onnxruntime SHARED libraries. Windows
-# has no rpath, so whspr-app.exe will NOT start unless all four sit BESIDE it.
-# The sherpa-rs-sys build script drops them into the profile dir on a real
-# build; we copy every one next to the exe. A missing DLL is a hard error --
-# shipping a partial bundle would crash the app on launch before a window ever
-# shows, and the headless build gate never launches the GUI to catch it.
-$Dlls = @(
-    'onnxruntime.dll',
-    'onnxruntime_providers_shared.dll',
-    'sherpa-onnx-c-api.dll',
-    'sherpa-onnx-cxx-api.dll'
-)
+# The set of REQUIRED adjacent DLLs is target-dependent:
+#
+#   * x64 (x86_64-pc-windows-msvc): whspr-app load-time links these four
+#     sherpa/onnxruntime SHARED libraries. Windows has no rpath, so
+#     whspr-app.exe will NOT start unless all four sit BESIDE it. The
+#     sherpa-rs-sys build script drops them into the profile dir on a real
+#     build; we copy every one next to the exe.
+#
+#   * arm64 (aarch64-pc-windows-msvc): the app is SELF-CONTAINED. There is no
+#     prebuilt sherpa-onnx/onnxruntime for arm64-windows, so whspr-diarize is
+#     cfg'd out of that target, and llama-cpp-2's openmp feature is off (no
+#     libomp.dll). The arm64 binary needs NO bundled DLLs -- only the system
+#     MSVC runtime -- so the required-DLL list is EMPTY and nothing is copied.
+#
+# A missing REQUIRED DLL is a hard error -- shipping a partial bundle would
+# crash the app on launch before a window ever shows, and the headless build
+# gate never launches the GUI to catch it. arm64 simply has zero required DLLs,
+# so its empty list can never trip that error.
+if ($Target -like 'x86_64-*') {
+    $Dlls = @(
+        'onnxruntime.dll',
+        'onnxruntime_providers_shared.dll',
+        'sherpa-onnx-c-api.dll',
+        'sherpa-onnx-cxx-api.dll'
+    )
+} elseif ($Target -like 'aarch64-*') {
+    $Dlls = @()
+} else {
+    throw "unsupported target triple: $Target"
+}
+
+if ($Dlls.Count -eq 0) {
+    Write-Host "==> no adjacent DLLs required for $Arch (self-contained binary)"
+}
 foreach ($dll in $Dlls) {
     $dllSrc = Join-Path $ProfileDir $dll
     if (-not (Test-Path -LiteralPath $dllSrc -PathType Leaf)) {
