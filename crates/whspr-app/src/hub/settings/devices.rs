@@ -110,10 +110,11 @@ fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Eleme
             .font(type_scale::BODY_MEDIUM.font())
             .color(scheme.on_surface_variant)
             .into(),
-        None => text(
-            "Ctrl+Space is fixed -- whspr-inject doesn't yet support registering a \
+        None => text(format!(
+            "{} is fixed -- whspr-inject doesn't yet support registering a \
               different combo at runtime.",
-        )
+            whspr_inject::default_hotkey_label()
+        ))
         .size(type_scale::BODY_MEDIUM.size)
         .font(type_scale::BODY_MEDIUM.font())
         .color(scheme.on_surface_variant)
