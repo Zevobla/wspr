@@ -90,6 +90,12 @@ webbrowser = "1.0"
 # it (see `crates/whspr-hf/src/hardware/metal.rs`).
 metal = "0.32"
 
+# Windows-only: HKCU\...\Run autostart registry access. Opted into leaf crates
+# (whspr-config) under a `cfg(target_os = "windows")` target dependency,
+# mirroring the `metal` precedent above, so macOS/Linux/Nix builds never link
+# it (see `crates/whspr-config/src/autostart.rs`).
+winreg = "0.52"
+
 # Scripting (macros) - a crate opts in with features = ["luajit", "vendored"]
 # to embed a JIT-compiled Lua engine; the vendored LuaJIT builds from source
 # via the existing cmake/clang toolchain, so no new system library is needed.
