@@ -49,3 +49,44 @@ impl GlobalHotkeyListener {
         Self::with_hotkey(parse_hotkey_label(label)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::default_hotkey_label;
+
+    #[test]
+    fn parse_hotkey_label_matches_the_platform_default() {
+        // The default label must parse to exactly the combo `new()` registers,
+        // so the UI hint, the persisted label, and the registered hotkey agree.
+        assert_eq!(
+            parse_hotkey_label(default_hotkey_label()).expect("default label must parse"),
+            default_hotkey()
+        );
+    }
+
+    #[test]
+    fn hotkey_supported_accepts_a_modifier_combo() {
+        assert!(hotkey_supported("Ctrl+Shift+D"));
+        assert!(hotkey_supported("Cmd+Space"));
+    }
+
+    #[test]
+    fn hotkey_supported_rejects_a_bare_modifier() {
+        // A lone modifier is not a registerable hotkey (no main key).
+        assert!(!hotkey_supported("Ctrl"));
+        assert!(!hotkey_supported("Ctrl+Shift"));
+    }
+
+    #[test]
+    fn hotkey_supported_rejects_gibberish() {
+        assert!(!hotkey_supported("NotAKey"));
+        assert!(!hotkey_supported(""));
+    }
+
+    #[test]
+    fn parse_hotkey_label_errors_on_an_unsupported_combo() {
+        let err = parse_hotkey_label("Ctrl+NotAKey").expect_err("should reject");
+        assert!(matches!(err, WhsprError::Inject(_)));
+    }
+}
