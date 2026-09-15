@@ -294,6 +294,10 @@ pub enum Message {
     LinkImportOpen,
     /// Dismisses the link-import dialog.
     LinkImportCancel,
+    /// A keyboard event received while the link-import modal is open (from
+    /// `crate::app`'s modal-scoped keyboard subscription). Used to dismiss the
+    /// dialog on Esc, which its Cancel-only close otherwise ignored.
+    LinkImportKey(iced::keyboard::Event),
     /// The user edited the dialog's URL input.
     LinkImportUrl(String),
     /// "Resolve" pressed: runs `whspr_import::resolve`.

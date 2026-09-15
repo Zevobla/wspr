@@ -559,9 +559,21 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
         tray_poll_subscription(state),
         tray_done_subscription(state),
         mic_level_subscription(state),
+        link_import_key_subscription(state),
         crate::screenshot::subscription(state),
         crate::system_theme::subscription(state),
     ])
+}
+
+/// While the "Add from a link" modal is open, listens for keyboard events so
+/// Esc can dismiss it (see `crate::link_import`). Scoped to the open dialog so
+/// it never swallows keys the rest of the time.
+fn link_import_key_subscription(state: &State) -> iced::Subscription<Message> {
+    if state.link_import.is_some() {
+        iced::keyboard::listen().map(Message::LinkImportKey)
+    } else {
+        iced::Subscription::none()
+    }
 }
 
 /// While the in-app Record button is capturing, ticks ~12x/sec so the view
