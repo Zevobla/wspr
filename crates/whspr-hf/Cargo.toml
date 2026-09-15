@@ -33,3 +33,13 @@ tempfile.workspace = true
 # link this.
 [target.'cfg(target_os = "macos")'.dependencies]
 metal.workspace = true
+
+# The DXGI dedicated-VRAM probe (see `src/hardware/dxgi.rs`) is the Windows
+# analogue of the Metal working-set probe above: it only exists on Windows,
+# where -- as on macOS -- non-target builds fall back to the same RAM-fraction
+# heuristic and never link this. Only the two `windows` feature namespaces the
+# probe actually touches are enabled: `Win32_Graphics_Dxgi` (the DXGI
+# factory/adapter and `DXGI_ADAPTER_DESC`) and `Win32_Foundation` (the `LUID`
+# those types embed, plus the `HANDLE`/`BOOL` in their vtables).
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = ["Win32_Graphics_Dxgi", "Win32_Foundation"] }
