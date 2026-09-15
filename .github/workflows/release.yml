@@ -502,3 +502,45 @@ jobs:
             -d Version=$version `
             -d "BundleDir=$bundleDir" `
             -o "dist/whspr-$version-arm64.msi"
+
+      # Authenticode signing is OPTIONAL (mirrors release-windows): runs only
+      # when the SAME cert secret is present. Signs the staged exe (then
+      # rebuilds the zip so the signed exe ships) and the MSI. Absent -> both
+      # stay UNSIGNED and SmartScreen warns on first run (see the notes below).
+      - name: Sign with Authenticode (optional; only when the cert secret is present)
+        if: env.WINDOWS_CERTIFICATE != ''
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+
+          # Decode the base64 PFX secret to a temporary file.
+          $pfx = Join-Path $env:RUNNER_TEMP 'whspr-cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+
+          # Locate signtool.exe from the installed Windows SDK. Prefer the
+          # native arm64 build; fall back to the x64 build (runs under emulation
+          # on Windows-on-ARM) if the arm64 tool is not present.
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\arm64\signtool.exe' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) {
+            $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' -ErrorAction SilentlyContinue |
+              Sort-Object FullName -Descending | Select-Object -First 1
+          }
+          if ($null -eq $signtool) { throw 'signtool.exe not found in the Windows SDK' }
+
+          $signArgs = @(
+            'sign', '/f', $pfx, '/p', $env:WINDOWS_CERTIFICATE_PWD,
+            '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256'
+          )
+
+          # Sign the staged exe, then rebuild the portable zip so the signed
+          # exe ships inside it.
+          & $signtool.FullName @signArgs 'dist\whspr\whspr-app.exe'
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed on the exe (exit $LASTEXITCODE)" }
+          $zip = "dist/whspr-$version-arm64.zip"
+          Remove-Item -LiteralPath $zip -Force
+          Compress-Archive -Path 'dist/whspr' -DestinationPath $zip -CompressionLevel Optimal
+
+          # Sign the MSI installer.
+          & $signtool.FullName @signArgs "dist\whspr-$version-arm64.msi"
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed on the MSI (exit $LASTEXITCODE)" }
