@@ -62,10 +62,13 @@ fn hero<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Mes
                 widgets::tag(TagKind::Accent, "Local LLM cleanup", scheme),
             ]
             .spacing(spacing::SM),
-            text("Hold Ctrl+Space to dictate into any app, or record here.")
-                .size(type_scale::BODY_MEDIUM.size)
-                .font(type_scale::BODY_MEDIUM.font())
-                .color(scheme.on_surface_variant),
+            text(format!(
+                "Hold {} to dictate into any app, or record here.",
+                whspr_inject::default_hotkey_label()
+            ))
+            .size(type_scale::BODY_MEDIUM.size)
+            .font(type_scale::BODY_MEDIUM.font())
+            .color(scheme.on_surface_variant),
         ]
         .spacing(spacing::MD)
         .width(Length::Fill)
