@@ -8,12 +8,14 @@
 //! 1. create `%LOCALAPPDATA%\whspr`,
 //! 2. write the embedded [`crate::payload`] there (the app exe + any DLLs),
 //! 3. optionally create a per-user Start-menu shortcut,
-//! 4. optionally create a Desktop shortcut.
+//! 4. optionally create a Desktop shortcut,
+//! 5. optionally write the `HKCU\...\Run` autostart value (mirroring
+//!    `whspr-config`'s autostart).
 //!
-//! Everything platform-specific -- `%LOCALAPPDATA%`, shortcut creation -- is
-//! behind `#[cfg(target_os = "windows")]`. Off Windows the installer is never
-//! shipped, so [`perform`] is a no-op that lets the shared UI still build and
-//! run (a simulated walk) for the macOS gate.
+//! Everything platform-specific -- `%LOCALAPPDATA%`, `winreg`, shortcut
+//! creation -- is behind `#[cfg(target_os = "windows")]`. Off Windows the
+//! installer is never shipped, so [`perform`] is a no-op that lets the shared
+//! UI still build and run (a simulated walk) for the macOS gate.
 
 #[cfg(target_os = "windows")]
 use std::path::{Path, PathBuf};
@@ -31,6 +33,8 @@ pub enum Job {
     StartMenuShortcut,
     /// Create the Desktop `whspr.lnk`.
     DesktopShortcut,
+    /// Write the `HKCU\...\Run` autostart value.
+    Autostart,
     /// Terminal marker so the bar reaches 100% under "Finishing up".
     Finish,
 }
@@ -38,15 +42,16 @@ pub enum Job {
 impl Job {
     /// The progress-bar value (0..=100) shown *while this job runs*. Chosen so
     /// each job sits in the matching `crate::state::Step` label band -- copy
-    /// (0..24), shortcuts (25..49), finishing (75..100) -- and so the value
-    /// strictly increases in execution order even when the optional jobs are
-    /// absent, keeping the bar monotonic.
+    /// (0..24), shortcuts (25..49), registering (50..74), finishing (75..100)
+    /// -- and so the value strictly increases in execution order even when the
+    /// optional jobs are absent, keeping the bar monotonic.
     pub fn start_progress(self) -> u8 {
         match self {
             Job::CreateDir => 5,
             Job::WritePayload => 18,
             Job::StartMenuShortcut => 30,
             Job::DesktopShortcut => 42,
+            Job::Autostart => 60,
             Job::Finish => 100,
         }
     }
@@ -54,9 +59,9 @@ impl Job {
 
 /// Builds the ordered job list for the chosen options. `CreateDir` and
 /// `Finish` always run; the payload copy runs only when something was embedded
-/// (skipped in the empty-payload macOS/CI build); shortcuts follow their
-/// toggles.
-pub fn plan(start_menu: bool, desktop: bool) -> Vec<Job> {
+/// (skipped in the empty-payload macOS/CI build); shortcuts and autostart
+/// follow their toggles.
+pub fn plan(autostart: bool, start_menu: bool, desktop: bool) -> Vec<Job> {
     let mut jobs = vec![Job::CreateDir];
     if !crate::payload::PAYLOAD.is_empty() {
         jobs.push(Job::WritePayload);
@@ -66,6 +71,9 @@ pub fn plan(start_menu: bool, desktop: bool) -> Vec<Job> {
     }
     if desktop {
         jobs.push(Job::DesktopShortcut);
+    }
+    if autostart {
+        jobs.push(Job::Autostart);
     }
     jobs.push(Job::Finish);
     jobs
@@ -87,6 +95,24 @@ pub fn perform(job: Job) -> Result<(), String> {
     }
 }
 
+/// Launches the freshly installed app (the Done screen's "Open whspr").
+/// Best-effort and Windows-only; a no-op elsewhere.
+pub fn launch_installed_app() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let exe = installed_exe()?;
+        std::process::Command::new(&exe)
+            .current_dir(install_dir()?)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("could not launch {}: {e}", exe.display()))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(())
+    }
+}
+
 // -- Windows implementation --------------------------------------------------
 
 /// The install directory's name under `%LOCALAPPDATA%`.
@@ -94,10 +120,17 @@ pub fn perform(job: Job) -> Result<(), String> {
 const INSTALL_SUBDIR: &str = "whspr";
 
 /// The launched executable's name, used when the payload embeds no `.exe`
-/// (e.g. an empty-payload dev build) so shortcut targets still resolve to a
-/// sensible path.
+/// (e.g. an empty-payload dev build) so shortcut/autostart targets still
+/// resolve to a sensible path.
 #[cfg(target_os = "windows")]
 const DEFAULT_APP_EXE: &str = "whspr-app.exe";
+
+/// The per-user autostart key and the value name whspr registers under --
+/// identical to `whspr-config`'s autostart so the installer and the app agree.
+#[cfg(target_os = "windows")]
+const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(target_os = "windows")]
+const RUN_VALUE_NAME: &str = "whspr";
 
 #[cfg(target_os = "windows")]
 fn perform_windows(job: Job) -> Result<(), String> {
@@ -106,6 +139,7 @@ fn perform_windows(job: Job) -> Result<(), String> {
         Job::WritePayload => write_payload(),
         Job::StartMenuShortcut => create_shortcut(ShortcutKind::StartMenu),
         Job::DesktopShortcut => create_shortcut(ShortcutKind::Desktop),
+        Job::Autostart => write_autostart(),
         Job::Finish => Ok(()),
     }
 }
@@ -220,26 +254,47 @@ fn create_shortcut(kind: ShortcutKind) -> Result<(), String> {
     }
 }
 
+/// Writes the `whspr` autostart value into the current user's `Run` key --
+/// the quoted installed exe path, so a spaced path stays one `argv[0]`.
+/// Mirrors `whspr_config::autostart`'s Windows arm exactly.
+#[cfg(target_os = "windows")]
+fn write_autostart() -> Result<(), String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE, KEY_WRITE};
+    use winreg::RegKey;
+
+    let exe = installed_exe()?;
+    let value = format!("\"{}\"", exe.display());
+
+    let (run_key, _) = RegKey::predef(HKEY_CURRENT_USER)
+        .create_subkey_with_flags(RUN_KEY_PATH, KEY_SET_VALUE | KEY_WRITE)
+        .map_err(|e| format!("could not open the Run registry key: {e}"))?;
+    run_key
+        .set_value(RUN_VALUE_NAME, &value)
+        .map_err(|e| format!("could not write the autostart registry value: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn plan_always_creates_the_dir_and_finishes() {
-        let jobs = plan(false, false);
+        let jobs = plan(false, false, false);
         assert_eq!(jobs.first(), Some(&Job::CreateDir));
         assert_eq!(jobs.last(), Some(&Job::Finish));
     }
 
     #[test]
-    fn plan_includes_only_the_enabled_shortcut_jobs() {
-        let both = plan(true, true);
-        assert!(both.contains(&Job::StartMenuShortcut));
-        assert!(both.contains(&Job::DesktopShortcut));
+    fn plan_includes_only_the_enabled_optional_jobs() {
+        let all = plan(true, true, true);
+        assert!(all.contains(&Job::StartMenuShortcut));
+        assert!(all.contains(&Job::DesktopShortcut));
+        assert!(all.contains(&Job::Autostart));
 
-        let none = plan(false, false);
+        let none = plan(false, false, false);
         assert!(!none.contains(&Job::StartMenuShortcut));
         assert!(!none.contains(&Job::DesktopShortcut));
+        assert!(!none.contains(&Job::Autostart));
     }
 
     #[test]
@@ -249,6 +304,7 @@ mod tests {
             Job::WritePayload,
             Job::StartMenuShortcut,
             Job::DesktopShortcut,
+            Job::Autostart,
             Job::Finish,
         ];
         for pair in order.windows(2) {
