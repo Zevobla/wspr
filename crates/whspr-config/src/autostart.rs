@@ -78,10 +78,24 @@ fn run_value_data(exe: &Path) -> String {
     format!("\"{}\"", exe.display())
 }
 
+/// The per-user registry sub-key (under `HKEY_CURRENT_USER`) Windows reads
+/// at login to launch autostart programs. Windows-only, so it's `#[cfg]`'d
+/// out entirely on other platforms rather than left as dead code.
+#[cfg(target_os = "windows")]
+const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
 /// Installs a "launch at login" entry pointing at `binary_path` (the
 /// running app's own executable -- callers should pass
 /// `std::env::current_exe()`).
 pub fn install_autostart(binary_path: &Path) -> Result<()> {
+    // Windows uses the registry (via the Windows-only `winreg` crate), so it
+    // delegates to a `#[cfg]`'d helper -- a runtime `cfg!` guard (rather than
+    // a `#[cfg]` on this line) keeps the macOS/Linux code below compiled and
+    // reference-clean on every target, mirroring `whspr-hf`'s cfg'd fn pair.
+    if cfg!(target_os = "windows") {
+        return install_autostart_windows();
+    }
+
     let base = home_dirs()?;
 
     if cfg!(target_os = "macos") {
@@ -196,6 +210,35 @@ fn remove_if_exists(path: &Path) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+/// Writes the `whspr` autostart value into the current user's `Run` key,
+/// creating/opening it with write access and overwriting any existing value
+/// of the same name (idempotent re-install). The exe path comes from
+/// `current_exe()` (the pure `run_value_data` only quotes it). winreg
+/// surfaces registry failures as `io::Error`, so they funnel through
+/// `autostart_err` like every other write in this module.
+#[cfg(target_os = "windows")]
+fn install_autostart_windows() -> Result<()> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE, KEY_WRITE};
+    use winreg::RegKey;
+
+    let exe = std::env::current_exe().map_err(autostart_err)?;
+    let (run_key, _) = RegKey::predef(HKEY_CURRENT_USER)
+        .create_subkey_with_flags(RUN_KEY_PATH, KEY_SET_VALUE | KEY_WRITE)
+        .map_err(autostart_err)?;
+    run_key
+        .set_value(RUN_VALUE_NAME, &run_value_data(&exe))
+        .map_err(autostart_err)
+}
+
+/// Off Windows this is never reached -- the `cfg!(target_os = "windows")`
+/// guard in `install_autostart` is false -- but the call site still needs a
+/// symbol to reference on every target, so a stub stands in (same cfg'd-pair
+/// shape as `whspr-hf`'s `recommended_working_set`).
+#[cfg(not(target_os = "windows"))]
+fn install_autostart_windows() -> Result<()> {
+    Err(unsupported_platform_err())
 }
 
 #[cfg(test)]
