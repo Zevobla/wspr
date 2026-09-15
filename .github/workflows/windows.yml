@@ -1,15 +1,17 @@
-# win-x64 compile gate.
+# Windows compile gates: win-x64 and win-arm64.
 #
 # DORMANT: this workflow is authored but cannot run until GitHub Actions
 # billing is restored on this repo. Once billing is fixed it runs on push /
 # pull_request automatically, and can also be kicked off by hand via the
 # "Run workflow" button (workflow_dispatch).
 #
-# Scope: proves the whole workspace *compiles* for x86_64-pc-windows-msvc.
-# It deliberately uses NO Nix (unlike ci.yml / release.yml) -- it provisions a
-# native Windows/MSVC toolchain directly. Runtime tests and the Flow Bar
-# screenshot land later in P3; this is the compile-only gate.
-name: Windows (win-x64)
+# Scope: proves the whole workspace *compiles* for both
+# x86_64-pc-windows-msvc (build-win-x64) and aarch64-pc-windows-msvc
+# (build-win-arm64, native Windows-on-ARM). It deliberately uses NO Nix
+# (unlike ci.yml / release.yml) -- it provisions a native Windows/MSVC
+# toolchain directly. Runtime tests and the Flow Bar screenshot land later in
+# P3; this is the compile-only gate.
+name: Windows (win-x64 + win-arm64)
 
 on:
   push:
@@ -103,3 +105,152 @@ jobs:
       # rather than a silent update.
       - name: Build workspace (x86_64-pc-windows-msvc)
         run: cargo build --workspace --locked --target x86_64-pc-windows-msvc
+
+  # ---------------------------------------------------------------------------
+  # build-win-arm64: native Windows-on-ARM (aarch64-pc-windows-msvc) compile
+  # gate. Same DORMANT-until-billing status as build-win-x64 above; it runs
+  # only once GitHub Actions billing is restored.
+  #
+  # Runs on GitHub's native ARM64 runner (windows-11-arm), matching the recipe
+  # that was proven GREEN on a real Windows-on-ARM VM. Building ggml
+  # (whisper-rs / llama-cpp-2) for ARM64 needs a specific toolchain -- the four
+  # load-bearing pieces, and why each is required:
+  #
+  #   1. clang-cl, NOT MSVC cl. ggml-cpu/CMakeLists.txt hard-errors:
+  #        if (MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  #          FATAL_ERROR "MSVC is not supported for ARM, use clang"
+  #      clang-cl reports COMPILER_ID == "Clang" (passing the guard) while still
+  #      accepting cmake-rs's cl-style flags (-nologo/-MD/-Brepro) and finding
+  #      the ARM64 MSVC headers/libs via INCLUDE/LIB. It is selected by
+  #      packaging/windows/arm64-clangcl.cmake (CMAKE_TOOLCHAIN_FILE below).
+  #      ggml's stock arm64-windows-llvm.cmake uses the GNU `clang` driver,
+  #      which rejects -nologo, so we do NOT use it.
+  #   2. vcvarsall arm64 -- the native ARM64 MSVC environment (INCLUDE/LIB and
+  #      the ARM64 linker) that clang-cl then honours.
+  #   3. CMAKE_GENERATOR=Ninja -- avoids cmake-rs's VS-generator
+  #      -Thost=x64/toolset conflicts on ARM.
+  #   4. CXXFLAGS=/EHsc -- cmake-rs overwrites CMAKE_CXX_FLAGS, dropping CMake's
+  #      default /EHsc; ggml's gguf.cpp uses try/catch and won't compile
+  #      ("cannot use try with exceptions disabled") without it.
+  #
+  # No OpenMP handling is needed here: llama-cpp-2's openmp feature is already
+  # off for this target via Cargo and sherpa is cfg'd out, so the arm64 binary
+  # is self-contained (see scripts/bundle-windows.ps1) -- no libomp/onnxruntime.
+  #
+  # FALLBACK: if windows-11-arm is unavailable (it is a newer, capacity-limited
+  # runner), the same build can instead CROSS-BUILD from an x64 runner
+  # (windows-latest): call `vcvarsall amd64_arm64` (x64-hosted ARM64 cross
+  # tools) and `rustup target add aarch64-pc-windows-msvc` before the identical
+  # cargo build. Only the native path is implemented below; the cross-build is
+  # the documented fallback, not wired up.
+  build-win-arm64:
+    runs-on: windows-11-arm
+
+    # Match build-win-x64: PowerShell Core for the hash-verification and
+    # $GITHUB_ENV / $GITHUB_PATH writes. The build step overrides this to cmd
+    # so it can `call vcvarsall.bat arm64`.
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable) with the ARM64 MSVC target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      # The whisper-rs / llama-cpp-2 C/C++ tree is a slow first compile;
+      # caching the target dir and registry keeps re-runs cheap.
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: win-arm64
+
+      # The proven recipe needs clang-cl (from LLVM), Ninja and CMake on PATH.
+      # The ARM64 runner image is leaner than windows-latest, so provision them
+      # explicitly. choco writes their install dirs to the MACHINE PATH, which a
+      # later step in the SAME job does NOT inherit automatically -- so surface
+      # the LLVM and CMake bin dirs via GITHUB_PATH (Ninja's choco shim lands in
+      # C:\ProgramData\chocolatey\bin, already on PATH).
+      - name: Provision LLVM (clang-cl), Ninja and CMake
+        run: |
+          choco install -y --no-progress llvm ninja cmake
+          if ($LASTEXITCODE -ne 0) { throw "choco install failed (exit $LASTEXITCODE)" }
+          'C:\Program Files\LLVM\bin'  | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          'C:\Program Files\CMake\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      # whisper-rs and llama-cpp-2 run bindgen, which needs libclang. Point it
+      # at the LLVM we just installed (same C:\Program Files\LLVM\bin as x64).
+      - name: Point bindgen at libclang
+        run: |
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # crates/whspr-app/build.rs panics unless ARCHIVO_DIR holds the three
+      # static Archivo faces. Nix fetches them by content hash for the macOS
+      # build; here we fetch them at runtime and verify the SAME SHA-256s.
+      # The .ttf files are NOT committed (see .gitignore) and there is no
+      # build.rs network fetch -- the faces exist only for this job.
+      - name: Provide Archivo faces and set ARCHIVO_DIR
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Expected digests are Nix SRI base64: the raw 32-byte SHA-256,
+          # base64-encoded. Get-FileHash returns HEX, which would never
+          # compare equal to these -- so below we hash the file to raw bytes
+          # and base64-encode THOSE, producing a value directly comparable to
+          # the SRI base64 (no hex<->b64 conversion, no room for an
+          # encoding-mismatch false pass).
+          $faces = @(
+            @{ Name = 'Archivo-Regular.ttf';   Sri = 'Wfv9ipu0EwG/6VDnsJf9QtUq8iSgd2HiwbLJWaTJz5o=' },
+            @{ Name = 'Archivo-SemiBold.ttf';  Sri = 'ZZi27YFhWHZ6djO9+wHXja9UyrTNTZ08wM/ZlfRyMIM=' },
+            @{ Name = 'Archivo-ExtraBold.ttf'; Sri = 'n/9nkirivDdqnlxtZE7r+MWxf2Kg845fAW5LfjkDZi8=' }
+          )
+          $baseUrl = 'https://raw.githubusercontent.com/Omnibus-Type/Archivo/master/fonts/ttf'
+
+          $dir = Join-Path $env:RUNNER_TEMP 'archivo'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+          foreach ($face in $faces) {
+            $dest = Join-Path $dir $face.Name
+            $url  = "$baseUrl/$($face.Name)"
+            Write-Host "Downloading $url"
+            Invoke-WebRequest -Uri $url -OutFile $dest
+
+            $bytes  = [System.IO.File]::ReadAllBytes($dest)
+            $sha    = [System.Security.Cryptography.SHA256]::Create()
+            try {
+              $actual = [Convert]::ToBase64String($sha.ComputeHash($bytes))
+            } finally {
+              $sha.Dispose()
+            }
+
+            if ($actual -ne $face.Sri) {
+              throw "SHA-256 mismatch for $($face.Name): expected $($face.Sri), got $actual"
+            }
+            Write-Host "Verified $($face.Name)  ($actual)"
+          }
+
+          "ARCHIVO_DIR=$dir" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # The recipe build step. Runs under `vcvarsall arm64` (cmd shell, so the
+      # batch env carries into the child cargo process). The CMAKE_* / CXXFLAGS
+      # env below is the ggml recipe documented in this job's header block:
+      # clang-cl toolchain file + Ninja generator + /EHsc. Cargo.lock is
+      # committed; --locked makes a drifted lockfile a failure, not a silent
+      # update.
+      - name: Build workspace (aarch64-pc-windows-msvc)
+        shell: cmd
+        env:
+          CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/packaging/windows/arm64-clangcl.cmake
+          CMAKE_GENERATOR: Ninja
+          CXXFLAGS: /EHsc
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" arm64
+          if errorlevel 1 exit /b 1
+          cargo build --workspace --locked --target aarch64-pc-windows-msvc
