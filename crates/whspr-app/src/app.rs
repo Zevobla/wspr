@@ -94,8 +94,29 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.tray.is_none() {
                 state.tray = crate::tray::Handle::create(state.pipeline_state);
             }
-            Task::none()
+            // Measure the primary monitor now the window exists, so a display
+            // too small for the default size gets the window shrunk + re-
+            // centered to fit (see `Message::HubMonitorMeasured`). No-op on
+            // roomy monitors, where `Position::Centered` already placed it.
+            window::monitor_size(id).map(Message::HubMonitorMeasured)
         }
+        Message::HubMonitorMeasured(monitor) => match (state.hub_window, monitor) {
+            (Some(id), Some(monitor)) => {
+                let fit = crate::hub::fit_window_size(monitor);
+                if fit.width < crate::hub::DEFAULT_WINDOW_SIZE.width
+                    || fit.height < crate::hub::DEFAULT_WINDOW_SIZE.height
+                {
+                    // The primary monitor can't hold the full default size:
+                    // shrink to fit and re-center so the window opens fully
+                    // on-screen instead of overhanging an edge.
+                    let origin = crate::hub::centered_origin(monitor, fit);
+                    Task::batch([window::resize(id, fit), window::move_to(id, origin)])
+                } else {
+                    Task::none()
+                }
+            }
+            _ => Task::none(),
+        },
         Message::LanguageChanged(label) => {
             state.config.language = config_ui::language_from_label(&label);
             persist_config(state);
@@ -214,6 +235,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
                 crate::worker::WorkerEvent::Failed(error) => {
                     state.last_error = Some(error);
+                }
+                crate::worker::WorkerEvent::NeedsModel => {
+                    // Onboarding, not an error: no model installed yet. Kept
+                    // separate from `last_error` so the calm onboarding banner
+                    // shows instead of the red worker-error one.
+                    state.needs_model = true;
                 }
             }
             Task::none()
@@ -373,13 +400,20 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             .as_ref()
             .and_then(crate::tray::Handle::poll_action)
         {
+            // Re-show: un-hide (the close button hides to the tray -- see
+            // `hide_or_exit_hub`) *and* raise/focus, so "Show Hub" works
+            // whether the window is merely behind others or hidden.
             Some(crate::tray::Action::ShowHub) => match state.hub_window {
-                Some(id) => window::gain_focus(id),
+                Some(id) => Task::batch([
+                    window::set_mode(id, window::Mode::Windowed),
+                    window::gain_focus(id),
+                ]),
                 None => Task::none(),
             },
             Some(crate::tray::Action::Quit) => iced::exit(),
             None => Task::none(),
         },
+        Message::HubCloseRequested => hide_or_exit_hub(state),
         Message::TrayDoneTick => {
             if !tray_done_active(state.tray_done_until, std::time::Instant::now()) {
                 state.tray_done_until = None;
@@ -395,8 +429,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         },
         // The Windows caption controls (the borderless window has no system
         // title bar -- see `crate::hub::window_settings`). Each drives an
-        // iced 0.14 window command; `close` routes through the same clean
-        // `iced::exit` the tray "Quit" action uses.
+        // iced 0.14 window command; `close` hides to the tray (like a native
+        // close request), leaving the tray "Quit" as the only exit.
         #[cfg(target_os = "windows")]
         Message::MinimizeHubWindow => match state.hub_window {
             Some(id) => window::minimize(id, true),
@@ -408,7 +442,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             None => Task::none(),
         },
         #[cfg(target_os = "windows")]
-        Message::CloseHubWindow => iced::exit(),
+        Message::CloseHubWindow => hide_or_exit_hub(state),
         #[cfg(target_os = "windows")]
         Message::ResizeHubWindow(direction) => match state.hub_window {
             Some(id) => window::drag_resize(id, direction),
@@ -443,6 +477,26 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 },
             },
         },
+    }
+}
+
+/// A close request's outcome: hide the Hub window to the tray on platforms
+/// that have one (macOS, Windows), leaving the app running in the background
+/// so the tray "Quit" is the only thing that exits (matching the installer's
+/// "whspr lives in your system tray" promise). Where there's no tray (Linux),
+/// a close exits the app, since there'd be no way to bring it back.
+fn hide_or_exit_hub(state: &State) -> Task<Message> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        match state.hub_window {
+            Some(id) => window::set_mode(id, window::Mode::Hidden),
+            None => Task::none(),
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = state;
+        iced::exit()
     }
 }
 
@@ -532,9 +586,30 @@ fn subscription(state: &State) -> iced::Subscription<Message> {
         tray_poll_subscription(state),
         tray_done_subscription(state),
         mic_level_subscription(state),
+        link_import_key_subscription(state),
+        hub_close_subscription(state),
         crate::screenshot::subscription(state),
         crate::system_theme::subscription(state),
     ])
+}
+
+/// Intercepts the Hub window's OS close request (`exit_on_close_request` is
+/// off -- see `crate::hub::window_settings`) so `Message::HubCloseRequested`
+/// can hide it to the tray instead of quitting (macOS/Windows) or exit
+/// cleanly (Linux). Without this the daemon would strand a closed window.
+fn hub_close_subscription(_state: &State) -> iced::Subscription<Message> {
+    iced::window::close_requests().map(|_id| Message::HubCloseRequested)
+}
+
+/// While the "Add from a link" modal is open, listens for keyboard events so
+/// Esc can dismiss it (see `crate::link_import`). Scoped to the open dialog so
+/// it never swallows keys the rest of the time.
+fn link_import_key_subscription(state: &State) -> iced::Subscription<Message> {
+    if state.link_import.is_some() {
+        iced::keyboard::listen().map(Message::LinkImportKey)
+    } else {
+        iced::Subscription::none()
+    }
 }
 
 /// While the in-app Record button is capturing, ticks ~12x/sec so the view

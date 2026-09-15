@@ -45,12 +45,45 @@ fn sample_media(human: bool) -> MediaInfo {
     }
 }
 
+/// A minimal `KeyPressed` event for `named`, for exercising the modal's Esc
+/// dismissal without a real keyboard.
+fn key_pressed(named: iced::keyboard::key::Named) -> iced::keyboard::Event {
+    iced::keyboard::Event::KeyPressed {
+        key: iced::keyboard::Key::Named(named),
+        modified_key: iced::keyboard::Key::Named(named),
+        physical_key: iced::keyboard::key::Physical::Unidentified(
+            iced::keyboard::key::NativeCode::Unidentified,
+        ),
+        location: iced::keyboard::Location::Standard,
+        modifiers: iced::keyboard::Modifiers::default(),
+        text: None,
+        repeat: false,
+    }
+}
+
 #[test]
 fn open_seeds_a_dialog_and_cancel_clears_it() {
     let mut state = open_state();
     assert!(state.link_import.is_some());
     assert!(update(&mut state, &Message::LinkImportCancel).is_some());
     assert!(state.link_import.is_none());
+}
+
+#[test]
+fn esc_dismisses_the_dialog() {
+    let mut state = open_state();
+    assert!(state.link_import.is_some());
+    let esc = Message::LinkImportKey(key_pressed(iced::keyboard::key::Named::Escape));
+    assert!(update(&mut state, &esc).is_some());
+    assert!(state.link_import.is_none());
+}
+
+#[test]
+fn a_non_escape_key_leaves_the_dialog_open() {
+    let mut state = open_state();
+    let enter = Message::LinkImportKey(key_pressed(iced::keyboard::key::Named::Enter));
+    assert!(update(&mut state, &enter).is_some());
+    assert!(state.link_import.is_some());
 }
 
 #[test]

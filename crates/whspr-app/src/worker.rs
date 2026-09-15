@@ -48,6 +48,12 @@ pub enum WorkerEvent {
     },
     /// Hotkey listener startup, mic capture, or a pipeline run failed.
     Failed(String),
+    /// A first-run onboarding state, *not* a failure: the default local
+    /// Whisper ASR is selected but no model file is installed yet, so there's
+    /// nothing to transcribe with until the user picks one. Surfaced as a
+    /// calm "pick a model" hint (see `crate::hub`'s status banner) rather than
+    /// the red worker-error banner `Failed` drives.
+    NeedsModel,
 }
 
 /// Builds the worker stream. Meant to run for the lifetime of the app once
@@ -120,6 +126,16 @@ pub(crate) fn build_asr_backend(
             }
         }
     }
+}
+
+/// Whether the config selects the local Whisper ASR but no model file is
+/// resolvable yet -- the fresh-install onboarding state (see
+/// `WorkerEvent::NeedsModel`), distinct from a genuine backend failure like a
+/// missing cloud API key. Mirrors the exact condition `build_asr_backend`'s
+/// `WhisperLocal` arm errors on, so the two never disagree.
+fn is_missing_whisper_model(config: &whspr_config::Config) -> bool {
+    config.asr == AsrChoice::WhisperLocal
+        && WhisperLocal::resolve_model_path(config.whisper.model_path.clone()).is_none()
 }
 
 /// Builds a text refiner from `config.refine`, always wrapped in
@@ -200,7 +216,16 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     let asr_backend = match build_asr_backend(&config) {
         Ok(backend) => backend,
         Err(error) => {
-            let _ = output.send(WorkerEvent::Failed(error)).await;
+            // A fresh install with the default local Whisper ASR but no model
+            // file yet is a first-run onboarding state, not a failure -- send
+            // the calm `NeedsModel` hint instead of the red `Failed` banner.
+            // Any other build failure (bad API key, etc.) stays an error.
+            let event = if is_missing_whisper_model(&config) {
+                WorkerEvent::NeedsModel
+            } else {
+                WorkerEvent::Failed(error)
+            };
+            let _ = output.send(event).await;
             std::future::pending::<()>().await;
             return;
         }
@@ -374,6 +399,36 @@ mod tests {
         let backend = build_asr_backend(&config)
             .expect("an explicit model_path should be enough to build WhisperLocal");
         assert_eq!(backend.id(), "whisper-local");
+    }
+
+    #[test]
+    fn missing_whisper_model_is_the_onboarding_case_only_for_whisper_without_a_path() {
+        // Default local Whisper with no configured model path: the fresh-
+        // install onboarding state.
+        let onboarding = Config {
+            asr: AsrChoice::WhisperLocal,
+            whisper: whspr_config::WhisperConfig { model_path: None },
+            ..Default::default()
+        };
+        assert!(is_missing_whisper_model(&onboarding));
+
+        // An explicit model path means there's nothing to onboard.
+        let configured = Config {
+            asr: AsrChoice::WhisperLocal,
+            whisper: whspr_config::WhisperConfig {
+                model_path: Some(PathBuf::from("/explicit/model.bin")),
+            },
+            ..Default::default()
+        };
+        assert!(!is_missing_whisper_model(&configured));
+
+        // A different backend failing (e.g. a missing API key) is a real
+        // error, not the missing-model onboarding case.
+        let other_backend = Config {
+            asr: AsrChoice::OpenAi,
+            ..Default::default()
+        };
+        assert!(!is_missing_whisper_model(&other_backend));
     }
 
     #[test]

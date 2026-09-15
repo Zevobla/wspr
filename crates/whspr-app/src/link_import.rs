@@ -76,6 +76,18 @@ pub fn update(state: &mut State, message: &Message) -> Option<Task<Message>> {
             state.link_import = None;
             Some(Task::none())
         }
+        Message::LinkImportKey(event) => {
+            // Esc dismisses the modal, like Cancel -- the dialog otherwise
+            // only closed via its button. Other keys are ignored here.
+            if let iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                ..
+            } = event
+            {
+                state.link_import = None;
+            }
+            Some(Task::none())
+        }
         Message::LinkImportUrl(url) => {
             if let Some(li) = state.link_import.as_mut() {
                 li.url = url.clone();

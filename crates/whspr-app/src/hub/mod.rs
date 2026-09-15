@@ -92,6 +92,44 @@ fn window_icon() -> Option<iced::window::icon::Icon> {
     iced::window::icon::from_rgba(ICON_RGBA.to_vec(), ICON_SIZE, ICON_SIZE).ok()
 }
 
+/// The Hub window's default size, in logical pixels -- the Modernist ~4:3
+/// proportions. Opened [`Position::Centered`](iced::window::Position::Centered)
+/// on the primary monitor and, when that monitor is too small for the full
+/// size, clamped down to fit at open time (see [`fit_window_size`] and
+/// `crate::app`'s post-open fit) so the window never opens partly off-screen.
+pub const DEFAULT_WINDOW_SIZE: iced::Size = iced::Size::new(1024.0, 768.0);
+
+/// Margin (logical px) kept clear of each monitor edge when the default size
+/// has to shrink to fit a small display -- also covers the OS menu bar /
+/// taskbar the monitor-size query doesn't subtract.
+const WINDOW_FIT_MARGIN: f32 = 48.0;
+
+/// [`DEFAULT_WINDOW_SIZE`] clamped to fit `monitor` (the primary monitor's
+/// logical resolution), scaling both axes uniformly so the Modernist
+/// proportions are preserved. Returns the default unchanged when it already
+/// fits. Pure, so the fit math is unit-tested without a real monitor.
+pub fn fit_window_size(monitor: iced::Size) -> iced::Size {
+    let max_w = (monitor.width - WINDOW_FIT_MARGIN).max(WINDOW_FIT_MARGIN);
+    let max_h = (monitor.height - WINDOW_FIT_MARGIN).max(WINDOW_FIT_MARGIN);
+    let scale = (max_w / DEFAULT_WINDOW_SIZE.width)
+        .min(max_h / DEFAULT_WINDOW_SIZE.height)
+        .min(1.0);
+    iced::Size::new(
+        DEFAULT_WINDOW_SIZE.width * scale,
+        DEFAULT_WINDOW_SIZE.height * scale,
+    )
+}
+
+/// The top-left point centering a `size` window on `monitor`, clamped so the
+/// window never starts past the top-left edge. Pure, unit-tested alongside
+/// [`fit_window_size`].
+pub fn centered_origin(monitor: iced::Size, size: iced::Size) -> iced::Point {
+    iced::Point::new(
+        ((monitor.width - size.width) / 2.0).max(0.0),
+        ((monitor.height - size.height) / 2.0).max(0.0),
+    )
+}
+
 /// The Hub window's settings. On macOS the system title bar is hidden and
 /// made transparent with a full-size content view, so the app's own paper
 /// ground and rounded corners reach the top edge and the traffic lights
@@ -102,6 +140,11 @@ fn window_icon() -> Option<iced::window::icon::Icon> {
 #[cfg(target_os = "macos")]
 pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
+        size: DEFAULT_WINDOW_SIZE,
+        position: iced::window::Position::Centered,
+        // The close button hides the window to the tray rather than quitting
+        // (see `crate::app`'s close handling); only the tray "Quit" exits.
+        exit_on_close_request: false,
         platform_specific: iced::window::settings::PlatformSpecific {
             title_hidden: true,
             titlebar_transparent: true,
@@ -124,6 +167,11 @@ pub fn window_settings() -> iced::window::Settings {
 #[cfg(target_os = "windows")]
 pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
+        size: DEFAULT_WINDOW_SIZE,
+        position: iced::window::Position::Centered,
+        // The (custom) close control hides the window to the tray rather than
+        // quitting (see `crate::app`); only the tray "Quit" exits.
+        exit_on_close_request: false,
         decorations: false,
         platform_specific: iced::window::settings::PlatformSpecific {
             corner_preference: iced::window::settings::platform::CornerPreference::Round,
@@ -137,6 +185,13 @@ pub fn window_settings() -> iced::window::Settings {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn window_settings() -> iced::window::Settings {
     iced::window::Settings {
+        size: DEFAULT_WINDOW_SIZE,
+        position: iced::window::Position::Centered,
+        // No tray on Linux (see `crate::tray`), so a close still exits -- but
+        // route it through `crate::app`'s close handler (which calls
+        // `iced::exit`) rather than letting the daemon strand itself with a
+        // destroyed window and no way back.
+        exit_on_close_request: false,
         icon: window_icon(),
         ..iced::window::Settings::default()
     }
@@ -179,7 +234,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     ))
     .on_press(Message::DragHubWindow);
 
-    let main = column![header, error_banner(state, scheme), body,]
+    let main = column![header, status_banner(state, scheme), body,]
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -424,23 +479,46 @@ fn header_trailing<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     .into()
 }
 
-/// A mono accent error notice under the header when a worker error exists.
-fn error_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    match &state.last_error {
-        Some(error) => container(
-            container(
-                text(format!("Last worker error: {error}"))
-                    .size(type_scale::BODY_MEDIUM.size)
-                    .font(type_scale::BODY_MEDIUM.font()),
-            )
-            .padding(spacing::MD)
-            .width(Length::Fill)
-            .style(move |_theme| styles::container::error_banner(scheme)),
+/// The under-header status banner. A genuine worker error takes precedence
+/// and shows the red error notice; a fresh install with no model yet shows a
+/// calm onboarding prompt instead; otherwise nothing. Keeping the two cases
+/// visually distinct means "no model configured" reads as first-run guidance,
+/// not as a failure (the bug this fixes).
+fn status_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    if let Some(error) = &state.last_error {
+        banner(
+            format!("Last worker error: {error}"),
+            styles::container::error_banner(scheme),
         )
-        .padding([spacing::SM, spacing::XXL])
-        .into(),
-        None => Space::new().into(),
+    } else if state.needs_model {
+        banner(
+            "Pick a speech model in Models to start dictating.".to_string(),
+            styles::container::onboarding_banner(scheme),
+        )
+    } else {
+        Space::new().into()
     }
+}
+
+/// A full-width notice band under the header, carrying `message` in the given
+/// container `style`. Shared by both the error and onboarding cases of
+/// [`status_banner`] so only the copy and style differ.
+fn banner<'a>(
+    message: String,
+    style: iced::widget::container::Style,
+) -> Element<'a, Message> {
+    container(
+        container(
+            text(message)
+                .size(type_scale::BODY_MEDIUM.size)
+                .font(type_scale::BODY_MEDIUM.font()),
+        )
+        .padding(spacing::MD)
+        .width(Length::Fill)
+        .style(move |_theme| style),
+    )
+    .padding([spacing::SM, spacing::XXL])
+    .into()
 }
 
 #[cfg(test)]
@@ -476,5 +554,40 @@ mod tests {
         for s in [Idle, Recording, Transcribing, Refining, Injecting, Error] {
             assert!(!pipeline_word(s).is_empty());
         }
+    }
+
+    #[test]
+    fn fit_window_size_leaves_the_default_untouched_on_a_roomy_monitor() {
+        let fit = fit_window_size(iced::Size::new(2560.0, 1440.0));
+        assert_eq!(fit, DEFAULT_WINDOW_SIZE);
+    }
+
+    #[test]
+    fn fit_window_size_shrinks_to_fit_a_small_monitor_keeping_proportions() {
+        // The reported failure: a 1024-wide display can't hold the 1024-wide
+        // default once a margin is kept, so it must shrink.
+        let monitor = iced::Size::new(1024.0, 768.0);
+        let fit = fit_window_size(monitor);
+        assert!(fit.width < DEFAULT_WINDOW_SIZE.width);
+        assert!(fit.width + WINDOW_FIT_MARGIN <= monitor.width);
+        assert!(fit.height + WINDOW_FIT_MARGIN <= monitor.height);
+        // 4:3 proportions preserved (uniform scale).
+        let default_ratio = DEFAULT_WINDOW_SIZE.width / DEFAULT_WINDOW_SIZE.height;
+        assert!((fit.width / fit.height - default_ratio).abs() < 1e-4);
+    }
+
+    #[test]
+    fn centered_origin_centers_and_never_goes_negative() {
+        let monitor = iced::Size::new(1440.0, 900.0);
+        let size = iced::Size::new(1024.0, 768.0);
+        let origin = centered_origin(monitor, size);
+        assert!((origin.x - (1440.0 - 1024.0) / 2.0).abs() < 1e-4);
+        assert!((origin.y - (900.0 - 768.0) / 2.0).abs() < 1e-4);
+
+        // A window wider/taller than the monitor is clamped to the top-left
+        // rather than positioned at a negative coordinate.
+        let origin = centered_origin(iced::Size::new(800.0, 600.0), size);
+        assert_eq!(origin.x, 0.0);
+        assert_eq!(origin.y, 0.0);
     }
 }
