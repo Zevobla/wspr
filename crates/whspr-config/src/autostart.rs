@@ -112,6 +112,10 @@ pub fn install_autostart(binary_path: &Path) -> Result<()> {
 /// written, tolerating "there wasn't one" (not-found is not an error --
 /// mirrors `SpeakerDb::load`'s "missing file is fine" reasoning).
 pub fn remove_autostart() -> Result<()> {
+    if cfg!(target_os = "windows") {
+        return remove_autostart_windows();
+    }
+
     let base = home_dirs()?;
 
     if cfg!(target_os = "macos") {
@@ -238,6 +242,38 @@ fn install_autostart_windows() -> Result<()> {
 /// shape as `whspr-hf`'s `recommended_working_set`).
 #[cfg(not(target_os = "windows"))]
 fn install_autostart_windows() -> Result<()> {
+    Err(unsupported_platform_err())
+}
+
+/// Deletes the `whspr` autostart value from the current user's `Run` key.
+/// Tolerates both a missing `Run` key and a missing value as success --
+/// there's nothing to undo on a fresh install or a repeat `remove_autostart`
+/// call, mirroring `remove_if_exists`'s "not-found is fine" contract.
+#[cfg(target_os = "windows")]
+fn remove_autostart_windows() -> Result<()> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+    use winreg::RegKey;
+
+    let run_key = match RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(RUN_KEY_PATH, KEY_SET_VALUE)
+    {
+        Ok(key) => key,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(autostart_err(e)),
+    };
+
+    match run_key.delete_value(RUN_VALUE_NAME) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(autostart_err(e)),
+    }
+}
+
+/// The non-Windows counterpart to `remove_autostart_windows`: never called
+/// (guarded out by `cfg!(target_os = "windows")`), it only exists so the
+/// call site resolves on every target.
+#[cfg(not(target_os = "windows"))]
+fn remove_autostart_windows() -> Result<()> {
     Err(unsupported_platform_err())
 }
 
