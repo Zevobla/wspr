@@ -93,6 +93,21 @@ fn apple_speech_choice_round_trips_through_toml() {
 }
 
 #[test]
+fn hotkey_defaults_to_none_and_round_trips_through_toml() {
+    // Fresh installs carry no override, so the listener uses the platform
+    // default combo.
+    assert_eq!(Config::default().hotkey, None);
+
+    let cfg = Config {
+        hotkey: Some("Ctrl+Shift+D".to_string()),
+        ..Default::default()
+    };
+    let toml_string = toml::to_string_pretty(&cfg).expect("serialize");
+    let round_tripped: Config = toml::from_str(&toml_string).expect("deserialize");
+    assert_eq!(round_tripped.hotkey, Some("Ctrl+Shift+D".to_string()));
+}
+
+#[test]
 fn load_from_missing_file_returns_defaults() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let cfg = load_from(Some(temp_dir.path()));

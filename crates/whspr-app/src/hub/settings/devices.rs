@@ -1,6 +1,6 @@
 //! The "Audio & devices" group: the input-device picker
 //! (`microphone_section`), the `config.device` flag toggles
-//! (`flags_section`), and the hotkey preview (`hotkey_section`).
+//! (`flags_section`), and the push-to-talk hotkey rebind (`hotkey_section`).
 
 use iced::widget::{button, column, pick_list, row, text};
 use iced::{Alignment, Element};
@@ -81,9 +81,21 @@ fn flags_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
     )
 }
 
+/// The combo the push-to-talk listener will register: the user's persisted
+/// choice (`config.hotkey`), or the platform default when they haven't rebound
+/// it. Single source of truth for both the keycaps and the hint below, so what
+/// the UI shows always matches what the listener registers on the next launch.
+fn current_hotkey_label(state: &State) -> &str {
+    state
+        .config
+        .hotkey
+        .as_deref()
+        .unwrap_or_else(|| whspr_inject::default_hotkey_label())
+}
+
 fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
     let capture_label = if state.hotkey_capturing {
-        "Press any key..."
+        "Press a combo..."
     } else {
         "Change"
     };
@@ -95,33 +107,33 @@ fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Eleme
     .style(move |_theme, status| styles::button::text(scheme, status))
     .on_press(Message::StartHotkeyCapture);
 
-    // The fixed push-to-talk combo rendered as Modernist keycaps. The keys
-    // are derived by splitting the same source of truth as the label
-    // (`whspr_inject::default_hotkey_label`) on `+`, so the displayed keycaps
-    // can never drift from the hotkey that's actually registered:
-    // "Ctrl+Space" on macOS/Linux, "Ctrl+Shift+Space" on Windows.
+    // The push-to-talk combo rendered as Modernist keycaps, derived by
+    // splitting the configured label (`current_hotkey_label`) on `+`, so the
+    // keycaps always match the combo the listener registers on next launch.
     let mut keycaps = row![].spacing(spacing::SM).align_y(Alignment::Center);
-    for key in whspr_inject::default_hotkey_label().split('+') {
+    for key in current_hotkey_label(state).split('+') {
         keycaps = keycaps.push(widgets::kbd(key, scheme));
     }
     let keycaps = keycaps.push(capture_button);
 
-    let preview: Element<'_, Message> = match &state.captured_hotkey {
-        Some(combo) => text(format!("Captured: {combo} (preview only, not yet applied)"))
-            .size(type_scale::BODY_MEDIUM.size)
-            .font(type_scale::BODY_MEDIUM.font())
-            .color(scheme.on_surface_variant)
-            .into(),
-        None => text(format!(
-            "{} is fixed -- whspr-inject doesn't yet support registering a \
-              different combo at runtime.",
-            whspr_inject::default_hotkey_label()
-        ))
+    // Honest about the relaunch-to-apply model: a rebind is persisted and
+    // registered at the next launch, not live. No "preview only" limbo.
+    let hint = match (state.hotkey_capturing, &state.captured_hotkey) {
+        (true, _) => "Hold a modifier (Ctrl/Alt/Shift/Cmd) and press a key. Esc cancels."
+            .to_string(),
+        (false, Some(combo)) => {
+            format!("Saved {combo}. Takes effect the next time you start whspr.")
+        }
+        (false, None) => format!(
+            "Push to talk is {}. Changing it takes effect on the next launch.",
+            current_hotkey_label(state)
+        ),
+    };
+    let preview: Element<'_, Message> = text(hint)
         .size(type_scale::BODY_MEDIUM.size)
         .font(type_scale::BODY_MEDIUM.font())
         .color(scheme.on_surface_variant)
-        .into(),
-    };
+        .into();
 
     section(
         scheme,

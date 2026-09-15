@@ -9,12 +9,12 @@
 
 use std::thread;
 
-use global_hotkey::hotkey::{Code, HotKey};
+use global_hotkey::hotkey::HotKey;
 use global_hotkey::GlobalHotKeyManager;
 
 use whspr_core::{Result, WhsprError};
 
-use crate::default_hotkey_modifiers;
+use crate::hotkey_config::default_hotkey;
 
 /// Listens for the configured global hotkey on Windows.
 ///
@@ -46,8 +46,17 @@ impl GlobalHotkeyListener {
     /// succeeded, so a failure surfaces from `new()` synchronously, exactly
     /// like the non-Windows path.
     pub fn new() -> Result<Self> {
+        Self::with_hotkey(default_hotkey())
+    }
+
+    /// Creates a listener that registers `hotkey` (rather than the platform
+    /// default) on its pump thread, so the user's configured push-to-talk
+    /// combo is what fires. Shared by [`new`](Self::new) and
+    /// [`from_label`](crate::GlobalHotkeyListener::from_label). `HotKey` is
+    /// `Copy`, so it's simply moved onto the pump thread below.
+    pub(crate) fn with_hotkey(hotkey: HotKey) -> Result<Self> {
         // Carries the pump thread's id back on success, or the setup error on
-        // failure, so `new()` mirrors the synchronous contract of the other
+        // failure, so this mirrors the synchronous contract of the other
         // platforms.
         let (setup_tx, setup_rx) = std::sync::mpsc::channel::<Result<u32>>();
 
@@ -69,8 +78,6 @@ impl GlobalHotkeyListener {
                     return;
                 }
             };
-
-            let hotkey = HotKey::new(Some(default_hotkey_modifiers()), Code::Space);
 
             if let Err(e) = manager.register(hotkey) {
                 let _ = setup_tx.send(Err(WhsprError::Inject(format!(

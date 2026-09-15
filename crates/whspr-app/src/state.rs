@@ -33,11 +33,13 @@ pub struct State {
     /// restored from `config.device.input_device` when one was persisted,
     /// otherwise it defaults to the host's default input device.
     pub selected_device: Option<String>,
-    /// Whether the Hub is currently listening for the next keypress to
-    /// preview as a hotkey (see `crate::hotkey_capture` for why this is a
-    /// preview only, not something that gets applied).
+    /// Whether the Hub is currently listening for the next key combo to bind
+    /// as the push-to-talk hotkey (see `crate::hotkey_capture`). A bound combo
+    /// is persisted to `config.hotkey` and registered on the next launch.
     pub hotkey_capturing: bool,
-    /// The most recently captured hotkey preview, formatted for display.
+    /// The combo captured during this session's rebind, formatted for display.
+    /// `None` until the user rebinds the hotkey; the persisted value lives in
+    /// `config.hotkey`.
     pub captured_hotkey: Option<String>,
     /// Completed transcriptions: whatever was on disk at boot (see
     /// `crate::history::read_history_file`), plus any the pipeline

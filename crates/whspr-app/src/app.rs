@@ -20,6 +20,7 @@
 use iced::{window, Element, Task};
 
 use crate::config_ui;
+use crate::hotkey_capture::CaptureOutcome;
 use crate::state::{Message, State};
 use crate::tray_state::{begin_tray_done_linger, set_pipeline_state, tray_done_active};
 
@@ -150,9 +151,19 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::HotkeyCaptureKeyEvent(event) => {
             if let iced::keyboard::Event::KeyPressed { key, modifiers, .. } = event {
-                state.captured_hotkey =
-                    Some(crate::hotkey_capture::format_key_combo(modifiers, &key));
-                state.hotkey_capturing = false;
+                match crate::hotkey_capture::capture_outcome(modifiers, &key) {
+                    CaptureOutcome::Bound(combo) => {
+                        // Persist the new combo so the listener picks it up on
+                        // the next launch, and show it as the current binding.
+                        state.captured_hotkey = Some(combo.clone());
+                        state.config.hotkey = Some(combo);
+                        state.hotkey_capturing = false;
+                        persist_config(state);
+                    }
+                    CaptureOutcome::Cancelled => state.hotkey_capturing = false,
+                    // A lone modifier or unusable key: keep listening.
+                    CaptureOutcome::Incomplete => {}
+                }
             }
             Task::none()
         }
