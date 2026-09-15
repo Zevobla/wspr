@@ -36,3 +36,12 @@ png = "0.17"
 # `whspr-config`.
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg.workspace = true
+
+# `build.rs` embeds an `asInvoker` application manifest (see its doc comment) so
+# Windows' installer-detection heuristic doesn't spuriously UAC-elevate this
+# per-user installer just because its filename contains "setup". `embed-manifest`
+# is pure Rust and self-gates -- its embed call only touches the linker on a
+# windows-msvc target, and `build.rs` guards on `CARGO_CFG_TARGET_OS` besides --
+# so it's safe to depend on unconditionally and compiles fine on the macOS host.
+[build-dependencies]
+embed-manifest = { workspace = true }

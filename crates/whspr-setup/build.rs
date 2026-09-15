@@ -38,8 +38,42 @@ fn main() {
     let out_dir = env::var_os("OUT_DIR").expect("cargo always sets OUT_DIR");
     let out_dir = Path::new(&out_dir);
 
+    embed_asinvoker_manifest();
     copy_archivo_faces(out_dir);
     generate_payload(out_dir);
+}
+
+/// Embeds an `asInvoker` application manifest into the installer binary.
+///
+/// The installer is strictly **per-user** -- it copies into `%LOCALAPPDATA%\
+/// whspr` and needs no administrator rights -- but its shipped filename
+/// contains "setup", which trips Windows' *installer-detection heuristic*: a
+/// GUI `.exe` named like `setup`/`install`/`update` with no application
+/// manifest is assumed to be a legacy installer and auto-UAC-elevated on
+/// launch. That elevation prompt is spurious and wrong here. An `asInvoker`
+/// manifest tells Windows to run the program with the invoking user's own
+/// authorities and never show the dialog, "regardless of the name of the
+/// program".
+///
+/// Manifest embedding has to happen from `build.rs`, before the linker runs.
+/// `embed-manifest`'s `new_manifest` already defaults the requested execution
+/// level to `AsInvoker`; we set it explicitly so the intent is unmistakable.
+/// The whole thing only does anything on a `windows-msvc` target (verified on
+/// the Windows VM) -- the `CARGO_CFG_TARGET_OS` guard skips it entirely on the
+/// macOS host build, so the crate stays green everywhere.
+fn embed_asinvoker_manifest() {
+    // `CARGO_CFG_TARGET_OS` reflects the *target* being built, not the host.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+
+    use embed_manifest::manifest::ExecutionLevel;
+    use embed_manifest::{embed_manifest, new_manifest};
+
+    embed_manifest(
+        new_manifest("Zevobla.whspr.Setup").requested_execution_level(ExecutionLevel::AsInvoker),
+    )
+    .expect("failed to embed asInvoker manifest");
 }
 
 /// Copies the Archivo faces from `ARCHIVO_DIR` into `OUT_DIR`.
