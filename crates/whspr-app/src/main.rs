@@ -1,3 +1,8 @@
+// A GUI binary: never attach a console. On Windows the default subsystem is
+// "console", which pops a stray terminal alongside the window; force the
+// "windows" subsystem so the Hub launches clean. Inert on macOS/Linux.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod app;
 mod config_ui;
 mod devices;
