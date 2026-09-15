@@ -9,23 +9,25 @@
 //! `Err` the caller can surface (e.g. via the Hub's `last_error`), rather
 //! than a silent no-op that leaves the user thinking the toggle worked.
 //!
-//! Two platforms are implemented:
+//! Three platforms are implemented:
 //! - **macOS**: a LaunchAgent plist at `~/Library/LaunchAgents/<id>.plist`
 //!   with `RunAtLoad`.
 //! - **Linux**: an XDG autostart entry at `~/.config/autostart/whspr.desktop`
 //!   (`directories::BaseDirs::config_dir()` resolves to `~/.config` there).
+//! - **Windows**: a `whspr` value under
+//!   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holding the quoted
+//!   executable path (written via the Windows-only `winreg` crate).
 //!
-//! **Windows is not implemented** -- it needs a `HKCU\...\Run` registry
-//! key, which means either a `winreg`-style crate (a new workspace
-//! dependency) or raw `windows-sys` FFI, neither of which is justified for
-//! one setting. `install_autostart`/`remove_autostart` return a clear
-//! error there instead of pretending to succeed.
-//!
-//! The path-building and file-writing helpers below are deliberately plain
-//! functions (no `#[cfg(target_os = ...)]`), so they're typechecked and
-//! unit-testable on every platform regardless of which one is actually
-//! running -- only the public `install_autostart`/`remove_autostart`
-//! branch on `cfg!(target_os = ...)` at runtime to pick which one to call.
+//! The macOS/Linux path-building and file-writing helpers below are
+//! deliberately plain functions (no `#[cfg(target_os = ...)]`), so they're
+//! typechecked and unit-testable on every platform, and the public
+//! `install_autostart`/`remove_autostart` pick between them with a runtime
+//! `cfg!(target_os = ...)` branch. The Windows arm is the exception: because
+//! `winreg` is a Windows-only crate, its registry code lives behind a
+//! compile-time `#[cfg(target_os = "windows")]` (paired with a stub off
+//! Windows) so it never has to typecheck elsewhere. Its one pure piece --
+//! `run_value_data`, which quotes the exe path -- stays a plain, all-OS
+//! testable helper like the others.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -55,10 +57,47 @@ pub struct AutostartSettings {
 /// `install_autostart` overwrites rather than duplicates the entry.
 const AUTOSTART_ID: &str = "com.whspr.app";
 
+/// The `HKCU\...\Run` value NAME whspr registers itself under on Windows.
+/// Stable across installs (like `AUTOSTART_ID` for the LaunchAgent), so a
+/// repeat `install_autostart` overwrites the same value rather than piling
+/// up duplicates. Only read by the Windows arms and the unit test below --
+/// `allow(dead_code)` covers the macOS/Linux non-test build, where it's
+/// intentionally unreferenced but kept compiled so the test can assert it.
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+const RUN_VALUE_NAME: &str = "whspr";
+
+/// The `HKCU\...\Run` value DATA for `exe`: the executable path wrapped in
+/// double quotes so a path containing spaces (e.g.
+/// `C:\Program Files\whspr\whspr-app.exe`) stays a single `argv[0]` when
+/// Windows launches it at login, rather than being split on the space.
+///
+/// Parameterized on `exe` (rather than calling `current_exe()` itself) so
+/// it's a pure function unit-testable on every OS -- exactly like
+/// `launchagent_plist_contents`. The Windows install arm passes the real
+/// `std::env::current_exe()`.
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+fn run_value_data(exe: &Path) -> String {
+    format!("\"{}\"", exe.display())
+}
+
+/// The per-user registry sub-key (under `HKEY_CURRENT_USER`) Windows reads
+/// at login to launch autostart programs. Windows-only, so it's `#[cfg]`'d
+/// out entirely on other platforms rather than left as dead code.
+#[cfg(target_os = "windows")]
+const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
 /// Installs a "launch at login" entry pointing at `binary_path` (the
 /// running app's own executable -- callers should pass
 /// `std::env::current_exe()`).
 pub fn install_autostart(binary_path: &Path) -> Result<()> {
+    // Windows uses the registry (via the Windows-only `winreg` crate), so it
+    // delegates to a `#[cfg]`'d helper -- a runtime `cfg!` guard (rather than
+    // a `#[cfg]` on this line) keeps the macOS/Linux code below compiled and
+    // reference-clean on every target, mirroring `whspr-hf`'s cfg'd fn pair.
+    if cfg!(target_os = "windows") {
+        return install_autostart_windows();
+    }
+
     let base = home_dirs()?;
 
     if cfg!(target_os = "macos") {
@@ -75,6 +114,10 @@ pub fn install_autostart(binary_path: &Path) -> Result<()> {
 /// written, tolerating "there wasn't one" (not-found is not an error --
 /// mirrors `SpeakerDb::load`'s "missing file is fine" reasoning).
 pub fn remove_autostart() -> Result<()> {
+    if cfg!(target_os = "windows") {
+        return remove_autostart_windows();
+    }
+
     let base = home_dirs()?;
 
     if cfg!(target_os = "macos") {
@@ -93,7 +136,7 @@ fn home_dirs() -> Result<directories::BaseDirs> {
 
 fn unsupported_platform_err() -> WhsprError {
     WhsprError::Config(
-        "launch-at-login isn't implemented on this platform yet (only macOS and Linux are supported)"
+        "launch-at-login isn't implemented on this platform yet (only macOS, Linux, and Windows are supported)"
             .into(),
     )
 }
@@ -175,6 +218,67 @@ fn remove_if_exists(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Writes the `whspr` autostart value into the current user's `Run` key,
+/// creating/opening it with write access and overwriting any existing value
+/// of the same name (idempotent re-install). The exe path comes from
+/// `current_exe()` (the pure `run_value_data` only quotes it). winreg
+/// surfaces registry failures as `io::Error`, so they funnel through
+/// `autostart_err` like every other write in this module.
+#[cfg(target_os = "windows")]
+fn install_autostart_windows() -> Result<()> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE, KEY_WRITE};
+    use winreg::RegKey;
+
+    let exe = std::env::current_exe().map_err(autostart_err)?;
+    let (run_key, _) = RegKey::predef(HKEY_CURRENT_USER)
+        .create_subkey_with_flags(RUN_KEY_PATH, KEY_SET_VALUE | KEY_WRITE)
+        .map_err(autostart_err)?;
+    run_key
+        .set_value(RUN_VALUE_NAME, &run_value_data(&exe))
+        .map_err(autostart_err)
+}
+
+/// Off Windows this is never reached -- the `cfg!(target_os = "windows")`
+/// guard in `install_autostart` is false -- but the call site still needs a
+/// symbol to reference on every target, so a stub stands in (same cfg'd-pair
+/// shape as `whspr-hf`'s `recommended_working_set`).
+#[cfg(not(target_os = "windows"))]
+fn install_autostart_windows() -> Result<()> {
+    Err(unsupported_platform_err())
+}
+
+/// Deletes the `whspr` autostart value from the current user's `Run` key.
+/// Tolerates both a missing `Run` key and a missing value as success --
+/// there's nothing to undo on a fresh install or a repeat `remove_autostart`
+/// call, mirroring `remove_if_exists`'s "not-found is fine" contract.
+#[cfg(target_os = "windows")]
+fn remove_autostart_windows() -> Result<()> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+    use winreg::RegKey;
+
+    let run_key = match RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(RUN_KEY_PATH, KEY_SET_VALUE)
+    {
+        Ok(key) => key,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(autostart_err(e)),
+    };
+
+    match run_key.delete_value(RUN_VALUE_NAME) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(autostart_err(e)),
+    }
+}
+
+/// The non-Windows counterpart to `remove_autostart_windows`: never called
+/// (guarded out by `cfg!(target_os = "windows")`), it only exists so the
+/// call site resolves on every target.
+#[cfg(not(target_os = "windows"))]
+fn remove_autostart_windows() -> Result<()> {
+    Err(unsupported_platform_err())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,6 +350,20 @@ mod tests {
         let base = directories::BaseDirs::new().expect("should resolve a home dir in test env");
         assert_ne!(plist_path(&base), desktop_entry_path(&base));
         assert!(plist_path(&base).starts_with(base.home_dir()));
+    }
+
+    /// The Windows Run value must quote the exe path (so a `C:\Program
+    /// Files\...` path with a space stays one `argv[0]`) and register under
+    /// the stable `whspr` name. Pure -- runs on every OS, including this
+    /// macOS gate.
+    #[test]
+    fn run_value_data_quotes_a_spaced_exe_path() {
+        let exe = Path::new(r"C:\Program Files\whspr\whspr-app.exe");
+        let data = run_value_data(exe);
+
+        assert_eq!(data, r#""C:\Program Files\whspr\whspr-app.exe""#);
+        assert!(data.starts_with('"') && data.ends_with('"'));
+        assert_eq!(RUN_VALUE_NAME, "whspr");
     }
 
     // `Config`/`load_from` live in the crate root, not this module, but

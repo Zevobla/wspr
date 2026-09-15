@@ -15,3 +15,9 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+# The Windows "launch at login" entry (see `src/autostart.rs`) writes an
+# `HKCU\...\Run` registry value; macOS/Linux use a plist / `.desktop` file
+# and never link this. Mirrors `whspr-hf`'s macOS-only `metal` opt-in.
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg.workspace = true
