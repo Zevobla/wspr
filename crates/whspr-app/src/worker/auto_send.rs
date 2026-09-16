@@ -59,6 +59,18 @@ impl AutoSendDetector {
     }
 }
 
+/// Whether the stretch still being recorded when the hotkey is released
+/// should be transcribed. Always, except when auto-send already sent earlier
+/// chunks from this hold and no speech has been heard since the last one --
+/// that remainder is just the trailing pause.
+pub(super) fn remainder_worth_sending(
+    auto_send: bool,
+    chunks_sent: usize,
+    speech_seen: bool,
+) -> bool {
+    !(auto_send && chunks_sent > 0 && !speech_seen)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
