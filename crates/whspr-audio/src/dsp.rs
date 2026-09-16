@@ -44,20 +44,41 @@ const GATE_THRESHOLD_MULT: f32 = 2.0;
 /// mute.
 const GATE_ATTENUATION: f32 = 0.15;
 
+/// The noise gate only engages when the loudest 100ms window's RMS is at
+/// least this many times the quietest window's RMS — roughly 18dB
+/// (`20 * log10(8.0) ≈ 18.06dB`). Below this ratio, the clip has no
+/// clearly-quieter "noise" stretch distinct from its "signal" (e.g. a
+/// push-to-talk recording where the user talks the whole time, so even
+/// its quietest moment is still speech): gating would just clip the
+/// recording's own quiet syllables rather than remove background noise,
+/// so the gate stays off for the whole clip.
+const MIN_GATE_DYNAMIC_RANGE: f32 = 8.0;
+
+/// The noise gate only engages when the estimated floor is also quiet in
+/// absolute terms — at or below this RMS. Guards against engaging on a
+/// clip that has *some* dynamic range but is never actually quiet (e.g.
+/// consistently-present quieter background music/speech rather than
+/// silence or genuine noise floor).
+const MAX_NOISE_FLOOR_RMS: f32 = 0.05;
+
 /// An honest, minimal noise-reduction chain, run in place on `samples`
 /// (interpreted as mono `f32` at `sample_rate` Hz):
 ///
 /// 1. **High-pass** — a one-pole IIR high-pass filter (~80 Hz cutoff,
 ///    `HIGH_PASS_CUTOFF_HZ`) removes DC offset and very-low-frequency
 ///    rumble that sits below the range of human speech.
-/// 2. **Noise gate** — the RMS of the quietest contiguous 100ms window in
-///    the (high-passed) signal is taken as the noise floor. The signal is
-///    then processed in ~10ms frames; any frame whose RMS is at or below
-///    `floor * GATE_THRESHOLD_MULT` is attenuated toward (not to) silence
-///    by `GATE_ATTENUATION`, with the per-sample gain linearly ramped
-///    from the previous frame's gain to the new frame's target across
-///    each frame — a short attack/release so a speech onset right after a
-///    quiet stretch isn't clipped by a hard on/off transition.
+/// 2. **Noise gate** — the RMS of the quietest and loudest contiguous
+///    100ms windows in the (high-passed) signal are found. The gate only
+///    engages at all if there's a clear, quiet noise floor to gate — see
+///    `MIN_GATE_DYNAMIC_RANGE`/`MAX_NOISE_FLOOR_RMS` — which rules out
+///    e.g. a push-to-talk clip with no silence in it. When it does
+///    engage, the signal is processed in ~10ms frames; any frame whose
+///    RMS is at or below `floor * GATE_THRESHOLD_MULT` is attenuated
+///    toward (not to) silence by `GATE_ATTENUATION`, with the per-sample
+///    gain linearly ramped from the previous frame's gain to the new
+///    frame's target across each frame — a short attack/release so a
+///    speech onset right after a quiet stretch isn't clipped by a hard
+///    on/off transition.
 ///
 /// What this is **not**: there's no spectral subtraction (no FFT
 /// involved at all), no noise-profile learning across calls, and no ML
@@ -103,30 +124,45 @@ fn rms(samples: &[f32]) -> f32 {
 }
 
 /// Scans non-overlapping `NOISE_FLOOR_WINDOW_MS` windows across `samples`
-/// and returns the lowest RMS among them — the estimated noise floor. For
-/// a `samples` shorter than one window, falls back to that whole slice's
-/// RMS (there's nothing longer to compare it against).
-fn estimate_noise_floor(samples: &[f32], sample_rate: u32) -> f32 {
+/// and returns `(quietest, loudest)` RMS among them. For a `samples`
+/// shorter than one window, both are that whole slice's RMS (there's
+/// nothing longer to compare it against).
+fn window_rms_range(samples: &[f32], sample_rate: u32) -> (f32, f32) {
     let window_len = ((sample_rate as u64 * NOISE_FLOOR_WINDOW_MS as u64) / 1000).max(1) as usize;
     if samples.len() <= window_len {
-        return rms(samples);
+        let r = rms(samples);
+        return (r, r);
     }
 
     let mut min_rms = f32::MAX;
+    let mut max_rms = 0.0f32;
     let mut start = 0;
     while start + window_len <= samples.len() {
         let window_rms = rms(&samples[start..start + window_len]);
         min_rms = min_rms.min(window_rms);
+        max_rms = max_rms.max(window_rms);
         start += window_len;
     }
-    min_rms
+    (min_rms, max_rms)
 }
 
 /// Attenuates frames of `samples` below the estimated noise floor,
 /// ramping the applied gain linearly across each frame so the transition
 /// in/out of a gated stretch is gradual rather than a hard on/off click.
+///
+/// Does nothing if the clip doesn't have a clear, quiet noise floor to
+/// gate in the first place — see `MIN_GATE_DYNAMIC_RANGE`/
+/// `MAX_NOISE_FLOOR_RMS` — so a speech-only clip with no genuine silence
+/// (e.g. push-to-talk) isn't gated on its own quiet syllables.
 fn noise_gate_in_place(samples: &mut [f32], sample_rate: u32) {
-    let floor = estimate_noise_floor(samples, sample_rate);
+    let (floor, loudest) = window_rms_range(samples, sample_rate);
+
+    let has_dynamic_range = loudest >= floor * MIN_GATE_DYNAMIC_RANGE;
+    let floor_is_quiet_enough = floor <= MAX_NOISE_FLOOR_RMS;
+    if !has_dynamic_range || !floor_is_quiet_enough {
+        return;
+    }
+
     let threshold = floor * GATE_THRESHOLD_MULT;
     let frame_len = ((sample_rate as u64 * GATE_FRAME_MS as u64) / 1000).max(1) as usize;
 
