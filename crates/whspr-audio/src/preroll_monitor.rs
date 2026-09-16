@@ -24,7 +24,6 @@ use std::sync::{Arc, Mutex};
 use cpal::traits::DeviceTrait;
 use cpal::traits::HostTrait;
 use cpal::traits::StreamTrait;
-use cpal::StreamConfig;
 
 use whspr_core::{AudioBuffer, Result};
 
@@ -38,7 +37,10 @@ use crate::preroll::PrerollBuffer;
 /// Construct with `start`, read the current ring contents at any time
 /// with `snapshot` (non-destructive — unlike `PrerollBuffer::drain_preroll`,
 /// repeated calls don't reset it, since the monitor keeps listening), and
-/// release the input device with `stop`.
+/// release the input device with `stop`. The ring always holds mono
+/// samples at the device's native sample rate — a multi-channel device is
+/// downmixed to mono per-callback (see `crate::stream::build_mono_input_stream`),
+/// never stored as raw interleaved frames.
 pub struct PrerollMonitor {
     stream: cpal::Stream,
     buffer: Arc<Mutex<PrerollBuffer>>,
@@ -65,60 +67,24 @@ impl PrerollMonitor {
             .default_input_config()
             .map_err(|e| mic_access_error("get default input config", e))?;
         let sample_rate = config.sample_rate();
-        let stream_config: StreamConfig = config.into();
 
         let ring = PrerollBuffer::from_ms(preroll_ms as usize, sample_rate);
         let buffer = Arc::new(Mutex::new(ring));
         let buffer_clone = Arc::clone(&buffer);
 
-        let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => device
-                .build_input_stream(
-                    stream_config,
-                    move |data: &[f32], _: &_| {
-                        if let Ok(mut buf) = buffer_clone.lock() {
-                            buf.push_slice(data);
-                        }
-                    },
-                    |err| tracing::error!("cpal preroll stream error: {}", err),
-                    None,
-                )
-                .map_err(|e| mic_access_error("build F32 preroll stream", e))?,
-            cpal::SampleFormat::I16 => device
-                .build_input_stream(
-                    stream_config,
-                    move |data: &[i16], _: &_| {
-                        if let Ok(mut buf) = buffer_clone.lock() {
-                            for sample in data {
-                                buf.push(*sample as f32 / 32768.0);
-                            }
-                        }
-                    },
-                    |err| tracing::error!("cpal preroll stream error: {}", err),
-                    None,
-                )
-                .map_err(|e| mic_access_error("build I16 preroll stream", e))?,
-            cpal::SampleFormat::U16 => device
-                .build_input_stream(
-                    stream_config,
-                    move |data: &[u16], _: &_| {
-                        if let Ok(mut buf) = buffer_clone.lock() {
-                            for sample in data {
-                                let s = *sample as f32 - 32768.0;
-                                buf.push(s / 32768.0);
-                            }
-                        }
-                    },
-                    |err| tracing::error!("cpal preroll stream error: {}", err),
-                    None,
-                )
-                .map_err(|e| mic_access_error("build U16 preroll stream", e))?,
-            other => {
-                return Err(whspr_core::WhsprError::Audio(format!(
-                    "unsupported sample format: {other:?}"
-                )));
-            }
-        };
+        // Downmixes whatever sample format/channel count the device
+        // reports to mono f32 (see crate::stream) before pushing into the
+        // ring - snapshot() below expects mono samples at `sample_rate`.
+        let stream = crate::stream::build_mono_input_stream(
+            &device,
+            &config,
+            move |mono: &[f32]| {
+                if let Ok(mut buf) = buffer_clone.lock() {
+                    buf.push_slice(mono);
+                }
+            },
+            "preroll",
+        )?;
 
         stream
             .play()
