@@ -119,8 +119,9 @@ fn hotkey_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Eleme
     // Honest about the relaunch-to-apply model: a rebind is persisted and
     // registered at the next launch, not live. No "preview only" limbo.
     let hint = match (state.hotkey_capturing, &state.captured_hotkey) {
-        (true, _) => "Hold a modifier (Ctrl/Alt/Shift/Cmd) and press a key. Esc cancels."
-            .to_string(),
+        (true, _) => {
+            "Hold a modifier (Ctrl/Alt/Shift/Cmd) and press a key. Esc cancels.".to_string()
+        }
         (false, Some(combo)) => {
             format!("Saved {combo}. Takes effect the next time you start whspr.")
         }

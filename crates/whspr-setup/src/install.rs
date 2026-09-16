@@ -180,7 +180,8 @@ fn write_payload() -> Result<(), String> {
     let dir = install_dir()?;
     for &(name, bytes) in crate::payload::PAYLOAD {
         let dest = dir.join(name);
-        std::fs::write(&dest, bytes).map_err(|e| format!("could not write {}: {e}", dest.display()))?;
+        std::fs::write(&dest, bytes)
+            .map_err(|e| format!("could not write {}: {e}", dest.display()))?;
     }
     Ok(())
 }

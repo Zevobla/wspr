@@ -463,7 +463,6 @@ fn parse_clip_range(start: &str, end: &str) -> Option<whspr_import::ClipRange> {
     (end > start).then(|| whspr_import::ClipRange::new(start, end))
 }
 
-
 #[cfg(test)]
 #[path = "link_import_tests.rs"]
 mod tests;

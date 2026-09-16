@@ -91,11 +91,11 @@ use whspr_core::{AudioBuffer, Diarizer, Result, SpeakerTurn, WhsprError};
 // `Mutex`es that only guard sherpa handles) live only in the sherpa-backed
 // arm — keeping them at file top would be unused imports on the stub arm.
 #[cfg(not(all(windows, target_arch = "aarch64")))]
-use std::sync::{Mutex, MutexGuard};
-#[cfg(not(all(windows, target_arch = "aarch64")))]
 use sherpa_rs::diarize::{Diarize, DiarizeConfig};
 #[cfg(not(all(windows, target_arch = "aarch64")))]
 use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+use std::sync::{Mutex, MutexGuard};
 
 /// Filename `model_dir` must contain for the pyannote segmentation model.
 /// There's only one segmentation model in use, so (unlike the embedding

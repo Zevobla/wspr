@@ -14,11 +14,20 @@ use crate::widgets;
 
 use super::wordmark;
 
-pub fn view(expanded: bool, autostart: bool, start_menu: bool, desktop: bool) -> Element<'static, Message> {
-    column![header(expanded), body(expanded, autostart, start_menu, desktop), widgets::footer()]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+pub fn view(
+    expanded: bool,
+    autostart: bool,
+    start_menu: bool,
+    desktop: bool,
+) -> Element<'static, Message> {
+    column![
+        header(expanded),
+        body(expanded, autostart, start_menu, desktop),
+        widgets::footer()
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 /// The red header band: the wordmark row (brand + caption + close), a 2px
@@ -80,8 +89,17 @@ fn header(expanded: bool) -> Element<'static, Message> {
 
 /// The paper body: the two-line pitch, the button row, and (when expanded)
 /// the option rows. Height-fills so the footer stays pinned to the bottom.
-fn body(expanded: bool, autostart: bool, start_menu: bool, desktop: bool) -> Element<'static, Message> {
-    let options_label = if expanded { "Options  \u{25B4}" } else { "Options  \u{25BE}" };
+fn body(
+    expanded: bool,
+    autostart: bool,
+    start_menu: bool,
+    desktop: bool,
+) -> Element<'static, Message> {
+    let options_label = if expanded {
+        "Options  \u{25B4}"
+    } else {
+        "Options  \u{25BE}"
+    };
     let buttons = row![
         widgets::primary_button("Install", Message::StartInstall),
         widgets::ghost_button(options_label, Message::ToggleOptions),

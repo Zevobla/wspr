@@ -143,8 +143,7 @@ fn seg_style(
 /// The section heading + the transcript rows, with a speaker label above each
 /// speaker's run.
 fn rows<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let visible: Vec<&TranscriptRow> =
-        nd.rows.iter().filter(|&r| nd.filter.keeps(r)).collect();
+    let visible: Vec<&TranscriptRow> = nd.rows.iter().filter(|&r| nd.filter.keeps(r)).collect();
     let mut col = column![section_heading(nd, scheme)].width(Length::Fill);
     let mut prev_speaker: Option<&str> = None;
     let last = visible.len().saturating_sub(1);
@@ -171,7 +170,10 @@ fn rows<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a
 /// from the imported [`NoteHeading`]s. Full per-row sectioning is a later
 /// phase; with no chapters (e.g. a manual desk) it collapses to a small gap so
 /// the transcript doesn't butt against the header rule.
-fn section_heading<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+fn section_heading<'a>(
+    nd: &'a NoteDeskState,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     let Some(first) = nd.headings.first() else {
         return Space::new().height(Length::Fixed(spacing::MD)).into();
     };

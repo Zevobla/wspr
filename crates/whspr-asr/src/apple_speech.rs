@@ -75,7 +75,9 @@ fn transcribe_blocking(
 
     if !out.is_null() {
         // SAFETY: `out` is a valid NUL-terminated UTF-8 string from the shim.
-        let text = unsafe { CStr::from_ptr(out) }.to_string_lossy().into_owned();
+        let text = unsafe { CStr::from_ptr(out) }
+            .to_string_lossy()
+            .into_owned();
         unsafe { whspr_apple_string_free(out) };
         return Ok(Transcript {
             text: text.trim().to_string(),

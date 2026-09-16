@@ -97,8 +97,9 @@ fn copy_archivo_faces(out_dir: &Path) {
         // drop it first (removing a file only needs write access to the
         // directory, not the file itself).
         let _ = fs::remove_file(&dst);
-        fs::copy(&src, &dst)
-            .unwrap_or_else(|e| panic!("failed to copy {} to {}: {e}", src.display(), dst.display()));
+        fs::copy(&src, &dst).unwrap_or_else(|e| {
+            panic!("failed to copy {} to {}: {e}", src.display(), dst.display())
+        });
     }
 }
 

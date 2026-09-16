@@ -112,7 +112,10 @@ fn rank_line_scores_by_length_and_figures() {
     // Very short lines are chatter, kept out of the notes.
     assert_eq!(rank_line("Right, yeah."), (Gutter::Chatter, 0));
     // A short-but-real line is a low-score candidate.
-    assert_eq!(rank_line("we then cooled the sample"), (Gutter::Candidate, 1));
+    assert_eq!(
+        rank_line("we then cooled the sample"),
+        (Gutter::Candidate, 1)
+    );
     // A meatier line scores higher but is still a candidate.
     assert_eq!(
         rank_line("we then cooled the sample down and measured it"),

@@ -119,7 +119,9 @@ pub(crate) fn build_asr_backend(
         AsrChoice::AppleSpeech => {
             #[cfg(target_os = "macos")]
             {
-                Ok(Box::new(whspr_asr::AppleSpeech::new(config.language.clone())))
+                Ok(Box::new(whspr_asr::AppleSpeech::new(
+                    config.language.clone(),
+                )))
             }
             #[cfg(not(target_os = "macos"))]
             {
@@ -178,10 +180,12 @@ pub(crate) fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn Tex
             if whspr_refine::apple_foundation_available() {
                 Box::new(whspr_refine::AppleFoundation::new())
             } else {
-                return Err("Apple Foundation Models is unavailable — it needs macOS 26 with \
+                return Err(
+                    "Apple Foundation Models is unavailable — it needs macOS 26 with \
                             Apple Intelligence enabled (and a build that includes it). Pick a \
                             different refine backend in Settings."
-                    .to_string());
+                        .to_string(),
+                );
             }
         }
     };

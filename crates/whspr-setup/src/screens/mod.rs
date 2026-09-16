@@ -47,10 +47,7 @@ pub fn wordmark<'a>(on_red: bool, size: f32) -> Element<'a, Message> {
     let ink = if on_red { theme::PAPER } else { theme::INK };
     row![
         logo::logo(on_red, size),
-        text("whspr")
-            .size(24.0)
-            .font(theme::extrabold())
-            .color(ink),
+        text("whspr").size(24.0).font(theme::extrabold()).color(ink),
     ]
     .spacing(12)
     .align_y(Alignment::Center)
@@ -72,16 +69,12 @@ pub fn paper_header<'a>(
     ]
     .align_y(Alignment::Center);
     column![
-        mouse_area(
-            container(bar)
-                .width(Length::Fill)
-                .padding(Padding {
-                    top: 34.0,
-                    right: 44.0,
-                    bottom: 22.0,
-                    left: 44.0,
-                })
-        )
+        mouse_area(container(bar).width(Length::Fill).padding(Padding {
+            top: 34.0,
+            right: 44.0,
+            bottom: 22.0,
+            left: 44.0,
+        }))
         .on_press(Message::Drag),
         widgets::hrule(rule_color),
     ]

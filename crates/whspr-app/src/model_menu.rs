@@ -311,7 +311,10 @@ mod tests {
         let mut config = Config::default();
         apply_refine(&mut config, &RefineOption::AppleFoundation);
         assert_eq!(config.refine, RefineChoice::AppleFoundation);
-        assert_eq!(selected_refine(&config), Some(RefineOption::AppleFoundation));
+        assert_eq!(
+            selected_refine(&config),
+            Some(RefineOption::AppleFoundation)
+        );
         assert!(RefineOption::AppleFoundation
             .to_string()
             .contains("on-device"));

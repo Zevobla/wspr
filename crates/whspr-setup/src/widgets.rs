@@ -93,12 +93,8 @@ pub fn close_mark<'a>(on_red: bool) -> Element<'a, Message> {
 /// space-between row of the four facts, all uppercase 11px SemiBold. Only
 /// `whspr.exe` is ink; the rest are dimmed.
 pub fn footer<'a>() -> Element<'a, Message> {
-    let fact = |label: &'a str, color: Color| {
-        text(label)
-            .size(11.0)
-            .font(theme::semibold())
-            .color(color)
-    };
+    let fact =
+        |label: &'a str, color: Color| text(label).size(11.0).font(theme::semibold()).color(color);
     column![
         hrule(theme::DIVIDER),
         container(
@@ -182,8 +178,8 @@ pub fn option_row<'a>(
     let trailing = row![toggle_visual(is_on), state]
         .spacing(12)
         .align_y(Alignment::Center);
-    let content = row![labels, Space::new().width(Length::Fill), trailing]
-        .align_y(Alignment::Center);
+    let content =
+        row![labels, Space::new().width(Length::Fill), trailing].align_y(Alignment::Center);
     mouse_area(container(content).padding([14.0, 0.0]))
         .interaction(iced::mouse::Interaction::Pointer)
         .on_press(on_press)

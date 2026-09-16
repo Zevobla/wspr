@@ -222,8 +222,14 @@ mod tests {
             parse_download_percent("[download]  12.3% of ~16.00MiB at 1.20MiB/s ETA 00:10"),
             Some(12)
         );
-        assert_eq!(parse_download_percent("[download] 100% of 16.00MiB"), Some(100));
-        assert_eq!(parse_download_percent("[download] Destination: audio.webm"), None);
+        assert_eq!(
+            parse_download_percent("[download] 100% of 16.00MiB"),
+            Some(100)
+        );
+        assert_eq!(
+            parse_download_percent("[download] Destination: audio.webm"),
+            None
+        );
         assert_eq!(parse_download_percent("[youtube] extracting url"), None);
     }
 

@@ -215,7 +215,9 @@ fn parse_langs(v: &Value) -> Vec<Lang> {
     map.iter()
         .map(|(code, formats)| {
             let formats = formats.as_array();
-            let (url, ext) = formats.map(|f| pick_caption_format(f)).unwrap_or((None, None));
+            let (url, ext) = formats
+                .map(|f| pick_caption_format(f))
+                .unwrap_or((None, None));
             Lang {
                 code: code.clone(),
                 name: formats
@@ -439,7 +441,11 @@ mod tests {
           }
         }"#;
         let info = parse_media_info(json).expect("parse");
-        let codes: Vec<&str> = info.human_captions.iter().map(|l| l.code.as_str()).collect();
+        let codes: Vec<&str> = info
+            .human_captions
+            .iter()
+            .map(|l| l.code.as_str())
+            .collect();
         assert_eq!(codes, ["en"]);
     }
 

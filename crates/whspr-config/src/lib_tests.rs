@@ -242,8 +242,7 @@ fn speaker_settings_embedding_model_round_trips_through_toml() {
     cfg.speaker.embedding_model = SpeakerEmbeddingChoice::Eres2Net;
 
     let toml_string = toml::to_string_pretty(&cfg).expect("failed to serialize config");
-    let round_tripped: Config =
-        toml::from_str(&toml_string).expect("failed to deserialize config");
+    let round_tripped: Config = toml::from_str(&toml_string).expect("failed to deserialize config");
 
     assert_eq!(
         round_tripped.speaker.embedding_model,

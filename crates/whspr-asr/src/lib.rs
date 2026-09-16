@@ -70,7 +70,13 @@ impl WhisperLocal {
         let translate = opts.translate;
 
         tokio::task::spawn_blocking(move || {
-            transcribe_blocking(&model_path, &samples, language.as_deref(), translate, progress)
+            transcribe_blocking(
+                &model_path,
+                &samples,
+                language.as_deref(),
+                translate,
+                progress,
+            )
         })
         .await
         .map_err(|e| WhsprError::Asr(format!("WhisperLocal worker thread panicked: {}", e)))?

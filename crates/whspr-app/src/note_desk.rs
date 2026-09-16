@@ -399,7 +399,13 @@ fn apply_export_status(state: &mut State, result: &Result<Option<PathBuf>, Strin
 fn suggested_file_name(title: &str, ext: &str) -> String {
     let stem: String = title
         .chars()
-        .map(|c| if matches!(c, '/' | '\\') || c.is_control() { '-' } else { c })
+        .map(|c| {
+            if matches!(c, '/' | '\\') || c.is_control() {
+                '-'
+            } else {
+                c
+            }
+        })
         .collect();
     let stem = stem.trim();
     let stem = if stem.is_empty() { "note" } else { stem };
@@ -414,7 +420,6 @@ fn temp_typ_path() -> PathBuf {
         .unwrap_or(0);
     std::env::temp_dir().join(format!("whspr-note-{}-{nanos}.typ", std::process::id()))
 }
-
 
 #[cfg(test)]
 #[path = "note_desk_tests.rs"]

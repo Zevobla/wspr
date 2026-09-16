@@ -70,7 +70,9 @@ fn refine_blocking(instructions: &str, prompt: &str) -> Result<String> {
 
     if !out.is_null() {
         // SAFETY: `out` is a valid NUL-terminated UTF-8 string from the shim.
-        let s = unsafe { CStr::from_ptr(out) }.to_string_lossy().into_owned();
+        let s = unsafe { CStr::from_ptr(out) }
+            .to_string_lossy()
+            .into_owned();
         unsafe { whspr_fm_string_free(out) };
         return Ok(s.trim().to_string());
     }
@@ -78,7 +80,9 @@ fn refine_blocking(instructions: &str, prompt: &str) -> Result<String> {
         "Foundation Models refine failed".to_string()
     } else {
         // SAFETY: a non-null `err` is a valid string from the shim.
-        let m = unsafe { CStr::from_ptr(err) }.to_string_lossy().into_owned();
+        let m = unsafe { CStr::from_ptr(err) }
+            .to_string_lossy()
+            .into_owned();
         unsafe { whspr_fm_string_free(err) };
         m
     };

@@ -34,7 +34,11 @@ pub(super) fn view<'a>(
 /// The 47px header band: a page kicker (replaced by the live export status
 /// when one is set) and the View code / Export .typ / Export PDF actions.
 fn header<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    let view_code_label = if nd.view_code { "View note" } else { "View code" };
+    let view_code_label = if nd.view_code {
+        "View note"
+    } else {
+        "View code"
+    };
     let actions = row![
         action_button(
             view_code_label,
@@ -143,7 +147,10 @@ fn preview<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element
 /// The rendered page: a running head, the note title, the kept chapters, and
 /// every transcript row (kept rows carry an accent timestamp, mirroring both
 /// the desk gutter and the exported `.typ`). Scrolls when it overflows.
-fn rendered_body<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> Element<'a, Message> {
+fn rendered_body<'a>(
+    nd: &'a NoteDeskState,
+    scheme: &'static color::Scheme,
+) -> Element<'a, Message> {
     let dim = color::wash(PAGE_INK, 0.5);
     let accent = scheme.primary;
 
@@ -189,7 +196,11 @@ fn rendered_body<'a>(nd: &'a NoteDeskState, scheme: &'static color::Scheme) -> E
 
     col = col.push(page_kicker("TRANSCRIPT", dim));
     for r in &nd.rows {
-        let time_color = if r.gutter == Gutter::Kept { accent } else { dim };
+        let time_color = if r.gutter == Gutter::Kept {
+            accent
+        } else {
+            dim
+        };
         col = col.push(
             row![
                 text(r.time_label.clone())

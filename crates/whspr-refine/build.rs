@@ -45,27 +45,40 @@ fn main() {
 
     let status = Command::new(&swiftc)
         .args([
-            "-sdk", &sdk,
-            "-target", &target,
-            "-swift-version", "6",
+            "-sdk",
+            &sdk,
+            "-target",
+            &target,
+            "-swift-version",
+            "6",
             "-O",
             "-parse-as-library",
             "-emit-object",
-            "-o", &obj,
+            "-o",
+            &obj,
             // Don't autolink FoundationModels strongly — the binary crates add
             // it as `-weak_framework` so the app still loads pre-macOS-26.
-            "-Xfrontend", "-disable-autolink-framework", "-Xfrontend", "FoundationModels",
+            "-Xfrontend",
+            "-disable-autolink-framework",
+            "-Xfrontend",
+            "FoundationModels",
             src,
         ])
         .status()
         .expect("failed to spawn swiftc");
-    assert!(status.success(), "swiftc failed to compile the Foundation Models shim");
+    assert!(
+        status.success(),
+        "swiftc failed to compile the Foundation Models shim"
+    );
 
     let ar = std::process::Command::new("ar")
         .args(["crs", &lib, &obj])
         .status()
         .expect("failed to spawn ar");
-    assert!(ar.success(), "ar failed to archive the Foundation Models shim");
+    assert!(
+        ar.success(),
+        "ar failed to archive the Foundation Models shim"
+    );
 
     // The shim's static archive.
     println!("cargo:rustc-link-search=native={out_dir}");

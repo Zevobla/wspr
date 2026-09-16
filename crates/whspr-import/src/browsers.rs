@@ -69,7 +69,10 @@ fn app_data_roots(base: &BaseDirs) -> Vec<PathBuf> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        vec![base.config_dir().to_path_buf(), base.home_dir().join(".mozilla")]
+        vec![
+            base.config_dir().to_path_buf(),
+            base.home_dir().join(".mozilla"),
+        ]
     }
 }
 
@@ -194,7 +197,9 @@ fn safari(base: &BaseDirs) -> Vec<CookieBrowser> {
 /// reached both as `<root>/X` and `<root>/X/Profiles` isn't listed twice).
 fn dedup_by_spec(list: Vec<CookieBrowser>) -> Vec<CookieBrowser> {
     let mut seen = HashSet::new();
-    list.into_iter().filter(|b| seen.insert(b.spec.clone())).collect()
+    list.into_iter()
+        .filter(|b| seen.insert(b.spec.clone()))
+        .collect()
 }
 
 /// The immediate children of `dir`, sorted; empty if unreadable. Owned paths,
@@ -211,7 +216,10 @@ fn read_children(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn dir_name(path: &Path) -> String {
-    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+    path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[cfg(test)]
@@ -247,11 +255,15 @@ mod tests {
 
         let specs: Vec<&str> = out.iter().map(|b| b.spec.as_str()).collect();
         assert!(
-            specs.iter().any(|s| s.starts_with("chrome:") && s.contains("Chrome/Default")),
+            specs
+                .iter()
+                .any(|s| s.starts_with("chrome:") && s.contains("Chrome/Default")),
             "Chrome should be detected: {specs:?}"
         );
         assert!(
-            specs.iter().any(|s| s.starts_with("firefox:") && s.contains("zen")),
+            specs
+                .iter()
+                .any(|s| s.starts_with("firefox:") && s.contains("zen")),
             "the zen fork should be detected: {specs:?}"
         );
         assert!(
@@ -262,15 +274,26 @@ mod tests {
 
     #[test]
     fn engine_is_inferred_before_the_generic_chrome_keyword() {
-        assert_eq!(chromium_engine(Path::new("/x/BraveSoftware/Brave-Browser")), Some("brave"));
-        assert_eq!(chromium_engine(Path::new("/x/Google/Chrome for Testing")), Some("chrome"));
-        assert_eq!(chromium_engine(Path::new("/x/Microsoft Edge")), Some("edge"));
+        assert_eq!(
+            chromium_engine(Path::new("/x/BraveSoftware/Brave-Browser")),
+            Some("brave")
+        );
+        assert_eq!(
+            chromium_engine(Path::new("/x/Google/Chrome for Testing")),
+            Some("chrome")
+        );
+        assert_eq!(
+            chromium_engine(Path::new("/x/Microsoft Edge")),
+            Some("edge")
+        );
         assert_eq!(chromium_engine(Path::new("/x/SomeChatApp")), None);
     }
 
     #[test]
     fn detected_specs_are_valid_and_unique() {
-        let engines = ["firefox", "chrome", "chromium", "brave", "edge", "vivaldi", "opera", "safari"];
+        let engines = [
+            "firefox", "chrome", "chromium", "brave", "edge", "vivaldi", "opera", "safari",
+        ];
         let found = installed_cookie_browsers();
         for b in &found {
             assert!(!b.label.is_empty());

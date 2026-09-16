@@ -23,7 +23,11 @@ pub(crate) const DIARIZE_UNAVAILABLE_MESSAGE: &str =
 /// overlap. Best-effort: a no-op (segments keep their `None` speaker) when
 /// speaker attribution is disabled or no sherpa diarization model is
 /// installed, so a note desk still works without one.
-pub async fn attribute_transcript(transcript: &mut Transcript, audio: &AudioBuffer, config: &Config) {
+pub async fn attribute_transcript(
+    transcript: &mut Transcript,
+    audio: &AudioBuffer,
+    config: &Config,
+) {
     if !config.speaker.enabled {
         return;
     }

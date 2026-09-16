@@ -144,7 +144,10 @@ pub fn ghost(_theme: &iced::Theme, status: button::Status) -> button::Style {
 /// A translucent wash of `color` at `opacity` -- for hover state layers and
 /// the header band's quieter text.
 pub fn wash(color: Color, opacity: f32) -> Color {
-    Color { a: opacity, ..color }
+    Color {
+        a: opacity,
+        ..color
+    }
 }
 
 #[cfg(test)]

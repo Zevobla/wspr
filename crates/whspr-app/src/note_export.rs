@@ -138,7 +138,11 @@ mod tests {
         let doc = document_typ(&nd);
         assert!(doc.contains("== Transcript"));
         for row in &nd.rows {
-            assert!(doc.contains(&row.text), "missing transcript line: {}", row.text);
+            assert!(
+                doc.contains(&row.text),
+                "missing transcript line: {}",
+                row.text
+            );
         }
     }
 

@@ -503,10 +503,7 @@ fn status_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
 /// A full-width notice band under the header, carrying `message` in the given
 /// container `style`. Shared by both the error and onboarding cases of
 /// [`status_banner`] so only the copy and style differ.
-fn banner<'a>(
-    message: String,
-    style: iced::widget::container::Style,
-) -> Element<'a, Message> {
+fn banner<'a>(message: String, style: iced::widget::container::Style) -> Element<'a, Message> {
     container(
         container(
             text(message)

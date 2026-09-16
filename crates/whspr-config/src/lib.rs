@@ -332,7 +332,6 @@ fn write_defaults(dir: &Path, config_path: &Path, config: &Config) {
     }
 }
 
-
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
