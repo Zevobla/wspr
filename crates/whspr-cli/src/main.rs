@@ -18,6 +18,7 @@
 //!   --language LANG                 BCP47 language code for transcribe/transcribe-batch (e.g. en, es, fr; default: config.language)
 //!   --embedding CHOICE               Speaker embedding model for `diarize` (cam-plus-plus, eres2net; default from config)
 //!   --format FORMAT                 `transcribe`: timecoded export (srt, vtt); overrides --json
+//!   --shorten [true|false]           `transcribe`: rule-based filler/repetition shortening (J-11); overrides [capture].shorten
 //!   --json                          Output JSON object instead of plain text
 //!   --no-store                      Don't save result to history file
 //!   --csv                           `stats`: output CSV instead of a human-readable table
@@ -115,6 +116,14 @@ enum Command {
         /// test's fixed expectation of MockAsr's default text.
         #[arg(long, hide = true)]
         asr_mock_text: Option<String>,
+
+        /// Apply the rule-based shorten pass (J-11): drops filler phrases
+        /// and immediate word repetitions, and asks LLM refiners to be
+        /// concise too. Overrides `[capture].shorten` when given (true or
+        /// false), the same way --asr overrides the configured ASR
+        /// backend; falls back to config when not passed.
+        #[arg(long)]
+        shorten: Option<bool>,
     },
 
     /// Transcribe all .wav files in a directory.
@@ -302,6 +311,7 @@ async fn main() -> anyhow::Result<()> {
             asr_base_url,
             asr_api_key,
             asr_mock_text,
+            shorten,
         }) => {
             transcribe_cmd::run(
                 &config,
@@ -316,6 +326,7 @@ async fn main() -> anyhow::Result<()> {
                 asr_base_url,
                 asr_api_key,
                 asr_mock_text,
+                shorten,
             )
             .await?;
         }
