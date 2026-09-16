@@ -32,6 +32,7 @@ use iced::futures::Stream;
 use whspr_core::{Pipeline, PipelineState};
 use whspr_inject::{DebouncedHotkeyListener, GlobalHotkeyListener};
 
+mod auto_send;
 mod backends;
 mod capture_plan;
 mod hotkey_decision;
