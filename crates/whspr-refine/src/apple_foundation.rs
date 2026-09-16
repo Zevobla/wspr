@@ -98,7 +98,7 @@ impl TextRefiner for AppleFoundation {
             // backends); the session gets a short system instruction on top.
             let instructions =
                 "You clean up raw speech-to-text. Output only the cleaned text, with no preamble.";
-            let prompt = crate::build_cleanup_prompt(raw, ctx);
+            let prompt = crate::build_cleanup_prompt(raw, ctx, false);
             // Foundation Models inference is synchronous from our side (the shim
             // blocks); keep it off the async runtime, like the llama-local path.
             tokio::task::spawn_blocking(move || refine_blocking(instructions, &prompt))

@@ -61,7 +61,11 @@ pub fn effective_instructions(configured: Option<&str>) -> String {
 /// Builds the shared "clean up speech-to-text" instructions used as the
 /// prompt body for every refiner backend (cloud or local), so the same
 /// cleanup rules apply regardless of which LLM ends up executing them.
-pub(crate) fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
+/// `shorten` mirrors `[capture].shorten` (J-11): when on, appends one extra
+/// instruction sentence asking the model to trim filler/repetition on top
+/// of its normal cleanup, matching the rule-based `normalize::shorten` pass
+/// that also runs when the same toggle is on.
+pub(crate) fn build_cleanup_prompt(raw: &str, ctx: &RefineContext, shorten: bool) -> String {
     let mut prompt = String::from(
         "You are a text cleanup assistant. Your job is to clean up raw speech-to-text output. \
         You must:\n\
@@ -74,6 +78,10 @@ pub(crate) fn build_cleanup_prompt(raw: &str, ctx: &RefineContext) -> String {
         - Preserve the speaker's actual meaning and wording — do NOT paraphrase or summarize\n\
         - Output ONLY the cleaned text, nothing else (no preamble, no quotes)\n"
     );
+
+    if shorten {
+        prompt.push_str("\nBe concise: remove filler and repetition without changing meaning.\n");
+    }
 
     if let Some(ref app_name) = ctx.app_name {
         prompt.push_str(&format!(
@@ -169,7 +177,7 @@ struct OpenAiResponseMessage {
 #[async_trait]
 impl TextRefiner for OpenAiRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        let cleanup_prompt = build_cleanup_prompt(raw, ctx);
+        let cleanup_prompt = build_cleanup_prompt(raw, ctx, false);
 
         let request = OpenAiRequest {
             model: self.model.clone(),
@@ -271,7 +279,7 @@ struct AnthropicContent {
 #[async_trait]
 impl TextRefiner for AnthropicRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        let cleanup_prompt = build_cleanup_prompt(raw, ctx);
+        let cleanup_prompt = build_cleanup_prompt(raw, ctx, false);
 
         let system_message = "You are a text cleanup assistant for speech-to-text output. \
             Remove filler words, resolve self-corrections, add punctuation and capitalization, \
@@ -478,9 +486,19 @@ mod tests {
 
     #[test]
     fn build_cleanup_prompt_mentions_numbers_and_formulas() {
-        let prompt = build_cleanup_prompt("two plus two", &RefineContext::default());
+        let prompt = build_cleanup_prompt("two plus two", &RefineContext::default(), false);
         assert!(prompt.contains("numbers"));
         assert!(prompt.contains("formulas"));
+    }
+
+    #[test]
+    fn build_cleanup_prompt_adds_concise_instruction_only_when_shorten_is_on() {
+        let ctx = RefineContext::default();
+        let off = build_cleanup_prompt("um so anyway", &ctx, false);
+        let on = build_cleanup_prompt("um so anyway", &ctx, true);
+
+        assert!(!off.contains("Be concise"));
+        assert!(on.contains("Be concise: remove filler and repetition without changing meaning."));
     }
 
     #[test]

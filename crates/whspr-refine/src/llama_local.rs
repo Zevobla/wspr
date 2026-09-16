@@ -34,7 +34,7 @@ impl LlamaLocal {
 impl TextRefiner for LlamaLocal {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
         let llm = self.llm.clone();
-        let prompt = build_cleanup_prompt(raw, ctx);
+        let prompt = build_cleanup_prompt(raw, ctx, false);
 
         // The primitive is synchronous and CPU-bound (a C++ library under the
         // hood), unlike the cloud refiners' awaited HTTP calls - run it on a
