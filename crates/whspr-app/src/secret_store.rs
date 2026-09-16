@@ -133,3 +133,40 @@ pub fn locate_secret(config: &Config, keystore: &dyn Keystore, slot: SecretSlot)
         SecretLocation::Missing
     }
 }
+
+/// Saves `value` as `slot`. With a keystore that survives a reboot it goes
+/// there, and any plaintext copy is dropped from `config` so the next save
+/// stops writing it to disk; otherwise it goes into `config` in plaintext,
+/// exactly as before P-06. A keystore write error leaves `config` untouched.
+pub fn store_secret(
+    config: &mut Config,
+    keystore: &dyn Keystore,
+    slot: SecretSlot,
+    value: &str,
+) -> Result<SecretLocation, String> {
+    if !keystore.is_persistent() {
+        slot.set_plaintext(config, value);
+        return Ok(SecretLocation::ConfigFile);
+    }
+    keystore
+        .set(&slot.keystore_name(), value)
+        .map_err(|error| format!("could not save to the {}: {error}", keystore_label()))?;
+    slot.clear_plaintext(config);
+    Ok(SecretLocation::Keystore)
+}
+
+/// Removes `slot` everywhere: its plaintext copy in `config` and, with a
+/// persistent keystore, its keystore entry.
+pub fn clear_secret(
+    config: &mut Config,
+    keystore: &dyn Keystore,
+    slot: SecretSlot,
+) -> Result<(), String> {
+    slot.clear_plaintext(config);
+    if keystore.is_persistent() {
+        keystore.delete(&slot.keystore_name()).map_err(|error| {
+            format!("could not remove it from the {}: {error}", keystore_label())
+        })?;
+    }
+    Ok(())
+}
