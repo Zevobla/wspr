@@ -69,3 +69,39 @@ async fn process(pipeline: &Pipeline, chunk: Chunk) -> WorkerEvent {
         Err(error) => WorkerEvent::Failed(error.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use whspr_core::testkit::{MockAsr, NoopRefiner};
+
+    fn chunk() -> Chunk {
+        let mut config = Config::default();
+        // Keep the test off any locally installed speaker model.
+        config.speaker.enabled = false;
+        Chunk {
+            audio: AudioBuffer::new(vec![0.1; 16000], 16000),
+            app_name: None,
+            config,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_chunk_becomes_a_completed_dictation() {
+        let pipeline = Pipeline::new(Box::new(MockAsr::default()), Box::new(NoopRefiner));
+
+        match process(&pipeline, chunk()).await {
+            WorkerEvent::Completed {
+                text,
+                duration_secs,
+                embedding,
+            } => {
+                assert!(!text.is_empty());
+                assert_eq!(duration_secs, 1.0);
+                assert!(embedding.is_none());
+            }
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
+}
