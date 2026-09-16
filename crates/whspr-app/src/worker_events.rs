@@ -133,4 +133,12 @@ mod tests {
             .expect("the receiver is still alive");
         assert_eq!(rx.try_recv().unwrap().capture.input_gain, 2.5);
     }
+
+    #[test]
+    fn clipboard_delivery_explains_itself_without_typing_or_erroring() {
+        let mut state = State::new(whspr_config::Config::default());
+        let _ = deliver(&mut state, "hello there", Delivery::Clipboard);
+        assert_eq!(state.notice.as_deref(), Some(CLIPBOARD_NOTICE));
+        assert!(state.last_error.is_none());
+    }
 }
