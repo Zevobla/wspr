@@ -1,4 +1,5 @@
-//! Tolerant history reading.
+//! Tolerant history reading and writing, plaintext or encrypted per line
+//! (`[privacy].history_encryption` -- see `whspr_config::history_codec`).
 //!
 //! whspr-app doesn't own the on-disk history file's schema (no other crate
 //! has settled one yet), so this reads whatever's there defensively: any
@@ -11,6 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use whspr_config::history_codec::decode_line;
 
 /// One completed transcription, either read from the on-disk history file
 /// or appended in-memory as pipeline runs complete during this session.
@@ -58,14 +60,31 @@ fn parse_entry(json: &str) -> Option<HistoryEntry> {
     })
 }
 
-/// Parses a JSONL history file's contents into entries, skipping any line
-/// that isn't a JSON object with at least a string `"text"` field.
-pub fn parse_history_jsonl(contents: &str) -> Vec<HistoryEntry> {
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(parse_entry)
-        .collect()
+/// What reading a history file produced: its entries, and how many
+/// encrypted lines could not be decrypted and were skipped.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HistoryRead {
+    pub entries: Vec<HistoryEntry>,
+    pub unreadable: usize,
+}
+
+/// Parses a JSONL history file's contents into entries. Plaintext lines are
+/// read as they are and `enc1:` lines are decrypted with `key` (see
+/// `whspr_config::history_codec::decode_line`), so a file holding both
+/// kinds reads whole. A line that isn't a JSON object with at least a string
+/// `"text"` field is skipped; an encrypted line that can't be decrypted (no
+/// key, a wrong key, tampering) is skipped and counted in
+/// [`HistoryRead::unreadable`].
+pub fn parse_history_jsonl(contents: &str, key: Option<&[u8; 32]>) -> HistoryRead {
+    let mut read = HistoryRead::default();
+    for line in contents.lines() {
+        match decode_line(line, key) {
+            Ok(Some(json)) => read.entries.extend(parse_entry(&json)),
+            Ok(None) => {}
+            Err(_) => read.unreadable += 1,
+        }
+    }
+    read
 }
 
 /// The whspr history file's path in the platform data dir, if determinable
@@ -76,12 +95,13 @@ pub fn history_file_path() -> Option<PathBuf> {
     Some(dirs.data_dir().join("history.jsonl"))
 }
 
-/// Reads and parses the history file at `path`, tolerating a missing file
+/// Reads and parses the history file at `path`, decrypting encrypted lines
+/// with `key` (see [`parse_history_jsonl`]), tolerating a missing file
 /// (returns empty, not an error) since a fresh install won't have one yet.
-pub fn read_history_file(path: &Path) -> Vec<HistoryEntry> {
+pub fn read_history_file(path: &Path, key: Option<&[u8; 32]>) -> HistoryRead {
     match std::fs::read_to_string(path) {
-        Ok(contents) => parse_history_jsonl(&contents),
-        Err(_) => Vec::new(),
+        Ok(contents) => parse_history_jsonl(&contents, key),
+        Err(_) => HistoryRead::default(),
     }
 }
 
@@ -181,7 +201,7 @@ mod tests {
         let contents = "{\"text\": \"hello world\", \"duration_secs\": 2.0}\n\
                          {\"text\": \"a second entry\"}\n";
 
-        let entries = parse_history_jsonl(contents);
+        let entries = parse_history_jsonl(contents, None).entries;
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].text, "hello world");
@@ -198,7 +218,7 @@ mod tests {
                          \n\
                          {\"text\": \"the only valid line\"}\n";
 
-        let entries = parse_history_jsonl(contents);
+        let entries = parse_history_jsonl(contents, None).entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "the only valid line");
@@ -206,7 +226,7 @@ mod tests {
 
     #[test]
     fn empty_contents_yields_empty_history() {
-        assert!(parse_history_jsonl("").is_empty());
+        assert_eq!(parse_history_jsonl("", None), HistoryRead::default());
     }
 
     #[test]
@@ -225,7 +245,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let missing = dir.path().join("does-not-exist.jsonl");
 
-        assert!(read_history_file(&missing).is_empty());
+        assert_eq!(read_history_file(&missing, None), HistoryRead::default());
     }
 
     #[test]
@@ -234,7 +254,7 @@ mod tests {
         let path = dir.path().join("history.jsonl");
         std::fs::write(&path, "{\"text\": \"from disk\"}\n").expect("failed to write history file");
 
-        let entries = read_history_file(&path);
+        let entries = read_history_file(&path, None).entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "from disk");
@@ -253,7 +273,7 @@ mod tests {
         append_history_entry(&path, &entry).expect("append should create the file and its parent");
         append_history_entry(&path, &entry).expect("a second append should append, not overwrite");
 
-        let entries = read_history_file(&path);
+        let entries = read_history_file(&path, None).entries;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].text, "hello from the app");
         assert_eq!(entries[0].duration_secs, Some(1.5));
@@ -283,7 +303,7 @@ mod tests {
         let raw = std::fs::read_to_string(&path).expect("history file should exist");
         assert!(raw.contains("\"speaker\":\"spk-uuid-123\""));
 
-        let entries = read_history_file(&path);
+        let entries = read_history_file(&path, None).entries;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].speaker_id, Some("spk-uuid-123".to_string()));
         assert_eq!(entries[1].speaker_id, None);
@@ -312,7 +332,7 @@ mod tests {
         assert_eq!(state.history[0].duration_secs, Some(3.0));
         assert_eq!(state.history[0].speaker_id, Some("spk-abc".to_string()));
 
-        let on_disk = read_history_file(&path);
+        let on_disk = read_history_file(&path, None).entries;
         assert_eq!(on_disk.len(), 1);
         assert_eq!(on_disk[0].text, "a real transcript");
         assert_eq!(on_disk[0].speaker_id, Some("spk-abc".to_string()));
