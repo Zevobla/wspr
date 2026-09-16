@@ -329,8 +329,8 @@ async fn save_typ(source: String, file_name: String) -> Result<Option<PathBuf>, 
     Ok(Some(path))
 }
 
-/// Generates the source and kicks off a save-dialog + `typst compile` for a
-/// PDF off the UI thread. A no-op if the desk has closed.
+/// Generates the source and kicks off a save-dialog + in-process PDF compile
+/// off the UI thread. A no-op if the desk has closed.
 fn start_export_pdf(state: &mut State) -> Task<Message> {
     let Some(nd) = state.note_desk.as_mut() else {
         return Task::none();
@@ -341,10 +341,12 @@ fn start_export_pdf(state: &mut State) -> Task<Message> {
     Task::perform(save_pdf(source, file_name), Message::NoteDeskExportPdfDone)
 }
 
-/// The PDF save path: opens a native save dialog (cancel -> `Ok(None)`),
-/// writes the Typst to a temp file, then shells out to `typst compile`. The
-/// compile runs on a blocking thread so it never stalls the async runtime,
-/// and the temp file is removed either way.
+/// The PDF save path: opens a native save dialog (cancel -> `Ok(None)`), then
+/// compiles the Typst source to PDF bytes in-process
+/// (`crate::note_export::export_pdf`, backed by `whspr_typst::export_pdf` --
+/// no system `typst` binary involved) and writes them straight to the chosen
+/// path. The compile runs on a blocking thread so it never stalls the async
+/// runtime.
 async fn save_pdf(source: String, file_name: String) -> Result<Option<PathBuf>, String> {
     let Some(handle) = rfd::AsyncFileDialog::new()
         .add_filter("PDF document", &["pdf"])
@@ -355,31 +357,11 @@ async fn save_pdf(source: String, file_name: String) -> Result<Option<PathBuf>, 
         return Ok(None);
     };
     let pdf_path = handle.path().to_path_buf();
-    let tmp = temp_typ_path();
-    std::fs::write(&tmp, source).map_err(|e| e.to_string())?;
-    let compile = {
-        let (tmp, pdf_path) = (tmp.clone(), pdf_path.clone());
-        tokio::task::spawn_blocking(move || {
-            std::process::Command::new("typst")
-                .arg("compile")
-                .arg(&tmp)
-                .arg(&pdf_path)
-                .output()
-        })
+    let pdf = tokio::task::spawn_blocking(move || crate::note_export::export_pdf(&source))
         .await
-    };
-    let _ = std::fs::remove_file(&tmp);
-    let output = compile
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("could not run typst: {e}"))?;
-    if output.status.success() {
-        Ok(Some(pdf_path))
-    } else {
-        Err(format!(
-            "typst compile failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
+        .map_err(|e| e.to_string())??;
+    std::fs::write(&pdf_path, pdf).map_err(|e| e.to_string())?;
+    Ok(Some(pdf_path))
 }
 
 /// Folds an export result into the desk's status line. Cancellation
@@ -410,15 +392,6 @@ fn suggested_file_name(title: &str, ext: &str) -> String {
     let stem = stem.trim();
     let stem = if stem.is_empty() { "note" } else { stem };
     format!("{stem}.{ext}")
-}
-
-/// A unique scratch path for the `.typ` handed to `typst compile`.
-fn temp_typ_path() -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    std::env::temp_dir().join(format!("whspr-note-{}-{nanos}.typ", std::process::id()))
 }
 
 #[cfg(test)]
