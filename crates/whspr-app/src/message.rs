@@ -132,8 +132,8 @@ pub enum Message {
     TranslateToggled(bool),
     /// The user toggled "Shorten the transcript" in the Capture section.
     ShortenToggled(bool),
-    /// The user toggled "Auto-send when recording pauses" in the Capture
-    /// section.
+    /// The user toggled "Auto-send at each pause while you hold the hotkey"
+    /// in the Capture section (see `crate::worker`'s auto-send).
     AutoSendToggled(bool),
     /// The user toggled "Detect input fields before injecting" in the
     /// Capture section.

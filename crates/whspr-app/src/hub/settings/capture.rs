@@ -38,7 +38,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
             ),
             toggle_row(
                 scheme,
-                "Auto-send when recording pauses",
+                "Auto-send at each pause while you hold the hotkey",
                 state.config.capture.auto_send,
                 Message::AutoSendToggled,
             ),
