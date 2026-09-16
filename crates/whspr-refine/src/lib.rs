@@ -127,6 +127,7 @@ pub struct OpenAiRefiner {
     pub api_key: String,
     pub model: String,
     base_url: String,
+    shorten: bool,
 }
 
 impl OpenAiRefiner {
@@ -135,12 +136,20 @@ impl OpenAiRefiner {
             api_key: api_key.into(),
             model: model.into(),
             base_url: "https://api.openai.com".to_string(),
+            shorten: false,
         }
     }
 
     /// For testing: override the API base URL.
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
+        self
+    }
+
+    /// J-11: append the concise-mode instruction to the cleanup prompt.
+    /// Off by default; whspr-cli wires this from `[capture].shorten`.
+    pub fn with_shorten(mut self, shorten: bool) -> Self {
+        self.shorten = shorten;
         self
     }
 }
@@ -177,7 +186,7 @@ struct OpenAiResponseMessage {
 #[async_trait]
 impl TextRefiner for OpenAiRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        let cleanup_prompt = build_cleanup_prompt(raw, ctx, false);
+        let cleanup_prompt = build_cleanup_prompt(raw, ctx, self.shorten);
 
         let request = OpenAiRequest {
             model: self.model.clone(),
@@ -232,6 +241,7 @@ pub struct AnthropicRefiner {
     pub api_key: String,
     pub model: String,
     base_url: String,
+    shorten: bool,
 }
 
 impl AnthropicRefiner {
@@ -240,12 +250,20 @@ impl AnthropicRefiner {
             api_key: api_key.into(),
             model: model.into(),
             base_url: "https://api.anthropic.com".to_string(),
+            shorten: false,
         }
     }
 
     /// For testing: override the API base URL.
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
+        self
+    }
+
+    /// J-11: append the concise-mode instruction to the cleanup prompt.
+    /// Off by default; whspr-cli wires this from `[capture].shorten`.
+    pub fn with_shorten(mut self, shorten: bool) -> Self {
+        self.shorten = shorten;
         self
     }
 }
@@ -279,7 +297,7 @@ struct AnthropicContent {
 #[async_trait]
 impl TextRefiner for AnthropicRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
-        let cleanup_prompt = build_cleanup_prompt(raw, ctx, false);
+        let cleanup_prompt = build_cleanup_prompt(raw, ctx, self.shorten);
 
         let system_message = "You are a text cleanup assistant for speech-to-text output. \
             Remove filler words, resolve self-corrections, add punctuation and capitalization, \
@@ -334,7 +352,7 @@ impl TextRefiner for AnthropicRefiner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{header, method, path};
+    use wiremock::matchers::{body_string_contains, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -398,6 +416,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_openai_refiner_with_shorten_sends_concise_instruction() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_string_contains("Be concise"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refiner = OpenAiRefiner::new("test-key", "gpt-4")
+            .with_base_url(mock_server.uri())
+            .with_shorten(true);
+
+        // wiremock's `Mock` only responds when its matchers (including the
+        // "Be concise" body match above) are satisfied -- an unmatched
+        // request errors instead of falling through, so a successful result
+        // here proves the request body actually carried the instruction.
+        let result = refiner
+            .refine("um so anyway", &RefineContext::default())
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_anthropic_refiner_success() {
         let mock_server = MockServer::start().await;
 
@@ -453,6 +499,30 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Professional response text.");
+    }
+
+    #[tokio::test]
+    async fn test_anthropic_refiner_with_shorten_sends_concise_instruction() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(body_string_contains("Be concise"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [{"type": "text", "text": "ok"}]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let refiner = AnthropicRefiner::new("test-key", "claude-3-sonnet")
+            .with_base_url(mock_server.uri())
+            .with_shorten(true);
+
+        let result = refiner
+            .refine("um so anyway", &RefineContext::default())
+            .await;
+
+        assert!(result.is_ok());
     }
 
     #[test]
