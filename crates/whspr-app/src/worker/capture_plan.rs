@@ -213,4 +213,26 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn monitor_action_covers_every_transition() {
+        let default_mic = MonitorTarget { device: None };
+        let usb_mic = MonitorTarget {
+            device: Some("USB Mic".to_string()),
+        };
+        let cases = [
+            (None, None, MonitorAction::Keep),
+            (None, Some(usb_mic.clone()), MonitorAction::Start(usb_mic.clone())),
+            (Some(&usb_mic), None, MonitorAction::Stop),
+            (Some(&usb_mic), Some(usb_mic.clone()), MonitorAction::Keep),
+            (
+                Some(&default_mic),
+                Some(usb_mic.clone()),
+                MonitorAction::Restart(usb_mic.clone()),
+            ),
+        ];
+        for (running, desired, expected) in cases {
+            assert_eq!(monitor_action(running, desired.clone()), expected, "{running:?} -> {desired:?}");
+        }
+    }
 }
