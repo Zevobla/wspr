@@ -8,6 +8,7 @@
 //! module decides where a secret the user edits goes, and remembers where
 //! each one lives so views never query the keychain on a redraw.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use whspr_config::{Config, Keystore, MemoryKeystore, OsKeystore, SecretName};
@@ -109,6 +110,23 @@ pub enum SecretLocation {
     ConfigFile,
     /// Not set anywhere.
     Missing,
+}
+
+/// Every secret the Hub manages: the cloud backends' API keys and the
+/// HuggingFace token.
+pub const MANAGED_SECRETS: [SecretSlot; 4] = [
+    SecretSlot::ApiKey("openai"),
+    SecretSlot::ApiKey("anthropic"),
+    SecretSlot::ApiKey("deepgram"),
+    SecretSlot::HfToken,
+];
+
+/// Where each of [`MANAGED_SECRETS`] lives right now.
+pub fn locate_all(config: &Config, keystore: &dyn Keystore) -> HashMap<SecretSlot, SecretLocation> {
+    MANAGED_SECRETS
+        .into_iter()
+        .map(|slot| (slot, locate_secret(config, keystore, slot)))
+        .collect()
 }
 
 /// What the platform calls its keystore, for UI copy.
