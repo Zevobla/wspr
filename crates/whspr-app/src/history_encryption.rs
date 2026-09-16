@@ -39,3 +39,24 @@ fn load_key(keystore: &dyn Keystore) -> Result<HistoryKey, String> {
             other => other.to_string(),
         })
 }
+
+/// How the next history entry reaches disk.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum HistoryWrite<'a> {
+    /// Encryption is off: a plain JSON line, as always.
+    Plain,
+    /// Encryption is on: an `enc1:` line under this key.
+    Encrypted(&'a [u8; 32]),
+    /// Encryption is on but its key could not be loaded: keep the entry in
+    /// memory for this session rather than write it in the clear.
+    MemoryOnly,
+}
+
+/// Decides [`HistoryWrite`] from the setting and the key loaded for it.
+pub(crate) fn history_write(encryption_on: bool, key: Option<&HistoryKey>) -> HistoryWrite<'_> {
+    match (encryption_on, key) {
+        (false, _) => HistoryWrite::Plain,
+        (true, Some(key)) => HistoryWrite::Encrypted(key.bytes()),
+        (true, None) => HistoryWrite::MemoryOnly,
+    }
+}
