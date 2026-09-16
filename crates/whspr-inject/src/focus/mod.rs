@@ -3,6 +3,9 @@
 //! dictation with nowhere sensible to go can land on the clipboard instead of
 //! being typed into a button, a file list or a menu.
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 /// Accessibility roles of text-entry controls.
 const TEXT_INPUT_ROLES: &[&str] = &["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"];
 
