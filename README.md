@@ -39,9 +39,11 @@ below is aspirational unless it's explicitly marked "planned."
 - `whspr-config`: `Config` loads from `config.toml` in the platform config
   directory (e.g. `~/.config/whspr/config.toml` on Linux), overlaid on
   compiled-in defaults, and writes those defaults out on first run so
-  there's a real, editable file waiting for the user. The config file is
-  the *only* override mechanism — no environment variables, by design. See
-  Settings below.
+  there's a real, editable file waiting for the user. The `Config` struct
+  itself has no environment-variable override, by design — the config
+  file is the only way to change a *setting*. (A few backends separately
+  fall back to a specific env var when their own config field is unset —
+  `WHISPER_MODEL_PATH`, `SPEAKER_MODEL_DIR` — see Settings below.)
 - `whspr-asr`: `WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`, and (macOS only)
   `AppleSpeech` (the OS's on-device `SFSpeechRecognizer`) are real, tested
   `AsrBackend` implementations.
@@ -266,7 +268,13 @@ hand:
 directory (e.g. `~/.config/whspr/config.toml` on Linux,
 `~/Library/Application Support/whspr/config.toml` on macOS), overlaid on
 the compiled-in defaults below — the file is written with these defaults
-on first run. There is no environment-variable override, by design.
+on first run. The `Config` struct itself has no environment-variable
+override, by design — the config file is the only way to change a
+*setting*. Separately, a couple of backends fall back to a specific env
+var only when their own config field is unset: `WHISPER_MODEL_PATH`
+(`[whisper].model_path`) and `SPEAKER_MODEL_DIR` (`[speaker].model_dir`);
+`WHSPR_DIARIZE_MOCK` is a test-only hook, not a setting at all (see
+"Offline by default" below).
 
 The **Status** column is load-bearing: "wired" means changing the value
 (in the Hub or the config file) visibly changes behavior; "persisted; no
