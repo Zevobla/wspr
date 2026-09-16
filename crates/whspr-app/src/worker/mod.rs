@@ -16,14 +16,20 @@
 //! `DebouncedHotkeyListener` before it ever reaches this loop, so a
 //! too-short tap is cancelled instead of producing an empty transcript
 //! (D-10) and a double-press doesn't start a second recording on top of
-//! the first (D-09) -- see `capture_decision` below for exactly how those
+//! the first (D-09) -- see `hotkey_decision` for exactly how those
 //! debounced actions map onto capture start/stop/discard.
+//!
+//! Captures honour the user's `[capture]`/`[device]`/`[privacy]` settings
+//! (`capture_plan`, `session`), finished clips are transcribed by a separate
+//! task (`processor`) so the hotkey loop never blocks on a pipeline run, and
+//! the app pushes every saved `Config` back in (`WorkerEvent::Ready`) so a
+//! settings change applies to the very next dictation.
 
 use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use iced::futures::Stream;
 
-use whspr_core::{Pipeline, PipelineState, RefineContext};
+use whspr_core::{Pipeline, PipelineState};
 use whspr_inject::{DebouncedHotkeyListener, GlobalHotkeyListener};
 
 mod backends;
@@ -34,7 +40,7 @@ mod processor;
 mod session;
 
 pub(crate) use backends::{build_asr_backend, build_refiner};
-use hotkey_decision::{capture_decision, CaptureDecision};
+use session::Session;
 
 /// Events the worker reports back to the iced app.
 #[derive(Debug, Clone)]
@@ -181,82 +187,41 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
         }
     };
 
+    let chunks = processor::spawn(pipeline, output.clone());
     let debounced = DebouncedHotkeyListener::new(listener);
     let mut actions = debounced.subscribe_actions();
-    let mut capture: Option<whspr_audio::CaptureHandle> = None;
-    // Captured at the moment capture STARTS (the hotkey press) -- that's
-    // the app the user is dictating into; by the time the pipeline runs
-    // focus should be unchanged, but reading it at press is the safe
-    // moment. `None` whenever `[device].active_window` is off or nothing
-    // was detected (see `crate::active_window::app_name_for`).
-    let mut capture_app_name: Option<String> = None;
 
-    while let Some(action) = actions.recv().await {
-        match capture_decision(action, capture.is_some()) {
-            CaptureDecision::Start => match whspr_audio::start_capture() {
-                Ok(handle) => {
-                    capture = Some(handle);
-                    capture_app_name = crate::active_window::app_name_for(
-                        config.device.active_window,
-                        crate::active_window::frontmost_app_name(),
-                    );
-                    crate::sound::play(crate::sound::Cue::Start, config.sound.enabled);
-                }
-                Err(error) => {
-                    let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
-                }
+    // Only now that dictation can actually happen does the app get a
+    // settings channel: a worker parked on a startup failure above never
+    // reads one, so it never receives one to fill up.
+    let (config_tx, mut config_rx) = tokio::sync::mpsc::unbounded_channel();
+    let _ = output.send(WorkerEvent::Ready(config_tx)).await;
+
+    let mut session = Session::new(config, output, chunks);
+    session.sync_preroll().await;
+
+    loop {
+        tokio::select! {
+            action = actions.recv() => match action {
+                Some(action) => session.on_action(action).await,
+                None => break,
             },
-            CaptureDecision::Discard => {
-                // Drop the handle without ever calling `.stop()`/the
-                // pipeline: the D-10 too-short-hold outcome, so an
-                // accidental tap never produces an empty transcript.
-                capture = None;
-                capture_app_name = None;
+            Some(config) = config_rx.recv() => {
+                session.apply_config(newest_config(config, &mut config_rx)).await;
             }
-            CaptureDecision::Finalize => {
-                let Some(handle) = capture.take() else {
-                    continue;
-                };
-                crate::sound::play(crate::sound::Cue::Stop, config.sound.enabled);
-
-                match handle.stop() {
-                    Ok(audio) => {
-                        let duration_secs = audio.duration_secs();
-                        // Fingerprint the speaker over the whole clip *before*
-                        // `pipeline.run` consumes `audio` (it takes it by
-                        // value), reusing the file path's exact logic. `None`
-                        // whenever attribution isn't possible; transcription
-                        // proceeds unaffected either way.
-                        let embedding =
-                            crate::transcribe_file::compute_embedding(&audio, &config).await;
-                        let ctx = RefineContext {
-                            app_name: capture_app_name.take(),
-                            instructions: Some(whspr_refine::effective_instructions(
-                                config.refine_settings.instructions.as_deref(),
-                            )),
-                            ..Default::default()
-                        };
-                        match pipeline.run(audio, &ctx).await {
-                            Ok(text) => {
-                                let _ = output
-                                    .send(WorkerEvent::Completed {
-                                        text,
-                                        duration_secs,
-                                        embedding,
-                                    })
-                                    .await;
-                            }
-                            Err(error) => {
-                                let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        let _ = output.send(WorkerEvent::Failed(error.to_string())).await;
-                    }
-                }
-            }
-            CaptureDecision::Ignore => {}
         }
     }
+}
+
+/// Skips ahead to the most recent of any settings already queued behind
+/// `config` -- dragging a slider saves on every step, and only the last one
+/// matters.
+fn newest_config(
+    mut config: whspr_config::Config,
+    queued: &mut tokio::sync::mpsc::UnboundedReceiver<whspr_config::Config>,
+) -> whspr_config::Config {
+    while let Ok(newer) = queued.try_recv() {
+        config = newer;
+    }
+    config
 }
