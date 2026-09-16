@@ -74,3 +74,22 @@ pub fn decode_line(line: &str, key: Option<&[u8; 32]>) -> Result<Option<String>>
 fn codec_error(why: &str) -> WhsprError {
     WhsprError::Other(format!("unreadable history line: {why}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY: [u8; 32] = [7; 32];
+    const JSON: &str = r#"{"text":"hello there","duration_secs":1.5}"#;
+
+    #[test]
+    fn an_encrypted_line_round_trips() {
+        let line = encode_line(JSON, &KEY);
+        assert!(line.starts_with(ENCRYPTED_PREFIX));
+        assert!(!line.contains("hello"));
+        assert_eq!(
+            decode_line(&line, Some(&KEY)).unwrap().as_deref(),
+            Some(JSON)
+        );
+    }
+}
