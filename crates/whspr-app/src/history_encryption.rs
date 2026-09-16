@@ -148,4 +148,34 @@ mod tests {
     fn history_key_debug_output_hides_the_bytes() {
         assert_eq!(format!("{:?}", HistoryKey([42; 32])), "HistoryKey(..)");
     }
+
+    const KEY: [u8; 32] = [6; 32];
+
+    fn history_file(dir: &tempfile::TempDir, contents: &str) -> std::path::PathBuf {
+        let path = dir.path().join("history.jsonl");
+        std::fs::write(&path, contents).expect("failed to write history file");
+        path
+    }
+
+    #[test]
+    fn encrypting_then_decrypting_restores_every_entry() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = history_file(&dir, "{\"text\":\"one\"}\n\n{\"text\":\"two\"}\n");
+
+        assert_eq!(
+            rewrite_history_file(&path, &KEY, Rewrite::Encrypt).unwrap(),
+            0
+        );
+        let encrypted = std::fs::read_to_string(&path).unwrap();
+        assert!(encrypted.lines().all(|line| line.starts_with("enc1:")));
+        assert!(!encrypted.contains("one"));
+
+        assert_eq!(
+            rewrite_history_file(&path, &KEY, Rewrite::Decrypt).unwrap(),
+            0
+        );
+        let decrypted = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(decrypted, "{\"text\":\"one\"}\n{\"text\":\"two\"}\n");
+        assert!(!path.with_extension("jsonl.rewrite").exists());
+    }
 }
