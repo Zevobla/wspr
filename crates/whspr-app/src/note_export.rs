@@ -16,7 +16,7 @@
 //! attribution here have no equivalent in that template's metadata/point-
 //! stream model, so the two aren't the same document reimplemented twice.
 //! What *is* shared is lifted into `whspr-typst` proper: [`escape_markup`]/
-//! [`typst_string`] (re-exported below) and, now, PDF compilation itself.
+//! [`typst_string`] (imported below) and, now, PDF compilation itself.
 //! Arbitrary title/heading/transcript text is escaped so it can never break
 //! the surrounding markup.
 

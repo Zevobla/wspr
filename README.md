@@ -83,10 +83,10 @@ below is aspirational unless it's explicitly marked "planned."
 - `whspr-import`: media-import orchestration — shells out to `yt-dlp`/
   `ffmpeg` to pull published captions instantly, or download audio and
   transcribe it, from a URL (a lecture, podcast, or video).
-- `whspr-typst`: a real, tested library that renders structured notes to a
-  Typst document, an SVG preview, and a PDF export — but it's not yet
-  wired into `whspr-app`; no crate in the workspace depends on it. The
-  Hub's Note desk handles its own export separately (see Planned).
+- `whspr-typst`: a real, tested in-process Typst compiler (with bundled
+  base fonts, so it works offline) and notes template. The Hub's Note desk
+  uses it for "Export PDF": the desk's `.typ` source is compiled to PDF
+  inside the app, with no external `typst` binary.
 - `whspr-setup`: a standalone Windows installer — a real `iced` GUI
   (Install → Installing → Done, with a Failure state) that performs a
   genuine per-user install (copies an embedded app payload into
@@ -120,12 +120,9 @@ below is aspirational unless it's explicitly marked "planned."
   implemented and unit-tested but not called from the live hotkey-capture
   path, so the very first instant of speech can still be clipped in
   practice.
-- `whspr-typst` (Typst/SVG/PDF rendering library) has no caller anywhere
-  in the workspace. The Hub's Note desk exports notes itself, via
-  `whspr-app`'s own `note_export.rs`: `.typ` source directly, or a PDF by
-  shelling out to the system `typst compile` binary (`typst` must be
-  installed and on `PATH` — there's no in-process PDF renderer wired up
-  yet).
+- A rendered Typst preview in the Note desk: `whspr-typst` can compile an
+  SVG preview, but the desk's preview pane is native `iced` widgets and has
+  no image surface to show it yet.
 - Linux system tray (the tray module is implemented for macOS/Windows
   only; see `crates/whspr-app/src/tray.rs`'s module doc for why).
 - Signed/notarized macOS releases — the release workflow supports it, but
@@ -172,7 +169,7 @@ The workspace is 15 crates:
 | `whspr-config` | `Config` + every settings section, TOML file load/save | Real, tested |
 | `whspr-hf` | In-app HuggingFace model browse/download client | Real, tested |
 | `whspr-import` | yt-dlp/ffmpeg media import (captions + audio) | Real, tested |
-| `whspr-typst` | Typst notes → SVG/PDF rendering library | Real, tested; no caller yet (see Planned) |
+| `whspr-typst` | In-process Typst compiler + notes template → SVG/PDF | Real, tested; powers the Note desk's PDF export |
 | `whspr-app` | Desktop GUI (`iced`): Hub, tray, background worker | Real, ~14k lines |
 | `whspr-cli` | CLI binary (`whspr`): transcribe / transcribe-batch / diarize / stats / uninstall | Real, tested end-to-end |
 | `whspr-setup` | Windows installer GUI (`iced`) + embedded payload | Real, tested; not yet wired into release CI (see `docs/RELEASING.md`) |
@@ -258,9 +255,6 @@ hand:
   (for audio capture and the `iced` GUI)
 - On macOS: the unified `apple-sdk` package (AudioUnit, CoreAudio, AppKit,
   Metal, etc.)
-- `typst` (optional, system binary, not provisioned by the flake) — only
-  needed for the Hub's Note desk "Export PDF" action; `.typ` export needs
-  nothing extra
 
 ## Settings
 

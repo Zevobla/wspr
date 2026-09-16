@@ -51,11 +51,11 @@ speak, get clean text injected into whatever app has focus.
 - **whspr-import** — media-import orchestration: shells out to `yt-dlp`/
   `ffmpeg` to pull published captions instantly, or download audio for
   transcription, from a URL. A library; no `iced` dependency.
-- **whspr-typst** — renders structured notes to a Typst document, an SVG
-  preview, and a PDF export. Real and tested, but currently an orphan: no
-  other crate in the workspace depends on it. `whspr-app`'s own
-  `note_export.rs` handles the Hub's Note desk export separately (`.typ`
-  directly, or PDF by shelling out to the system `typst` binary).
+- **whspr-typst** — an in-process Typst compiler world (`typst-assets` base
+  faces, fully offline) plus a generic lecture-notes template: `.typ`
+  generation, SVG preview, PDF export. Real, tested. `whspr-app`'s
+  `note_export.rs` builds the Note desk's own `.typ` layout and compiles it
+  to PDF through `whspr_typst::export_pdf` — no system `typst` binary.
 - **whspr-app** — the iced 0.14 GUI (Hub: Dictate / History / Speakers /
   Models / Settings / Note desk / link import; system tray on
   macOS/Windows, deliberately not implemented on Linux — see
