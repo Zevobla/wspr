@@ -90,6 +90,34 @@ pub(super) fn desired_monitor(config: &Config, device: &DeviceResolution) -> Opt
     })
 }
 
+/// How to bring a running preroll monitor in line with the one the settings
+/// call for (see [`desired_monitor`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum MonitorAction {
+    /// Already right -- including "none running, none wanted".
+    Keep,
+    /// Nothing is running; open a monitor on this target.
+    Start(MonitorTarget),
+    /// A monitor is running but none is wanted any more.
+    Stop,
+    /// A monitor is running on the wrong device; reopen it on this target.
+    Restart(MonitorTarget),
+}
+
+/// Compares the `running` monitor's target with the `desired` one.
+pub(super) fn monitor_action(
+    running: Option<&MonitorTarget>,
+    desired: Option<MonitorTarget>,
+) -> MonitorAction {
+    match (running, desired) {
+        (None, None) => MonitorAction::Keep,
+        (None, Some(target)) => MonitorAction::Start(target),
+        (Some(_), None) => MonitorAction::Stop,
+        (Some(current), Some(target)) if *current == target => MonitorAction::Keep,
+        (Some(_), Some(target)) => MonitorAction::Restart(target),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
