@@ -96,7 +96,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             // loop is unambiguously already running on this thread. See
             // `crate::tray`'s module doc comment for why that matters.
             if state.tray.is_none() {
-                state.tray = crate::tray::Handle::create(state.pipeline_state);
+                state.tray = crate::tray::Handle::create(
+                    state.pipeline_state,
+                    state.config.device.tray_static,
+                );
             }
             // Measure the primary monitor now the window exists, so a display
             // too small for the default size gets the window shrunk + re-
@@ -383,7 +386,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if !tray_done_active(state.tray_done_until, std::time::Instant::now()) {
                 state.tray_done_until = None;
                 if let Some(tray) = &state.tray {
-                    tray.set_state(state.pipeline_state);
+                    tray.set_state(state.pipeline_state, state.config.device.tray_static);
                 }
             }
             Task::none()

@@ -35,7 +35,7 @@ pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
                         state.tray_done_until = None;
                     }
                     if let Some(tray) = &state.tray {
-                        tray.set_state(pipeline_state);
+                        tray.set_state(pipeline_state, state.config.device.tray_static);
                     }
                 }
             }
