@@ -64,6 +64,68 @@ pub(crate) fn resolve_input_device(host: &cpal::Host, name: &str) -> Result<cpal
         .ok_or_else(crate::capture::no_input_device_error)
 }
 
+/// Case-insensitive substring markers for a Bluetooth input source
+/// (headset/earbuds mic).
+const BLUETOOTH_MARKERS: &[&str] = &["bluetooth", "airpods"];
+
+/// Markers checked as a whole word rather than a plain substring (see
+/// `contains_word`) - short enough ("bt") to otherwise false-positive
+/// inside an unrelated device name (e.g. "Subtotal Device" contains the
+/// substring "bt").
+const BLUETOOTH_WORD_MARKERS: &[&str] = &["bt"];
+
+/// Case-insensitive substring markers for a virtual/loopback input
+/// source, not a physical microphone. Covers common virtual-audio
+/// driver/tool names plus the generic terms "virtual" and "aggregate"
+/// (macOS's Audio MIDI Setup "Aggregate Device" combines/loops back other
+/// devices rather than being a mic itself).
+const VIRTUAL_MARKERS: &[&str] = &[
+    "virtual",
+    "blackhole",
+    "loopback",
+    "soundflower",
+    "vb-cable",
+    "aggregate",
+];
+
+/// Whether `haystack_lower` (already lowercased) contains `word_lower` as
+/// a standalone, whole "word" - tokenizing on any non-alphanumeric
+/// character - rather than as a substring of a longer token.
+fn contains_word(haystack_lower: &str, word_lower: &str) -> bool {
+    haystack_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|token| token == word_lower)
+}
+
+/// Whether `name` (an input device name, as from `input_device_names`)
+/// looks like a Bluetooth source (a headset/earbuds mic), by a handful of
+/// documented, case-insensitive name markers: "Bluetooth", "AirPods", and
+/// the standalone word "BT".
+///
+/// This is a heuristic over the OS-reported device name - cpal exposes no
+/// cross-platform "is this device Bluetooth" query - so it can both miss
+/// a real Bluetooth device with an unusual name and (rarely) false-positive
+/// on a device that merely happens to have one of these markers in its
+/// name.
+pub fn is_bluetooth_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    BLUETOOTH_MARKERS.iter().any(|m| lower.contains(m))
+        || BLUETOOTH_WORD_MARKERS
+            .iter()
+            .any(|w| contains_word(&lower, w))
+}
+
+/// Whether `name` looks like a virtual/loopback audio source rather than
+/// a physical microphone, by the same kind of documented name-marker
+/// heuristic as `is_bluetooth_name`: common virtual-audio driver/tool
+/// names ("BlackHole", "Soundflower", "VB-Cable"), "Loopback", and the
+/// generic terms "virtual"/"aggregate". Same caveats as `is_bluetooth_name`
+/// apply - this is a name heuristic, not a device-capability query.
+pub fn is_virtual_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    VIRTUAL_MARKERS.iter().any(|m| lower.contains(m))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
