@@ -12,6 +12,7 @@
 //!      think" -> "I think"), reusing the same conservative machinery as
 //!      the crate's F-19 `dedup` pass.
 //!   3. collapse whitespace left behind by the first two passes.
+//!
 //! Every kept word's own punctuation and capitalization are left exactly
 //! as they were.
 //!
