@@ -178,4 +178,30 @@ mod tests {
         assert_eq!(decrypted, "{\"text\":\"one\"}\n{\"text\":\"two\"}\n");
         assert!(!path.with_extension("jsonl.rewrite").exists());
     }
+
+    #[test]
+    fn undecryptable_lines_are_kept_verbatim_and_counted() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let foreign = encode_line("{\"text\":\"other key\"}", &[9; 32]);
+        let path = history_file(&dir, &format!("{foreign}\n{{\"text\":\"mine\"}}\n"));
+
+        assert_eq!(
+            rewrite_history_file(&path, &KEY, Rewrite::Decrypt).unwrap(),
+            1
+        );
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, format!("{foreign}\n{{\"text\":\"mine\"}}\n"));
+    }
+
+    #[test]
+    fn a_missing_history_file_is_nothing_to_rewrite() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        assert_eq!(
+            rewrite_history_file(&path, &KEY, Rewrite::Encrypt).unwrap(),
+            0
+        );
+        assert!(!path.exists());
+    }
 }
