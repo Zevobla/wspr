@@ -8,6 +8,7 @@
 mod keystore;
 mod keystore_os;
 mod names;
+mod resolve;
 
 pub use keystore::{Keystore, MemoryKeystore};
 pub use keystore_os::OsKeystore;
