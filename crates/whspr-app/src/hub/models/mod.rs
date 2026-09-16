@@ -15,6 +15,7 @@ use iced::widget::{button, column, text_input};
 use iced::Element;
 
 use crate::hub::common::section;
+use crate::secret_store::{SecretLocation, SecretSlot};
 use crate::state::{Message, State};
 use crate::theme::{color, spacing, styles};
 
@@ -34,9 +35,14 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     .into()
 }
 
-/// Whether the user is signed in (a live login this session or a saved token).
+/// Whether the user is signed in (a live login this session or a saved token,
+/// wherever it is kept -- see `State::secret_locations`).
 fn is_signed_in(state: &State) -> bool {
-    state.hf_username.is_some() || state.config.huggingface.token.is_some()
+    let saved_token = state
+        .secret_locations
+        .get(&SecretSlot::HfToken)
+        .is_some_and(|location| *location != SecretLocation::Missing);
+    state.hf_username.is_some() || saved_token
 }
 
 fn account_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
