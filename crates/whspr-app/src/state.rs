@@ -4,6 +4,7 @@ use iced::window;
 use whspr_config::Config;
 
 use crate::history::HistoryEntry;
+use crate::history_encryption::HistoryKey;
 use crate::secret_store::{SecretLocation, SecretSlot, SecretStore};
 // The Hub's navigation enums live in their own module (AA-06 line cap); they
 // were part of this file, so they're re-exported here to keep the existing
@@ -53,6 +54,14 @@ pub struct State {
     /// the live hotkey path only pushes here in-memory for now (see
     /// `Message::Worker`'s `Completed` arm in `crate::app`).
     pub history: Vec<HistoryEntry>,
+    /// The history-encryption key, loaded while `[privacy].history_encryption`
+    /// is on (see `crate::history_encryption`). `None` when encryption is off
+    /// or its key could not be loaded -- in which case new entries stay in
+    /// memory rather than being written in the clear.
+    pub history_key: Option<HistoryKey>,
+    /// Why history encryption could not be switched or used, shown under the
+    /// Privacy toggle; `None` when there is nothing to explain.
+    pub history_note: Option<String>,
     /// The active iced theme. Set from the OS appearance at boot and
     /// re-synced whenever it changes (see `crate::system_theme`); the Hub's
     /// theme button (`Message::ThemeToggled`) can override it temporarily,
@@ -251,6 +260,8 @@ impl State {
             hotkey_capturing: false,
             captured_hotkey: None,
             history: Vec::new(),
+            history_key: None,
+            history_note: None,
             theme: iced::Theme::Light,
             system_theme: iced::Theme::Light,
             screen: Screen::default(),
