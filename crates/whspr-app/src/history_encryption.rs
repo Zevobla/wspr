@@ -60,3 +60,25 @@ pub(crate) fn history_write(encryption_on: bool, key: Option<&HistoryKey>) -> Hi
         (true, None) => HistoryWrite::MemoryOnly,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_writes_follow_the_setting_and_the_loaded_key() {
+        let key = HistoryKey([1; 32]);
+        assert_eq!(history_write(false, None), HistoryWrite::Plain);
+        assert_eq!(history_write(false, Some(&key)), HistoryWrite::Plain);
+        assert_eq!(
+            history_write(true, Some(&key)),
+            HistoryWrite::Encrypted(&[1; 32])
+        );
+        assert_eq!(history_write(true, None), HistoryWrite::MemoryOnly);
+    }
+
+    #[test]
+    fn history_key_debug_output_hides_the_bytes() {
+        assert_eq!(format!("{:?}", HistoryKey([42; 32])), "HistoryKey(..)");
+    }
+}
