@@ -48,7 +48,7 @@ fn find_matching_device_name(available: &[String], requested: &str) -> Option<us
 pub(crate) fn resolve_input_device(host: &cpal::Host, name: &str) -> Result<cpal::Device> {
     let devices: Vec<cpal::Device> = host
         .input_devices()
-        .map_err(|e| crate::mic_access_error("enumerate input devices", e))?
+        .map_err(|e| crate::capture::mic_access_error("enumerate input devices", e))?
         .collect();
     let names: Vec<String> = devices.iter().map(|d| d.to_string()).collect();
 
@@ -61,7 +61,7 @@ pub(crate) fn resolve_input_device(host: &cpal::Host, name: &str) -> Result<cpal
 
     tracing::warn!("input device {name:?} not found; falling back to the default input device");
     host.default_input_device()
-        .ok_or_else(crate::no_input_device_error)
+        .ok_or_else(crate::capture::no_input_device_error)
 }
 
 #[cfg(test)]
