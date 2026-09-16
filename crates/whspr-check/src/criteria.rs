@@ -334,6 +334,12 @@ pub const CATALOG: &[Criterion] = &[
         group: "B",
         title: "Config lives in the platform config directory",
     },
+    // --- AE: Uniqueness ---
+    Criterion {
+        id: "AE-10",
+        group: "AE",
+        title: "UNIQUENESS.md is present and non-trivial",
+    },
     // --- AC: Slop-meter ---
     Criterion {
         id: "AC-02",
