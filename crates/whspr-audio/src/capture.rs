@@ -13,6 +13,43 @@ use whspr_core::{AudioBuffer, Result, WhsprError};
 
 use crate::device;
 
+/// Options for `start_capture_with`: which device to open, plus how the
+/// captured audio is post-processed when `CaptureHandle::stop` is later
+/// called.
+///
+/// `Default` reproduces the exact behavior `start_capture`/
+/// `start_capture_on_device` have always had: the OS default device, no
+/// gain change, no noise suppression, no preroll prepended.
+#[derive(Debug, Clone)]
+pub struct CaptureOptions {
+    /// Input device name to open, resolved the same way as
+    /// `start_capture_on_device` (falls back to the OS default if no
+    /// device matches this name). `None` opens the OS default directly.
+    pub device: Option<String>,
+    /// Linear gain multiplier applied to every sample on `stop()` (see
+    /// `apply_gain`). `1.0` is a no-op — this mirrors `whspr-config`'s
+    /// `[capture] input_gain` default.
+    pub input_gain: f32,
+    /// Whether `stop()` runs `suppress_noise` on the captured audio.
+    /// Mirrors `whspr-config`'s `[capture] noise_suppression`.
+    pub noise_suppression: bool,
+    /// Samples to prepend to the captured audio on `stop()`, already at
+    /// 16kHz mono — the same shape `PrerollMonitor::snapshot` and
+    /// `PrerollBuffer::drain_preroll` produce. Empty is a no-op.
+    pub preroll: Vec<f32>,
+}
+
+impl Default for CaptureOptions {
+    fn default() -> Self {
+        CaptureOptions {
+            device: None,
+            input_gain: 1.0,
+            noise_suppression: false,
+            preroll: Vec::new(),
+        }
+    }
+}
+
 /// Handle for an in-progress microphone capture session.
 ///
 /// Holds the cpal stream, shared sample buffer, and device sample rate.
