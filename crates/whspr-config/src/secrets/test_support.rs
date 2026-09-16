@@ -8,7 +8,7 @@ use super::{Keystore, MemoryKeystore};
 /// A [`MemoryKeystore`] wrapper with switchable faults.
 #[derive(Default)]
 pub(crate) struct FaultyKeystore {
-    inner: MemoryKeystore,
+    pub(crate) inner: MemoryKeystore,
     /// `set` for this exact name returns an error.
     pub(crate) fail_set_for: Option<String>,
     /// Every `get` returns an error (a locked or unavailable keychain).
