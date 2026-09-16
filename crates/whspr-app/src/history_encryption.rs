@@ -10,6 +10,9 @@ use whspr_config::history_codec::{decode_line, encode_line};
 use whspr_config::Keystore;
 use whspr_core::WhsprError;
 
+use crate::history::history_file_path;
+use crate::state::State;
+
 /// The 32-byte history key (`whspr_config::history_key`), held in memory
 /// while history encryption is on. Its `Debug` output never shows the bytes.
 #[derive(Clone, PartialEq, Eq)]
@@ -126,6 +129,59 @@ fn write_synced(path: &Path, contents: &str) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
     file.write_all(contents.as_bytes())?;
     file.sync_all()
+}
+
+/// Turns history encryption on or off for the running app, first converting
+/// the history file at `path` to match (see [`rewrite_history_file`]).
+/// Returns whether `state.config` changed and should be saved.
+///
+/// Nothing changes when the key can't be loaded -- notably a keystore that
+/// does not survive a reboot, which keeps encryption off -- or the file
+/// can't be rewritten; `state.history_note` then says why. After a
+/// successful switch the note reports any lines left as they were.
+pub(crate) fn set_history_encryption_at(
+    state: &mut State,
+    enabled: bool,
+    path: Option<&Path>,
+) -> bool {
+    if state.config.privacy.history_encryption == enabled {
+        return false;
+    }
+    let key = match state.history_key.clone() {
+        Some(key) => key,
+        None => match load_key(state.keystore.keystore()) {
+            Ok(key) => key,
+            Err(reason) => {
+                let stays = if enabled { "unencrypted" } else { "encrypted" };
+                state.history_note = Some(format!("History stays {stays}: {reason}."));
+                return false;
+            }
+        },
+    };
+    let direction = if enabled {
+        Rewrite::Encrypt
+    } else {
+        Rewrite::Decrypt
+    };
+    let unreadable = match path.map(|path| rewrite_history_file(path, key.bytes(), direction)) {
+        None => 0,
+        Some(Ok(unreadable)) => unreadable,
+        Some(Err(error)) => {
+            state.history_note = Some(format!("Could not rewrite the history file: {error}."));
+            return false;
+        }
+    };
+    state.config.privacy.history_encryption = enabled;
+    state.history_key = enabled.then_some(key);
+    state.history_note = (unreadable > 0).then(|| {
+        format!("{unreadable} history entries could not be decrypted and were left as they were.")
+    });
+    true
+}
+
+/// [`set_history_encryption_at`] on the real history file.
+pub(crate) fn set_history_encryption(state: &mut State, enabled: bool) -> bool {
+    set_history_encryption_at(state, enabled, history_file_path().as_deref())
 }
 
 #[cfg(test)]
