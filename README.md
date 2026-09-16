@@ -198,24 +198,22 @@ trait TextRefiner: Send + Sync {
 
 `Pipeline` is constructed with `Box<dyn AsrBackend>` and `Box<dyn
 TextRefiner>` — it has no idea whether it's talking to a local whisper.cpp
-model, a cloud API, or (in tests) a canned mock. Swapping local ↔ cloud is a
-matter of constructing it with a different concrete type, e.g.:
+model, a cloud API, or (in tests) a canned mock. Swapping local ↔ cloud is
+a matter of constructing it with a different concrete type; `whspr-cli`'s
+`--asr`/`--refine` flags (and `whspr-config`'s `AsrChoice`/`RefineChoice`
+config defaults, which `whspr-app`'s Settings screen writes to the same
+fields) select the concrete type at runtime, e.g.:
 
 ```rust
-// fully local (once WhisperLocal / LlamaLocal are implemented)
+// fully local (real today, once [whisper].model_path / [refine_settings].llama_model_path point at downloaded models)
 Pipeline::new(Box::new(WhisperLocal::new(model_path)), Box::new(LlamaLocal::new(llm_path)));
 
-// fully cloud (once OpenAiAsr / OpenAiRefiner are implemented)
+// fully cloud (real today, given [api_keys].openai in config)
 Pipeline::new(Box::new(OpenAiAsr::new(api_key)), Box::new(OpenAiRefiner::new(api_key, model)));
 
-// today, actually: the mock pipeline whspr-cli builds
+// deterministic offline stand-in: what whspr-cli builds for --asr mock (used by tests / whspr-check)
 Pipeline::new(Box::new(MockAsr::default()), Box::new(NoopRefiner));
 ```
-
-`whspr-config`'s `AsrChoice` / `RefineChoice` enums are the intended
-selector for this — the idea is that the choice becomes a config value, not
-a recompile. That wiring (config value → concrete backend → `Pipeline`) is
-not connected yet; see Status and Settings.
 
 ## Build & run
 
