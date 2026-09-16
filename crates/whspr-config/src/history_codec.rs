@@ -11,14 +11,17 @@
 use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit, Nonce};
+use whspr_core::{Result, WhsprError};
 
-use crate::hex::encode_hex;
+use crate::hex::{decode_hex, encode_hex};
 
 /// Marks an encrypted history line (format version 1).
 pub const ENCRYPTED_PREFIX: &str = "enc1:";
 
 /// Nonce length for ChaCha20-Poly1305.
 const NONCE_LEN: usize = 12;
+/// Poly1305 authentication tag length.
+const TAG_LEN: usize = 16;
 
 /// Encrypts one history line's `json` under `key`, with a fresh random nonce
 /// from the OS, as `enc1:` + hex(nonce ‖ ciphertext ‖ tag).
@@ -32,4 +35,42 @@ pub fn encode_line(json: &str, key: &[u8; 32]) -> String {
     let mut payload = nonce.to_vec();
     payload.extend_from_slice(&sealed);
     format!("{ENCRYPTED_PREFIX}{}", encode_hex(&payload))
+}
+
+/// Reads one history line back into its JSON text.
+///
+/// - A blank line is `Ok(None)`.
+/// - A plaintext line passes through unchanged as `Ok(Some(line))`.
+/// - An `enc1:` line is decrypted with `key`.
+///
+/// An encrypted line is an error when there is no key, its hex is malformed,
+/// it is too short to hold a nonce and tag, it fails authentication (a wrong
+/// key or tampering) or it does not decrypt to UTF-8. Callers skip such a
+/// line and count it; nothing here panics.
+pub fn decode_line(line: &str, key: Option<&[u8; 32]>) -> Result<Option<String>> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let Some(payload) = trimmed.strip_prefix(ENCRYPTED_PREFIX) else {
+        return Ok(Some(line.to_string()));
+    };
+    let key = key.ok_or_else(|| codec_error("it is encrypted and no history key is available"))?;
+    let bytes = decode_hex(payload).ok_or_else(|| codec_error("its payload is not hex"))?;
+    if bytes.len() < NONCE_LEN + TAG_LEN {
+        return Err(codec_error("it is too short to be encrypted history"));
+    }
+    let (nonce, sealed) = bytes.split_at(NONCE_LEN);
+    let mut plain = sealed.to_vec();
+    ChaCha20Poly1305::new(&(*key).into())
+        .decrypt_in_place(Nonce::from_slice(nonce), b"", &mut plain)
+        .map_err(|_| codec_error("it failed authentication (wrong key or tampered)"))?;
+    String::from_utf8(plain)
+        .map(Some)
+        .map_err(|_| codec_error("it did not decrypt to UTF-8 text"))
+}
+
+/// A history-line error explaining `why` the line could not be read.
+fn codec_error(why: &str) -> WhsprError {
+    WhsprError::Other(format!("unreadable history line: {why}"))
 }
