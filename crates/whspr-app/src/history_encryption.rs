@@ -68,6 +68,66 @@ pub(crate) fn history_write(encryption_on: bool, key: Option<&HistoryKey>) -> Hi
     }
 }
 
+/// Which way [`rewrite_history_file`] converts the history file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rewrite {
+    /// Every readable line becomes an `enc1:` line.
+    Encrypt,
+    /// Every readable line becomes plain JSON again.
+    Decrypt,
+}
+
+/// Converts the history file at `path` so every readable line is encrypted
+/// under `key` (or plaintext), returning how many lines could not be
+/// decrypted -- those are kept exactly as they were, never dropped. Blank
+/// lines are dropped; a missing file is nothing to convert.
+///
+/// Atomic: the new contents are written and synced to a sibling temp file
+/// that then replaces the original, so an interruption leaves either the
+/// old file or the new one, never a half-written mix.
+pub(crate) fn rewrite_history_file(
+    path: &Path,
+    key: &[u8; 32],
+    direction: Rewrite,
+) -> std::io::Result<usize> {
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let mut rewritten = String::with_capacity(contents.len() * 2);
+    let mut unreadable = 0;
+    for line in contents.lines() {
+        let converted = match decode_line(line, Some(key)) {
+            Ok(None) => continue,
+            Ok(Some(json)) => match direction {
+                Rewrite::Encrypt => encode_line(&json, key),
+                Rewrite::Decrypt => json,
+            },
+            Err(_) => {
+                unreadable += 1;
+                line.to_string()
+            }
+        };
+        rewritten.push_str(&converted);
+        rewritten.push('\n');
+    }
+
+    let temp = path.with_extension("jsonl.rewrite");
+    let replaced = write_synced(&temp, &rewritten).and_then(|()| std::fs::rename(&temp, path));
+    if replaced.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    replaced.map(|()| unreadable)
+}
+
+/// Writes `contents` to a new file at `path` and flushes it to disk.
+fn write_synced(path: &Path, contents: &str) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
