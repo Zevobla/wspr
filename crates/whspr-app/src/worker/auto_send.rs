@@ -58,3 +58,85 @@ impl AutoSendDetector {
         self.last_speech.is_some()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const THRESHOLD: f32 = 0.01;
+    const SPEECH: f32 = 0.2;
+    const QUIET: f32 = 0.0;
+
+    /// Feeds `(level, at_ms)` samples and returns the times (ms) it fired.
+    fn fire_times(samples: impl IntoIterator<Item = (f32, u64)>) -> Vec<u64> {
+        let mut detector = AutoSendDetector::new(THRESHOLD);
+        samples
+            .into_iter()
+            .filter(|&(level, at)| detector.observe(level, Duration::from_millis(at)))
+            .map(|(_, at)| at)
+            .collect()
+    }
+
+    /// One sample every 100 ms from `from` to `to` (inclusive) at `level`.
+    fn span(level: f32, from: u64, to: u64) -> impl Iterator<Item = (f32, u64)> {
+        (from..=to).step_by(100).map(move |at| (level, at))
+    }
+
+    #[test]
+    fn the_detector_fires_only_after_a_long_enough_pause_following_speech() {
+        struct Case {
+            name: &'static str,
+            samples: Vec<(f32, u64)>,
+            fires_at: Vec<u64>,
+        }
+        let cases = [
+            Case {
+                name: "no speech never fires",
+                samples: span(QUIET, 0, 6000).collect(),
+                fires_at: vec![],
+            },
+            Case {
+                name: "speech then 1.4 s of silence does not fire",
+                samples: span(SPEECH, 0, 1000)
+                    .chain(span(QUIET, 1100, 2400))
+                    .collect(),
+                fires_at: vec![],
+            },
+            Case {
+                name: "speech then 1.5 s of silence fires once",
+                samples: span(SPEECH, 0, 1000)
+                    .chain(span(QUIET, 1100, 6000))
+                    .collect(),
+                fires_at: vec![2500],
+            },
+            Case {
+                name: "a level exactly at the threshold is silence",
+                samples: span(SPEECH, 0, 0)
+                    .chain(span(THRESHOLD, 100, 1500))
+                    .collect(),
+                fires_at: vec![1500],
+            },
+            Case {
+                name: "speech inside the pause restarts it",
+                samples: span(SPEECH, 0, 0)
+                    .chain(span(QUIET, 100, 1000))
+                    .chain(span(SPEECH, 1100, 1100))
+                    .chain(span(QUIET, 1200, 2600))
+                    .collect(),
+                fires_at: vec![2600],
+            },
+            Case {
+                name: "it resets after firing and fires again after new speech",
+                samples: span(SPEECH, 0, 500)
+                    .chain(span(QUIET, 600, 3000))
+                    .chain(span(SPEECH, 3100, 3500))
+                    .chain(span(QUIET, 3600, 6000))
+                    .collect(),
+                fires_at: vec![2000, 5000],
+            },
+        ];
+        for case in cases {
+            assert_eq!(fire_times(case.samples), case.fires_at, "{}", case.name);
+        }
+    }
+}
