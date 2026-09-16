@@ -78,6 +78,18 @@ implemented; only the native `windows-11-arm` path is wired up.
 The tag version (with the leading `v` stripped) becomes the app/bundle
 version baked into each artifact.
 
+## No universal / x64 macOS build
+
+`scripts/bundle-macos.sh` builds the app with a plain `nix build
+.#whspr-app` — there is no `--arch`/universal flag, no `lipo`, and no
+per-architecture branching in the script. It always produces a single
+binary for whatever machine runs it (the CI runner is `macos-14`, Apple
+Silicon). The *sherpa/onnxruntime dylibs* it vendors happen to be
+universal2 prebuilts (see `dep_names`'s comment about the per-architecture
+`otool -L` banner), but that doesn't make the resulting `.app` universal —
+the `whspr-app` executable itself is arm64-only. If an Intel or universal
+macOS build is ever needed, there is no script for it in this repo today.
+
 ## Build a bundle locally
 
 ```sh
