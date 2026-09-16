@@ -121,4 +121,14 @@ mod tests {
         assert_eq!(picker.options, names(&["Built-in Microphone", "USB Mic"]));
         assert_eq!(picker.note, Some(fallback_notice("USB Mic")));
     }
+
+    #[test]
+    fn a_hotplug_change_drops_removed_and_appends_added_devices() {
+        let change = DeviceChange {
+            added: names(&["USB Mic", "Built-in Microphone"]),
+            removed: names(&["AirPods Pro"]),
+        };
+        let updated = apply_device_change(&names(&["Built-in Microphone", "AirPods Pro"]), &change);
+        assert_eq!(updated, names(&["Built-in Microphone", "USB Mic"]));
+    }
 }
