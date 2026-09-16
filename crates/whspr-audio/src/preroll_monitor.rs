@@ -183,4 +183,19 @@ mod tests {
             monitor.stop();
         }
     }
+
+    #[test]
+    fn snapshot_on_fresh_monitor_is_empty() {
+        // Same environment caveat as above: only assert when construction
+        // actually succeeds. Immediately after `start`, the callback
+        // hasn't necessarily delivered any audio yet, so the ring should
+        // still read as empty.
+        if let Ok(monitor) = PrerollMonitor::start(None, DEFAULT_PREROLL_MS as u32) {
+            assert!(
+                monitor.snapshot().is_empty(),
+                "a monitor that hasn't had time to receive any audio yet should snapshot empty"
+            );
+            monitor.stop();
+        }
+    }
 }
