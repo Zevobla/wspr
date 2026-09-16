@@ -344,4 +344,32 @@ mod tests {
         assert_eq!(state.theme, iced::Theme::Light);
         assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
     }
+
+    #[test]
+    fn with_keystore_finds_secrets_held_in_the_keystore() {
+        let keystore = whspr_config::MemoryKeystore::default();
+        whspr_config::Keystore::set(&keystore, whspr_config::SecretName::HF_TOKEN, "hf_abc")
+            .unwrap();
+        let mut config = whspr_config::Config::default();
+        config.api_keys.insert("openai".into(), "sk-plain".into());
+
+        let state = State::with_keystore(config, SecretStore::new(std::sync::Arc::new(keystore)));
+
+        assert_eq!(
+            state.secret_locations[&SecretSlot::HfToken],
+            SecretLocation::Keystore
+        );
+        assert_eq!(
+            state.secret_locations[&SecretSlot::ApiKey("openai")],
+            SecretLocation::ConfigFile
+        );
+        assert_eq!(
+            state.secret_locations[&SecretSlot::ApiKey("anthropic")],
+            SecretLocation::Missing
+        );
+        assert_eq!(
+            state.hf_status.as_deref(),
+            Some("Signed in with a saved token.")
+        );
+    }
 }
