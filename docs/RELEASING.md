@@ -1,7 +1,27 @@
 # Releasing whspr
 
-whspr ships as a macOS `.app` bundle (Apple Silicon), packaged as a `.dmg`
-and a `.zip`. Releases are cut by pushing a version tag; CI does the rest.
+whspr ships two ways today, both driven by pushing a version tag; CI does the
+packaging.
+
+- **macOS** (Apple Silicon only — see "No universal/x64 build" below): a
+  `.app` bundle, packaged as a `.dmg` and a `.zip`. This is the one release
+  job that's actually **live**.
+- **Windows** (x64 and arm64, built separately): a portable `.zip` plus a
+  per-user `.msi` installer (built from `packaging/windows/whspr.wxs` via
+  WiX) for each architecture. Both Windows release jobs are authored and
+  correct but **DORMANT** — they cannot run until GitHub Actions billing is
+  restored on this repo (same reason the separate compile-only gate,
+  `.github/workflows/windows.yml`, is dormant).
+
+whspr also has a **third**, distinct installer that CI does not build or
+ship yet: `whspr-setup`, a standalone `iced` GUI (Install → Installing →
+Done, with a Failure state) that performs a genuine per-user install of an
+embedded app payload on Windows. It's real and tested (see `CLAUDE.md`), but
+`release.yml` never invokes it — the Windows artifacts CI actually produces
+are the portable zip and the WiX MSI described below, built directly from
+the raw `whspr-app.exe` + DLLs.
+
+Releases are cut by pushing a version tag; CI does the rest.
 
 ## Cut a release
 
@@ -14,8 +34,12 @@ and a `.zip`. Releases are cut by pushing a version tag; CI does the rest.
    git push origin v0.1.0
    ```
 
-That tag push triggers `.github/workflows/release.yml` on a `macos-14`
-(Apple Silicon) runner, which:
+That tag push triggers `.github/workflows/release.yml`, which defines three
+jobs.
+
+### `release-macos` (live)
+
+On a `macos-14` (Apple Silicon) runner:
 
 1. Installs Nix and runs `nix flake check` (the hermetic test gate).
 2. Runs `scripts/bundle-macos.sh --version 0.1.0`, which builds the app
@@ -25,10 +49,50 @@ That tag push triggers `.github/workflows/release.yml` on a `macos-14`
    `whspr-0.1.0-macos.dmg` + `whspr-0.1.0-macos.zip`.
 3. Creates a GitHub Release for the tag and uploads the `.dmg` and `.zip`.
 
-The tag version (with the leading `v` stripped) becomes
-`CFBundleShortVersionString` / `CFBundleVersion` in `Info.plist`.
+### `release-windows` (DORMANT — x64)
+
+On `windows-latest`, without Nix (it provisions the MSVC toolchain,
+libclang, and the pinned Archivo faces at runtime instead, mirroring
+`.github/workflows/windows.yml`):
+
+1. Builds `whspr-app` for `x86_64-pc-windows-msvc` and stages
+   `whspr-app.exe` plus the four sherpa/onnxruntime DLLs it load-time links
+   via `scripts/bundle-windows.ps1`, producing `whspr-<version>-x64.zip`.
+2. Builds `whspr-<version>-x64.msi` from `packaging/windows/whspr.wxs` with
+   the WiX toolset: a per-user install into `%LOCALAPPDATA%\whspr`, no
+   admin rights, and deliberately **no** autostart registry key of its own
+   — that setting is owned solely by the app's own in-app toggle.
+3. Uploads both to the same GitHub Release, appending Windows release notes.
+
+### `release-windows-arm64` (DORMANT — native Windows-on-ARM)
+
+Same shape as `release-windows`, on a `windows-11-arm` runner with a
+clang-cl + Ninja + CMake toolchain
+(`packaging/windows/arm64-clangcl.cmake`; ggml hard-errors on MSVC `cl` for
+ARM, hence clang-cl). The arm64 binary is **self-contained** — sherpa is
+`cfg`'d out and OpenMP is off on that target — so the zip and MSI ship with
+**zero** DLLs. A cross-build fallback from `windows-latest`
+(`vcvarsall amd64_arm64`) is documented in the job's comments but not
+implemented; only the native `windows-11-arm` path is wired up.
+
+The tag version (with the leading `v` stripped) becomes the app/bundle
+version baked into each artifact.
+
+## No universal / x64 macOS build
+
+`scripts/bundle-macos.sh` builds the app with a plain `nix build
+.#whspr-app` — there is no `--arch`/universal flag, no `lipo`, and no
+per-architecture branching in the script. It always produces a single
+binary for whatever machine runs it (the CI runner is `macos-14`, Apple
+Silicon). The *sherpa/onnxruntime dylibs* it vendors happen to be
+universal2 prebuilts (see `dep_names`'s comment about the per-architecture
+`otool -L` banner), but that doesn't make the resulting `.app` universal —
+the `whspr-app` executable itself is arm64-only. If an Intel or universal
+macOS build is ever needed, there is no script for it in this repo today.
 
 ## Build a bundle locally
+
+**macOS:**
 
 ```sh
 ./scripts/bundle-macos.sh                 # version from Cargo.toml
@@ -36,13 +100,26 @@ The tag version (with the leading `v` stripped) becomes
 ```
 
 Outputs land in `dist/` (git-ignored): `whspr.app`, `whspr-<v>-macos.dmg`,
-`whspr-<v>-macos.zip`. Nothing generated (the `.icns`, PNGs, `.app`, `.dmg`,
+`whspr-<v>-macos.zip`. `--binary <path>` reuses a prebuilt binary instead of
+running `nix build`. Nothing generated (the `.icns`, PNGs, `.app`, `.dmg`,
 `.zip`) is ever committed — the icon's only committed form is the vector
 `crates/whspr-app/assets/icon.svg`, rasterized at bundle time.
 
-`--binary <path>` reuses a prebuilt binary instead of running `nix build`.
+**Windows** (run on Windows; no Nix):
 
-## Self-contained bundle (vendored dylibs)
+```powershell
+./scripts/bundle-windows.ps1 -Version 0.1.0                                 # x64 (default)
+./scripts/bundle-windows.ps1 -Version 0.1.0 -Target aarch64-pc-windows-msvc # arm64
+```
+
+Stages `whspr-app.exe` (plus the four DLLs on x64 only) into `dist/whspr/`
+and zips `dist/whspr-<version>-<arch>.zip`. The MSI is a separate step —
+`wix build packaging/windows/whspr.wxs -arch <x64|arm64> -d Version=<v> -d
+BundleDir=<path to dist/whspr>` — see `release.yml` for the exact
+invocation and `packaging/windows/whspr.wxs`'s header comment for the
+per-user install design.
+
+## Self-contained bundle (vendored dylibs) [macOS]
 
 The `whspr-app` binary links native dynamic libraries that are **not** present
 on a clean end-user Mac:
@@ -96,12 +173,15 @@ drawn wells), then detaches and `hdiutil convert`s to the final compressed
 `.dmg`. The Finder step is best-effort: on a headless session with no Finder it
 is skipped and a valid — if unstyled — `.dmg` still ships.
 
-## The unsigned-app caveat
+## Unsigned by default
 
-By default the release is **unsigned and un-notarized**. macOS Gatekeeper
-will refuse to open it on first launch ("whspr can't be opened because Apple
-cannot check it for malicious software"). Users work around it once, either
-way:
+Both platforms ship **unsigned** by default; each has its own optional
+signing step gated on a secret being present, so CI never fails for lack of
+one.
+
+**macOS**: Gatekeeper refuses to open an unsigned app on first launch
+("whspr can't be opened because Apple cannot check it for malicious
+software"). Users work around it once, either way:
 
 - Right-click **whspr.app** → **Open**, then confirm; or
 - clear the quarantine flag:
@@ -113,7 +193,12 @@ way:
 The release notes generated by CI include this instruction automatically
 whenever the build is unsigned.
 
-## Adding signing + notarization later
+**Windows**: SmartScreen warns on first run ("Windows protected your PC").
+Users click **More info**, then **Run anyway**. The dormant `release-windows`
+/`release-windows-arm64` jobs' generated release notes include this
+instruction whenever the build is unsigned.
+
+### Adding macOS signing + notarization later
 
 The release workflow already contains an optional sign-and-notarize step. It
 runs **only** when the signing secrets are present (it gates on
@@ -124,7 +209,7 @@ To enable it, add these repository secrets (Settings → Secrets and variables
 → Actions):
 
 | Secret                  | What it is                                                        |
-| ----------------------- | ----------------------------------------------------------------- |
+| ----------------------- | ------------------------------------------------------------------ |
 | `MACOS_CERTIFICATE`      | base64 of your Developer ID Application `.p12` (`base64 -i cert.p12`) |
 | `MACOS_CERTIFICATE_PWD`  | password for that `.p12`                                          |
 | `MACOS_SIGN_IDENTITY`    | e.g. `Developer ID Application: Your Name (TEAMID)`               |
@@ -141,3 +226,17 @@ notes then drop the unsigned caveat.
 > injection) are **not** declarable in `Info.plist` — macOS prompts the user
 > for them at runtime in System Settings → Privacy & Security. Microphone
 > and Apple Events usage strings are declared in the bundle's `Info.plist`.
+
+### Adding Windows Authenticode signing later
+
+Mirrors the macOS step, gated on `env.WINDOWS_CERTIFICATE != ''` in both
+`release-windows` and `release-windows-arm64`. Add these repository secrets:
+
+| Secret                    | What it is                              |
+| ------------------------- | ---------------------------------------- |
+| `WINDOWS_CERTIFICATE`     | base64 of your code-signing `.pfx`       |
+| `WINDOWS_CERTIFICATE_PWD` | password for that `.pfx`                 |
+
+With those set (once the Windows jobs are un-dormant), the next tag push
+signs the staged `whspr-app.exe` with `signtool.exe`, rebuilds the zip so
+the signed exe ships inside it, and signs the MSI too.

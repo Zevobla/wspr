@@ -14,33 +14,93 @@ below is aspirational unless it's explicitly marked "planned."
 
 **Works today**
 
-- A compiling, tested 8-crate Cargo workspace (`cargo build --workspace` /
-  `cargo test --workspace`, all green).
-- `whspr-core`: the domain types, the four backend traits (`AsrBackend`,
-  `TextRefiner`, `HotkeyListener`, `TextSink`), and the `Pipeline`
-  orchestrator (transcribe → refine → inject) are real, with passing unit
-  tests.
-- `whspr-cli` (the `whspr` binary): `whspr --version`, and
-  `whspr transcribe <FILE>`, which runs the **real** `Pipeline` end-to-end —
-  but currently against a **mock** ASR backend and a no-op refiner. It does
-  not read or transcribe your audio file yet; it always returns a canned
-  transcript. This exists to prove the pipeline wiring and give the project
-  a real, testable end-to-end path before real backends land.
-- `whspr-config`: `Config`, `AsrChoice`, `RefineChoice` types exist and
-  `load()` returns their defaults. No file-based config yet — see Settings
-  below.
-- `whspr-asr`: `WhisperLocal` (local whisper.cpp via `whisper-rs`),
-  `OpenAiAsr`, and `DeepgramAsr` are real, tested `AsrBackend`
-  implementations — not stubs.
-- `whspr-refine`: `NoopRefiner` (pass raw text through unchanged, the
-  default), `OpenAiRefiner`, `AnthropicRefiner`, and `LlamaLocal` (local
-  llama.cpp via `llama-cpp-2`) are all real, tested `TextRefiner`
-  implementations.
-- `whspr-audio`: mic capture, WAV decoding, resampling to 16kHz mono, and
-  silence trimming are real and exercised by the real pipeline.
+- A compiling, tested 15-crate Cargo workspace (`cargo build --workspace` /
+  `cargo test --workspace`, all green; `cargo run -p whspr-check` is the
+  automated acceptance gate all of this is held to).
+- `whspr-core`: the domain types, the five backend traits (`AsrBackend`,
+  `TextRefiner`, `HotkeyListener`, `TextSink`, `Diarizer`), and the
+  `Pipeline` orchestrator (transcribe → refine → inject) are real, with
+  passing unit tests.
+- `whspr-cli` (the `whspr` binary): `whspr transcribe <FILE>` runs the
+  **real** `Pipeline` end-to-end against a **real** ASR backend — the
+  no-flag default is `WhisperLocal` (local whisper.cpp via `whisper-rs`),
+  which reads `[whisper].model_path` (or the `WHISPER_MODEL_PATH`
+  environment variable) for a GGML model file you've downloaded — whspr is
+  bring-your-own-model and never ships or fetches one for you.
+  `--asr openai` / `--asr deepgram` / `--asr apple-speech` (macOS on-device)
+  select cloud/on-device backends instead; `--asr mock` is an explicit,
+  documented opt-in to a canned transcript, used by the test suite and
+  `whspr-check` so neither needs a real model file on disk. `--refine`
+  works the same way (`noop` / `openai` / `anthropic` / `llama-local` /
+  `apple-foundation`). Also real: `transcribe-batch` (a directory of .wav
+  files), `diarize` (speaker fingerprinting, see below), `stats`
+  (per-utterance history), `uninstall`, and SRT/VTT subtitle export
+  (`--format srt|vtt`; see `crates/whspr-cli/src/subtitles.rs`).
+- `whspr-config`: `Config` loads from `config.toml` in the platform config
+  directory (e.g. `~/.config/whspr/config.toml` on Linux), overlaid on
+  compiled-in defaults, and writes those defaults out on first run so
+  there's a real, editable file waiting for the user. The `Config` struct
+  itself has no environment-variable override, by design — the config
+  file is the only way to change a *setting*. (A few backends separately
+  fall back to a specific env var when their own config field is unset —
+  `WHISPER_MODEL_PATH`, `SPEAKER_MODEL_DIR` — see Settings below.)
+- `whspr-asr`: `WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`, and (macOS only)
+  `AppleSpeech` (the OS's on-device `SFSpeechRecognizer`) are real, tested
+  `AsrBackend` implementations.
+- `whspr-refine`: `NoopRefiner` (pass text through unchanged, the default),
+  `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal` (local llama.cpp via
+  `llama-cpp-2`), and (macOS 26+ with Apple Intelligence, when built with
+  the shim) `AppleFoundation` are all real, tested `TextRefiner`
+  implementations. Every choice is wrapped in a `NormalizingRefiner`
+  decorator that layers rule-based number/date/time normalization, a
+  macro/dictionary substitution table (including a sandboxed LuaJIT
+  scripting layer for `lua:`-prefixed macros), dedup, and paragraph breaks
+  on top.
+- `whspr-audio`: mic capture (device enumeration/selection), WAV decoding,
+  resampling to 16kHz mono, and RMS-energy-based leading/trailing silence
+  trimming are real and exercised by the real pipeline. A `PrerollBuffer`
+  ring buffer (pre-trigger sample retention, E-10) is implemented and
+  unit-tested, but not yet wired into the live hotkey-capture path — see
+  Planned.
 - `whspr-inject`: the global hotkey listener and text injection
-  (clipboard-paste-first, with debounce and clipboard save/restore) are
-  real `HotkeyListener`/`TextSink` implementations.
+  (clipboard-paste-first, with a synthetic-typing fallback, debounce, and
+  clipboard save/restore) are real `HotkeyListener`/`TextSink`
+  implementations.
+- `whspr-diarize` + speaker fingerprinting: a real, tested, bring-your-own-
+  model diarization backend — see "Original feature: speaker
+  fingerprinting" below.
+- `whspr-app`: a real, ~14,000-line `iced` 0.14 desktop GUI — not a
+  placeholder. The Hub has Dictate / History / Speakers / Models
+  (HuggingFace download via `whspr-hf`) / Settings / Note desk / link
+  import (`whspr-import`: yt-dlp + ffmpeg) screens, a system tray
+  (macOS/Windows), a background worker running the real hotkey → mic
+  capture → `Pipeline` → inject loop, hotkey rebinding, close-to-tray,
+  sound cues, log rotation, and a headless screenshot dev path.
+- `whspr-hf`: the in-app HuggingFace client (browser OAuth sign-in, browse
+  a curated whisper.cpp model set with a "fits your machine" badge,
+  download, list installed) the Models tab uses to point
+  `whisper.model_path` at a real file without hand-editing config.
+- `whspr-import`: media-import orchestration — shells out to `yt-dlp`/
+  `ffmpeg` to pull published captions instantly, or download audio and
+  transcribe it, from a URL (a lecture, podcast, or video).
+- `whspr-typst`: a real, tested library that renders structured notes to a
+  Typst document, an SVG preview, and a PDF export — but it's not yet
+  wired into `whspr-app`; no crate in the workspace depends on it. The
+  Hub's Note desk handles its own export separately (see Planned).
+- `whspr-setup`: a standalone Windows installer — a real `iced` GUI
+  (Install → Installing → Done, with a Failure state) that performs a
+  genuine per-user install (copies an embedded app payload into
+  `%LOCALAPPDATA%\whspr`, creates Start-menu/Desktop shortcuts, writes the
+  autostart registry value). It also builds and renders on macOS (a no-op
+  install path) so the shared UI stays testable everywhere. See
+  `docs/RELEASING.md` for how (and whether) it ships today.
+- `whspr-bench`: a CLI that benchmarks ASR backends (e.g. `WhisperLocal`
+  vs `MockAsr`) over a set of audio fixtures.
+- `whspr-check`: an independent acceptance checker
+  (`cargo run -p whspr-check`) that scores this repo against a curated
+  subset of the project's acceptance criteria — the gate every claim in
+  this README is held to. It only ever reports PASS for something it
+  actually verified.
 - A Nix flake: `nix develop` gives a working dev shell (Rust toolchain,
   ffmpeg, whisper.cpp, llama.cpp, cmake/clang + libclang for bindgen);
   `nix build` builds the `whspr` binary; `nix flake check` builds it in
@@ -48,18 +108,41 @@ below is aspirational unless it's explicitly marked "planned."
 
 **Planned / not yet implemented**
 
-- Wiring `whspr-cli`'s `--asr` / `--refine` flags to actually select a
-  backend (they're accepted today but ignored — every run uses the mock
-  pipeline).
-- On-disk config file loading (`whspr-config::load()` always returns
-  defaults today; no file discovery, no env overrides yet).
-- The GUI (`whspr-app`): currently a placeholder binary that prints
-  `whspr gui (todo)` and exits. No window, no Hub, no Flow Bar yet.
+- A cluster of Settings toggles are persisted in `config.toml` and
+  editable in the Hub, but nothing reads them yet — toggling them changes
+  nothing about capture/device/privacy behavior today: `[capture]`
+  `auto_send`, `input_field_detection`, `input_gain`, `noise_suppression`,
+  `shorten`, `vad_threshold`; `[device]` `bluetooth_source`,
+  `device_hotplug`, `tray_static`, `virtual_source`, `active_window`;
+  `[privacy]` `history_encryption`, `mic_privacy`. See the Status column
+  in Settings below for the full, verified list.
+- `whspr-audio`'s `PrerollBuffer` (pre-trigger sample retention, E-10) is
+  implemented and unit-tested but not called from the live hotkey-capture
+  path, so the very first instant of speech can still be clipped in
+  practice.
+- `whspr-typst` (Typst/SVG/PDF rendering library) has no caller anywhere
+  in the workspace. The Hub's Note desk exports notes itself, via
+  `whspr-app`'s own `note_export.rs`: `.typ` source directly, or a PDF by
+  shelling out to the system `typst compile` binary (`typst` must be
+  installed and on `PATH` — there's no in-process PDF renderer wired up
+  yet).
+- Linux system tray (the tray module is implemented for macOS/Windows
+  only; see `crates/whspr-app/src/tray.rs`'s module doc for why).
+- Signed/notarized macOS releases — the release workflow supports it, but
+  ships **unsigned** until signing secrets are configured (see
+  `docs/RELEASING.md`).
+- Windows CI (`.github/workflows/windows.yml`) and both Windows release
+  jobs are authored but **dormant** — they can't run until GitHub Actions
+  billing is restored on this repo (see `docs/RELEASING.md`).
+- Speaker diarization on aarch64-windows: `sherpa-rs` ships no prebuilt
+  native library there, so `SherpaDiarizer::new` returns an honest
+  "unavailable" error on that target instead of degrading silently.
+- Moving `[api_keys]` / `huggingface.token` out of plaintext config into
+  the OS keystore (criterion P-06).
 
 ## Architecture
 
-The intended runtime pipeline is four stages, each behind its own crate and
-trait:
+The runtime pipeline is four stages, each behind its own crate and trait:
 
 ```
 capture (whspr-audio)  →  ASR (whspr-asr)  →  refine / LLM (whspr-refine)  →  inject (whspr-inject)
@@ -67,26 +150,34 @@ capture (whspr-audio)  →  ASR (whspr-asr)  →  refine / LLM (whspr-refine)  �
    real                     real backends        real backends                real
 ```
 
-`whspr-core::Pipeline` owns this flow today for the ASR → refine → inject
-part; capture, ASR, refine, and inject are all real, tested
-implementations, wired together by the caller (e.g. `whspr-cli`, or
-`whspr-app`'s worker): `transcribe()` → `refine()` → optionally
-`sink.insert()`, reporting `PipelineState` transitions (`Idle` /
-`Recording` / `Transcribing` / `Refining` / `Injecting` / `Error`) as it
-goes.
+`whspr-core::Pipeline` owns this flow today end to end: `transcribe()` →
+`refine()` → optionally `sink.insert()`, reporting `PipelineState`
+transitions (`Idle` / `Recording` / `Transcribing` / `Refining` /
+`Injecting` / `Error`) as it goes. `whspr-cli` and `whspr-app`'s worker
+both wire real capture/ASR/refine/inject implementations into it. A fifth,
+independent trait (`Diarizer`) and crate (`whspr-diarize`) power the
+separate speaker-fingerprinting feature described below — `Pipeline` never
+touches either.
 
-The workspace is 8 crates:
+The workspace is 15 crates:
 
 | Crate | Role | Status |
 |---|---|---|
-| `whspr-core` | Domain types, the 4 traits, `Pipeline` orchestrator | Real, tested |
-| `whspr-asr` | ASR backends (`WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`) | Real, tested |
-| `whspr-refine` | Refine backends (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`) | Real, tested |
-| `whspr-audio` | Capture / WAV decode / resample to 16kHz mono | Real, tested |
-| `whspr-inject` | Global hotkey listener + text injection | Real, tested |
-| `whspr-config` | `Config`, `AsrChoice`, `RefineChoice`, `load()` | Real, minimal (defaults only) |
-| `whspr-app` | Desktop GUI (Hub + Flow Bar, planned on `iced`) | Placeholder binary |
-| `whspr-cli` | CLI binary (`whspr`) | Real, mock-backed end-to-end |
+| `whspr-core` | Domain types, the 5 traits (`AsrBackend`, `TextRefiner`, `HotkeyListener`, `TextSink`, `Diarizer`), `Pipeline` orchestrator | Real, tested |
+| `whspr-asr` | ASR backends: `WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`, `AppleSpeech` | Real, tested |
+| `whspr-refine` | Refine backends: `NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`, `AppleFoundation` + `NormalizingRefiner` rule-based decorator | Real, tested |
+| `whspr-audio` | Capture / WAV decode / resample to 16kHz mono / silence trim / preroll buffer | Real, tested (preroll not wired into live capture yet) |
+| `whspr-inject` | Global hotkey listener + text injection (clipboard-paste-first, typing fallback) | Real, tested |
+| `whspr-diarize` | Speaker-turn segmentation + embedding extraction (sherpa-onnx) | Real, tested; no prebuilt native lib on aarch64-windows |
+| `whspr-config` | `Config` + every settings section, TOML file load/save | Real, tested |
+| `whspr-hf` | In-app HuggingFace model browse/download client | Real, tested |
+| `whspr-import` | yt-dlp/ffmpeg media import (captions + audio) | Real, tested |
+| `whspr-typst` | Typst notes → SVG/PDF rendering library | Real, tested; no caller yet (see Planned) |
+| `whspr-app` | Desktop GUI (`iced`): Hub, tray, background worker | Real, ~14k lines |
+| `whspr-cli` | CLI binary (`whspr`): transcribe / transcribe-batch / diarize / stats / uninstall | Real, tested end-to-end |
+| `whspr-setup` | Windows installer GUI (`iced`) + embedded payload | Real, tested; not yet wired into release CI (see `docs/RELEASING.md`) |
+| `whspr-bench` | ASR backend benchmarking CLI | Real |
+| `whspr-check` | Automated acceptance checker (`cargo run -p whspr-check`) | Real |
 
 ## Swapping models / backends (local ↔ cloud)
 
@@ -109,24 +200,22 @@ trait TextRefiner: Send + Sync {
 
 `Pipeline` is constructed with `Box<dyn AsrBackend>` and `Box<dyn
 TextRefiner>` — it has no idea whether it's talking to a local whisper.cpp
-model, a cloud API, or (in tests) a canned mock. Swapping local ↔ cloud is a
-matter of constructing it with a different concrete type, e.g.:
+model, a cloud API, or (in tests) a canned mock. Swapping local ↔ cloud is
+a matter of constructing it with a different concrete type; `whspr-cli`'s
+`--asr`/`--refine` flags (and `whspr-config`'s `AsrChoice`/`RefineChoice`
+config defaults, which `whspr-app`'s Settings screen writes to the same
+fields) select the concrete type at runtime, e.g.:
 
 ```rust
-// fully local (once WhisperLocal / LlamaLocal are implemented)
+// fully local (real today, once [whisper].model_path / [refine_settings].llama_model_path point at downloaded models)
 Pipeline::new(Box::new(WhisperLocal::new(model_path)), Box::new(LlamaLocal::new(llm_path)));
 
-// fully cloud (once OpenAiAsr / OpenAiRefiner are implemented)
+// fully cloud (real today, given [api_keys].openai in config)
 Pipeline::new(Box::new(OpenAiAsr::new(api_key)), Box::new(OpenAiRefiner::new(api_key, model)));
 
-// today, actually: the mock pipeline whspr-cli builds
+// deterministic offline stand-in: what whspr-cli builds for --asr mock (used by tests / whspr-check)
 Pipeline::new(Box::new(MockAsr::default()), Box::new(NoopRefiner));
 ```
-
-`whspr-config`'s `AsrChoice` / `RefineChoice` enums are the intended
-selector for this — the idea is that the choice becomes a config value, not
-a recompile. That wiring (config value → concrete backend → `Pipeline`) is
-not connected yet; see Status and Settings.
 
 ## Build & run
 
@@ -144,10 +233,11 @@ nix build          # builds ./result/bin/whspr
 
 ```sh
 nix develop                                        # dev shell: Rust toolchain + ffmpeg/whisper.cpp/llama.cpp/cmake/clang
-cargo build --workspace                             # builds all 8 crates
-cargo test --workspace                              # pipeline + config + CLI e2e tests
+cargo build --workspace                             # builds all 15 crates
+cargo test --workspace                              # pipeline + config + CLI/diarize e2e tests
+cargo run -p whspr-check                            # the acceptance gate (should report 0 fail)
 cargo run -p whspr-cli -- --version                 # -> whspr 0.1.0
-cargo run -p whspr-cli -- transcribe path/to/file    # runs the pipeline end-to-end; prints a mock transcript today
+cargo run -p whspr-cli -- transcribe path/to/file.wav --asr mock  # runs the real pipeline end-to-end; --asr mock needs no model file configured
 nix flake check                                     # builds whspr-cli (release) + runs the full test suite in a sandbox
 ```
 
@@ -161,32 +251,154 @@ listed here so you know what's actually needed if you set up a toolchain by
 hand:
 
 - Rust (edition 2021; pinned via [fenix](https://github.com/nix-community/fenix) in the flake)
-- `ffmpeg`, `whisper-cpp`, `llama-cpp` — not linked by any crate yet, but
-  declared up front so the asr/audio/refine work doesn't need flake changes
-  later
-- `cmake`, `clang`/`libclang` — needed once `whisper-rs` / `llama-cpp-2` are
-  wired in (they compile native C/C++ via cmake and generate bindings via
-  bindgen)
+- `ffmpeg` — shelled out to by `whspr-import`'s media-download path (alongside `yt-dlp`)
+- `cmake`, `clang`/`libclang` — build whisper.cpp/llama.cpp's native C/C++ trees and generate their bindgen bindings
+- whisper.cpp / llama.cpp / sherpa-onnx — linked via `whisper-rs`, `llama-cpp-2`, and `sherpa-rs` respectively (`whspr-asr`, `whspr-refine`, `whspr-diarize`); sherpa-onnx ships no prebuilt native library on aarch64-windows
 - On Linux: `alsa-lib`, `libxkbcommon`, `wayland`, `vulkan-loader`, `libGL`
-  (for audio capture and the planned `iced` GUI)
+  (for audio capture and the `iced` GUI)
 - On macOS: the unified `apple-sdk` package (AudioUnit, CoreAudio, AppKit,
   Metal, etc.)
+- `typst` (optional, system binary, not provisioned by the flake) — only
+  needed for the Hub's Note desk "Export PDF" action; `.typ` export needs
+  nothing extra
 
 ## Settings
 
-`whspr-config::Config` exists today with these fields; `load()` currently
-always returns the defaults below — there is no config file, env var, or
-CLI flag that changes them yet.
+`whspr-config::Config` loads from `config.toml` in the platform config
+directory (e.g. `~/.config/whspr/config.toml` on Linux,
+`~/Library/Application Support/whspr/config.toml` on macOS), overlaid on
+the compiled-in defaults below — the file is written with these defaults
+on first run. The `Config` struct itself has no environment-variable
+override, by design — the config file is the only way to change a
+*setting*. Separately, a couple of backends fall back to a specific env
+var only when their own config field is unset: `WHISPER_MODEL_PATH`
+(`[whisper].model_path`) and `SPEAKER_MODEL_DIR` (`[speaker].model_dir`);
+`WHSPR_DIARIZE_MOCK` is a test-only hook, not a setting at all (see
+"Offline by default" below).
 
-| Key | Type | Default | Meaning |
+The **Status** column is load-bearing: "wired" means changing the value
+(in the Hub or the config file) visibly changes behavior; "persisted; no
+effect yet" means the value round-trips through the Settings UI and the
+config file, but nothing in the pipeline reads it yet — verified by
+grepping every non-config, non-Settings-screen read site.
+
+### Top-level
+
+| Key | Default | Status | Meaning |
 |---|---|---|---|
-| `asr` | `AsrChoice` (`whisper-local` \| `open-ai` \| `deepgram`) | `whisper-local` | Which ASR backend to use (selection not wired to `Pipeline` yet) |
-| `refine` | `RefineChoice` (`noop` \| `open-ai` \| `anthropic` \| `llama-local`) | `noop` | Which refiner to use (selection not wired to `Pipeline` yet) |
-| `language` | `Option<String>` | `None` | Language hint for ASR (not consumed anywhere yet) |
+| `asr` | `whisper-local` | wired | Default ASR backend (`whisper-local`\|`open-ai`\|`deepgram`\|`apple-speech`\|`mock`); overridden per-run by `--asr`. |
+| `refine` | `noop` | wired | Default refiner (`noop`\|`open-ai`\|`anthropic`\|`llama-local`\|`apple-foundation`); overridden per-run by `--refine`. |
+| `language` | `None` | wired | BCP47 language hint for ASR; overridden per-run by `--language`. |
+| `hotkey` | `None` (platform default) | wired | Push-to-talk hotkey combo label (e.g. `"Ctrl+Shift+D"`). |
+| `api_keys` | `{}` | wired | `[api_keys]` table: cloud backend id -> API key, stored in plaintext. |
 
-**Planned:** on-disk config file (via `figment`/`toml`), a platform config
-directory (via `directories`), env var overrides, and wiring these values
-into `whspr-cli` / `whspr-app` so they actually select a backend.
+### `[whisper]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `whisper.model_path` | `None` | wired | Path to a GGML model file for `WhisperLocal`. |
+
+### `[speaker]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `speaker.enabled` | `true` | wired | Turns the whole diarization feature on/off. |
+| `speaker.model_dir` | `None` | wired | Directory of sherpa-onnx model files for `whspr diarize`. |
+| `speaker.similarity_threshold` | `0.7` | wired | Minimum cosine similarity to match an already-enrolled speaker. |
+| `speaker.embedding_model` | `cam-plus-plus` | wired | Embedding model choice (`cam-plus-plus`\|`eres2net`). |
+
+### `[normalize]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `normalize.numbers` | `true` | wired | Spell-out numbers -> digits. |
+| `normalize.dates` | `true` | wired | Normalize recognized dates to `YYYY-MM-DD`. |
+| `normalize.times` | `true` | wired | Normalize recognized times to 24-hour `HH:MM`. |
+| `normalize.numbers_format` | `digits` | wired | How normalized numbers/dates/times render. |
+| `normalize.macros` | `{}` | wired | Trigger phrase -> expansion (a `lua:`-prefixed value runs as a sandboxed LuaJIT script). |
+| `normalize.paragraph_break` | `true` | wired | Insert paragraph breaks on long pauses. |
+| `normalize.punctuation_toggle` | `true` | wired | Auto-punctuation cleanup. |
+| `normalize.dictionary` | `{}` | wired | Trigger term -> replacement (finer-grained than `macros`). |
+| `normalize.formulas` | `true` | wired | Recognize spoken arithmetic/symbols and rewrite them symbolically. |
+
+### `[language-settings]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `language_settings.language_switch` | `true` | wired | Auto-detect the recognition language per utterance. |
+| `language_settings.fixed_language` | `None` | wired | Fixed language code used when `language_switch` is `false`. |
+
+### `[device]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `device.input_device` | `None` | wired (partially) | Selected input device name (`None` = host default). Used by the Dictate screen's manual record button; the global-hotkey capture path in `worker.rs` still always opens the OS default device. |
+| `device.device_hotplug` | `true` | persisted; no effect yet | Intended to rescan devices on plug/unplug. |
+| `device.active_window` | `true` | persisted; no effect yet | Intended to record the focused app's name for per-app context. |
+| `device.bluetooth_source` | `true` | persisted; no effect yet | Intended to allow Bluetooth input sources. |
+| `device.virtual_source` | `true` | persisted; no effect yet | Intended to allow virtual/loopback input sources. |
+| `device.tray_static` | `true` | persisted; no effect yet | Intended to keep the tray icon static instead of animating. |
+
+### `[autostart]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `autostart.enabled` | `false` | wired | Launch-at-login; toggling it writes/removes a real OS autostart entry. |
+
+### `[sound]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `sound.enabled` | `true` | wired | Start/stop sound cues. |
+
+### `[injection]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `injection.pre_paste_delay_ms` | `0` | wired | Pause before the paste keystroke, for slow-to-focus target apps. |
+
+### `[privacy]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `privacy.mic_privacy` | `true` | persisted; no effect yet | Intended to release the mic outside active capture. |
+| `privacy.history_encryption` | `false` | persisted; no effect yet | Intended to encrypt stored history at rest. |
+| `privacy.cookies_browser` | `None` | wired | Browser whose cookies media import may borrow for gated videos. |
+
+### `[capture]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `capture.refine_timeout_ms` | `30000` | wired | Timeout for the refine step. |
+| `capture.auto_send` | `false` | persisted; no effect yet | Intended to auto-inject when recording pauses. |
+| `capture.input_field_detection` | `true` | persisted; no effect yet | Intended to detect read-only targets before injecting. |
+| `capture.noise_suppression` | `false` | persisted; no effect yet | Intended noise-suppression preprocessing. |
+| `capture.input_gain` | `1.0` | persisted; no effect yet | Intended input gain multiplier. |
+| `capture.vad_threshold` | `0.01` | persisted; no effect yet | Intended VAD sensitivity — the real silence trim (`whspr_audio::trim_silence_default`) uses its own fixed constant, not this field. |
+| `capture.translate` | `false` | wired | Translate transcribed text via the ASR backend. |
+| `capture.shorten` | `false` | persisted; no effect yet | Intended transcript shortening/summarization. |
+
+### `[huggingface]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `huggingface.token` | `None` | wired | OAuth access token for HuggingFace downloads. |
+| `huggingface.models_dir` | `None` | wired | Directory downloaded model files are placed in. |
+| `huggingface.model_dirs` | `[]` | wired | Extra directories scanned for already-installed model files. |
+| `huggingface.oauth_client_id` | `None` | wired | OAuth app client id for HuggingFace sign-in. |
+
+### `[refine_settings]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `refine_settings.openai_model` | `gpt-4o-mini` | wired | Model id for `OpenAiRefiner`. |
+| `refine_settings.anthropic_model` | `claude-3-5-sonnet-20241022` | wired | Model id for `AnthropicRefiner`. |
+| `refine_settings.llama_model_path` | `None` | wired | GGUF model path for `LlamaLocal`. |
+| `refine_settings.instructions` | `None` | wired | Extra cleanup instructions layered onto the refiners' shared defaults. |
+
+**Planned:** moving `api_keys` / `huggingface.token` into the OS keystore
+(criterion P-06); wiring the "persisted; no effect yet" toggles above into
+real capture/device/privacy behavior.
 
 ## Original feature: speaker fingerprinting
 
@@ -212,50 +424,64 @@ reason to build.
 ### Try it
 
 ```sh
-whspr diarize <FILE> [--model-dir <DIR>] [--embedding cam-plus-plus|eres2net] [--json]
+whspr diarize <FILE> [--model-dir <DIR>] [--embedding cam-plus-plus|eres2net] [--language <LANG>] [--json]
 ```
 
 - `<FILE>` — a WAV file (mono or multi-channel; it's decoded and downmixed/resampled to 16kHz mono like every other whspr audio input).
 - `--embedding` — which speaker-embedding model to load: `cam-plus-plus` (WeSpeaker CAM++, the default) or `eres2net` (3D-Speaker ERes2Net). Falls back to the config file's `[speaker].embedding-model` if omitted.
 - `--model-dir` — directory containing the sherpa-onnx model files (see "Offline by default" below). Falls back to `[speaker].model-dir` in the config file, then to the `SPEAKER_MODEL_DIR` environment variable.
+- `--language` — a BCP47 hint, accepted for consistency with `transcribe`; diarization's segmentation/embedding models are acoustic, not text-based, so this isn't consumed yet — it's plumbed through for a future word-level who-said-what alignment.
 - `--json` — print a JSON array of `{start_secs, end_secs, speaker, score}` instead of plain-text `[start-end] SpeakerN` lines.
 
 Every run matches its turns against `speakers.json` in the platform data
 directory (`~/Library/Application Support/whspr` on macOS,
-`~/.local/share/whspr` on Linux — confirmed by resolving whspr's actual
-`ProjectDirs` lookup) and rewrites it, so identity persists *across*
-invocations, not just within one scan. Run it against two different
-recordings of the same voice and the second run reuses the first run's
-speaker id instead of minting a new one. Verified end to end (offline
-mock backend — see below — two separate 1-second silent WAVs, same
-`--data-dir`):
+`~/.local/share/whspr` on Linux) and rewrites it, so identity persists
+*across* invocations, not just within one scan. With no model directory
+resolvable, `whspr diarize` refuses rather than guessing — this is what a
+real, unconfigured run looks like today:
 
 ```
 $ whspr diarize a.wav --json --data-dir /tmp/demo
-[{"end_secs":2.5,"score":0.949999988079071,"speaker":"Speaker 1","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"Speaker 2","start_secs":2.5}]
-$ whspr diarize b.wav --json --data-dir /tmp/demo
-[{"end_secs":2.5,"score":0.949999988079071,"speaker":"Speaker 1","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"Speaker 2","start_secs":2.5}]
-$ cat /tmp/demo/speakers.json   # both a.wav and b.wav recorded under each profile's "scans"
+Error: no speaker model available: speaker diarization needs a model directory. Pass --model-dir, set [speaker].model_dir in the config, or set the SPEAKER_MODEL_DIR environment variable, then try again.
 ```
 
-Both runs assign the same two speaker ids and `speakers.json` ends up with
-both files' paths recorded under each profile's `scans` list — the
-persisted match-or-enroll logic is real. (`--data-dir` is a hidden,
-test-only flag that redirects `speakers.json` into a sandbox directory
-like the one above; real usage omits it and lets `speakers.json` live in
-the platform data directory.)
+To exercise the persisted match-or-enroll database logic without
+downloading model files, the deterministic test suite (and this demo) use
+the explicit `WHSPR_DIARIZE_MOCK=1` opt-in — never implicit, and never
+silent (see "Offline by default" below). Run against two different files
+sharing a `--data-dir`, actually run today:
+
+```
+$ WHSPR_DIARIZE_MOCK=1 whspr diarize a.wav --json --data-dir /tmp/demo
+WARNING: WHSPR_DIARIZE_MOCK is set -- using a synthetic mock diarizer. Speaker turns are FABRICATED, not real. This is a test/development affordance; unset it for real diarization.
+[{"end_secs":2.5,"score":0.949999988079071,"speaker":"463b7575-d444-46b1-8090-e9ec674ced12","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"1b876984-1a48-41b3-8fba-44dfc84d6610","start_secs":2.5}]
+$ WHSPR_DIARIZE_MOCK=1 whspr diarize b.wav --json --data-dir /tmp/demo
+WARNING: WHSPR_DIARIZE_MOCK is set -- using a synthetic mock diarizer. Speaker turns are FABRICATED, not real. This is a test/development affordance; unset it for real diarization.
+[{"end_secs":2.5,"score":0.949999988079071,"speaker":"463b7575-d444-46b1-8090-e9ec674ced12","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"1b876984-1a48-41b3-8fba-44dfc84d6610","start_secs":2.5}]
+```
+
+Both runs assign the same two speaker ids (v4 UUIDs, minted at first
+enrollment — not sequential "Speaker N" labels) and `speakers.json` ends
+up with both files' paths recorded under each profile's `scans` list — the
+persisted match-or-enroll logic is real; only the *voices* in this demo
+are fabricated. This exact scenario (two files, one data dir, matching ids
+across runs) is also covered by an automated test:
+`diarize_persists_speaker_matches_across_runs` in
+`crates/whspr-cli/tests/diarize_e2e.rs`.
 
 ### Offline by default
 
-`whspr diarize` never touches the network. If no model directory is
-resolvable (from `--model-dir`, `[speaker].model-dir`, or the
-`SPEAKER_MODEL_DIR` environment variable), it falls back to a
-deterministic, model-free `MockDiarizer` that always returns the same two
-canned turns/embeddings regardless of the input audio — that's the
-backend the example above exercises. It proves the *database* logic
-(matching, enrollment, persistence) for real, but since `MockDiarizer`
-never actually listens to the audio, it isn't demonstrating real
-acoustic voice recognition.
+`whspr diarize` never touches the network, and it never fabricates results
+silently. With no model directory resolvable (from `--model-dir`,
+`[speaker].model-dir`, or the `SPEAKER_MODEL_DIR` environment variable), it
+refuses with an error (see above) instead of falling back to a fake
+backend. The GUI behaves the same way: Hub → Speakers shows a "needs a
+speaker model" prompt (`state.needs_speaker_model`, driven by
+`whspr-app/src/speakers.rs`'s `run_diarize_scan`) rather than enrolling
+fabricated speakers. The *only* way to get synthetic output, in the CLI or
+the tests, is the explicit `WHSPR_DIARIZE_MOCK=1` environment variable — it
+exists solely for the deterministic test suite and prints the loud
+FABRICATED warning shown above on every use; a real user never sets it.
 
 For real acoustic diarization, whspr is bring-your-own-model: it doesn't
 fetch or ship these checkpoints for you. Download `segmentation.onnx`
@@ -264,17 +490,19 @@ plus whichever embedding checkpoint(s) you want into one directory —
 upstream URLs and required filenames — then point `SPEAKER_MODEL_DIR` (or
 `--model-dir`) at it. Feed it a real multi-speaker recording (not a
 silent test fixture — the real segmentation model finds zero turns in
-silence, which is why the offline demo above deliberately uses the mock
-fallback) to see genuine speaker-turn segmentation and voice-based
-re-identification.
+silence, which is why the demo above deliberately uses the mock opt-in) to
+see genuine speaker-turn segmentation and voice-based re-identification.
+On aarch64-windows, `sherpa-rs` ships no prebuilt native library at all,
+so `SherpaDiarizer::new` returns an honest "unavailable" error on that
+target too, rather than silently degrading.
 
 ### Tests
 
 - `crates/whspr-diarize/src/lib.rs` — unit tests for `SherpaDiarizer`'s model-dir resolution precedence, segment-range clamping, and missing-model-file error paths.
-- `crates/whspr-config/src/speaker.rs` — unit tests for `SpeakerDb::match_or_enroll` (new speaker, matching speaker, orthogonal embedding creates a new speaker), `rename`, and save/load round-tripping.
-- `crates/whspr-cli/tests/diarize_e2e.rs` — `assert_cmd`-driven end-to-end tests: mock-backend labeling, cross-run persistence, nonexistent-model-dir/unknown-embedding error paths, and the `SPEAKER_MODEL_DIR` fallback.
-- `crates/whspr-app/src/speakers.rs` — a test covering `run_diarize_scan`'s mock-fallback and `SPEAKER_MODEL_DIR`-fallback paths for the GUI's background diarization task.
-- `whspr_core::testkit::MockDiarizer` — the shared, deterministic double all of the above (and the demo above) run against; two orthogonal canned embeddings so matching-vs-enrolling is exercised meaningfully with no real model files.
+- `crates/whspr-config/src/speaker/mod.rs` — unit tests for `SpeakerDb::match_or_enroll` (UUID assignment, matching an existing speaker, an orthogonal embedding creating a new speaker), `rename`, and save/load round-tripping.
+- `crates/whspr-cli/tests/diarize_e2e.rs` — `assert_cmd`-driven end-to-end tests: mock-backend labeling (`diarize_with_mock_backend_prints_speaker_labeled_turns`), cross-run persistence (`diarize_persists_speaker_matches_across_runs`), nonexistent-model-dir/unknown-embedding error paths (`diarize_with_nonexistent_model_dir_fails_with_clear_error`, `diarize_with_unknown_embedding_choice_fails_with_clear_error`), and the `SPEAKER_MODEL_DIR` fallback (`diarize_falls_back_to_speaker_model_dir_env_var`).
+- `crates/whspr-app/src/speakers.rs` — tests covering `run_diarize_scan`'s refusal with no model available (`run_diarize_scan_refuses_without_a_model`) and when the feature is disabled (`run_diarize_scan_refuses_when_disabled`), for the GUI's background diarization task.
+- `whspr_core::testkit::MockDiarizer` — the shared, deterministic double all of the above (and the `WHSPR_DIARIZE_MOCK` demo above) run against; two orthogonal canned embeddings so matching-vs-enrolling is exercised meaningfully with no real model files.
 
 All of the above run under `cargo test --workspace` and stay green with no model files, no network, and no GPU.
 

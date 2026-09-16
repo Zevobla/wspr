@@ -21,30 +21,41 @@ tracked submission implements this; it is uncontested in the acceptance matrix.
 The four pipeline stages are our own code behind trait seams in `whspr-core`,
 not a wrapper around a single upstream app:
 
-- **Capture / VAD** (`whspr-audio`): silence trimming, device enumeration and
-  selection, an energy+hangover VAD, and a preroll ring buffer (`PrerollBuffer`,
-  E-10) that retains pre-trigger samples so the first word is never clipped.
+- **Capture** (`whspr-audio`): device enumeration and selection, RMS-energy-
+  based leading/trailing silence trimming (`trim_silence`, applied
+  automatically by `decode_wav`), and a preroll ring buffer (`PrerollBuffer`,
+  E-10) that retains pre-trigger samples so a *future* live-capture caller can
+  prepend them and avoid clipping the first word. `PrerollBuffer` is
+  implemented and unit-tested but not yet wired into the live hotkey-capture
+  path (see `README.md`'s Planned list) — there is no hangover-state VAD
+  gating capture start/stop today, just the RMS trim above.
 - **ASR** (`whspr-asr`): pluggable `AsrBackend` — `WhisperLocal` (whisper-rs),
-  `OpenAiAsr`, `DeepgramAsr` — selected at runtime by config, plus a `MockAsr`
-  test double.
+  `OpenAiAsr`, `DeepgramAsr`, `AppleSpeech` (macOS on-device) — selected at
+  runtime by config, plus a `MockAsr` test double.
 - **Refinement** (`whspr-refine`): a `NormalizingRefiner` decorator chaining
   rule-based passes (numbers/dates/times, dedup, macros) around an LLM backend
-  (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`). Includes a
-  sandboxed **LuaJIT** scripting layer for macros — a `lua:`-prefixed macro runs
-  as a JIT-compiled script, which we have not seen in comparable tools.
+  (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`,
+  `AppleFoundation`). Includes a sandboxed **LuaJIT** scripting layer for
+  macros — a `lua:`-prefixed macro runs as a JIT-compiled script, which we
+  have not seen in comparable tools.
 - **Injection** (`whspr-inject`): clipboard save/restore paste with a graceful
   fallback to synthetic typing, pre-paste pause, and hotkey debounce.
 
 ## Third-party components (AE-04)
 
-Reused libraries are standard, permissively licensed crates opted into per-crate
-and pinned in `Cargo.lock`: whisper-rs, llama-cpp-2, sherpa-rs, cpal, rubato,
-hound, global-hotkey, enigo, arboard, iced, tray-icon, rodio, mlua (LuaJIT),
-serde, tokio, reqwest. Their licenses are permissive (no copyleft in the
-dependency graph — criterion Z-08), and model weights are fetched separately and
-never vendored into the repository (Z-12). We did not fork or copy another
-project's source tree; the architecture (eight-crate workspace, trait-abstracted
-per-OS seams, Nix/crane reproducible build) is our own design.
+Reused libraries are standard crates opted into per-crate and pinned in
+`Cargo.lock`: whisper-rs, llama-cpp-2, sherpa-rs, cpal, rubato, hound,
+global-hotkey, enigo, arboard, iced, tray-icon, rodio, mlua (LuaJIT), serde,
+tokio, reqwest. Licenses are enforced by `deny.toml` (`cargo deny check
+licenses bans` in CI): everything in the dependency graph is Apache-2.0/MIT-
+style permissive, plus two narrow, non-viral exceptions with no permissive
+alternative available (`option-ext` via `directories`/`dirs-sys`: MPL-2.0;
+`webpki-roots`/`webpki-root-certs` via the rustls stack: CDLA-Permissive-2.0)
+— no GPL/LGPL/AGPL anywhere in the graph (criterion Z-08). Model weights are
+fetched separately and never vendored into the repository (Z-12). We did not
+fork or copy another project's source tree; the architecture (a 15-crate
+workspace, trait-abstracted per-OS seams, Nix/crane reproducible build) is our
+own design.
 
 ## Divergence from analogs
 
