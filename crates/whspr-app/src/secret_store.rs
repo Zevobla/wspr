@@ -99,3 +99,37 @@ impl SecretSlot {
         }
     }
 }
+
+/// Where a managed secret currently lives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecretLocation {
+    /// In the OS keystore.
+    Keystore,
+    /// In `config.toml`, in plaintext.
+    ConfigFile,
+    /// Not set anywhere.
+    Missing,
+}
+
+/// What the platform calls its keystore, for UI copy.
+pub fn keystore_label() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "Credential Manager"
+    } else {
+        "Keychain"
+    }
+}
+
+/// Finds where `slot` lives. The keystore wins -- it is what
+/// `Config::resolve_api_key`/`resolve_hf_token` read first -- but is only
+/// consulted when it survives a reboot (anywhere else nothing is ever put
+/// there); an unreadable keystore counts as "not there".
+pub fn locate_secret(config: &Config, keystore: &dyn Keystore, slot: SecretSlot) -> SecretLocation {
+    if keystore.is_persistent() && matches!(keystore.get(&slot.keystore_name()), Ok(Some(_))) {
+        SecretLocation::Keystore
+    } else if slot.plaintext(config).is_some() {
+        SecretLocation::ConfigFile
+    } else {
+        SecretLocation::Missing
+    }
+}
