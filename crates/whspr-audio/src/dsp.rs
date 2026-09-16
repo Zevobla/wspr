@@ -242,4 +242,39 @@ mod tests {
             "near-silence should stay quiet: output RMS={output_rms}"
         );
     }
+
+    #[test]
+    fn suppress_noise_preserves_tone_rms_after_a_quiet_lead_in() {
+        let sample_rate = 16000u32;
+        // 150ms of near-silence, then a 1kHz tone - a realistic shape
+        // (quiet room tone, then speech/tone) that gives the noise-floor
+        // estimator a genuinely quiet window to measure, distinct from
+        // the loud part that follows.
+        let quiet_len = (sample_rate as usize * 150) / 1000;
+        let tone_len = sample_rate as usize; // 1 second of tone
+        let mut samples = Vec::with_capacity(quiet_len + tone_len);
+        samples.extend(std::iter::repeat_n(0.0f32, quiet_len));
+        let freq = 1000.0f32;
+        for i in 0..tone_len {
+            let t = i as f32 / sample_rate as f32;
+            samples.push(0.5 * (2.0 * std::f32::consts::PI * freq * t).sin());
+        }
+
+        let original_tone_rms = rms(&samples[quiet_len..]);
+
+        suppress_noise(&mut samples, sample_rate);
+
+        // Skip a short settling window right at the quiet->tone boundary
+        // (the gate's attack ramp), then compare the steady-state tone.
+        let settle = (sample_rate as usize * 20) / 1000;
+        let steady_tone = &samples[quiet_len + settle..];
+        let output_tone_rms = rms(steady_tone);
+
+        let ratio = output_tone_rms / original_tone_rms;
+        assert!(
+            (0.8..=1.05).contains(&ratio),
+            "tone RMS should survive suppress_noise within tolerance: \
+             original={original_tone_rms}, output={output_tone_rms}, ratio={ratio}"
+        );
+    }
 }
