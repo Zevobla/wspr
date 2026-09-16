@@ -118,6 +118,15 @@ mod tests {
     }
 
     #[test]
+    fn decode_key_rejects_multi_byte_text_without_panicking() {
+        // 64 bytes whose two-byte windows split a three-byte character --
+        // slicing that text pairwise would panic.
+        let sneaky = format!("a{}", "\u{2713}".repeat(21));
+        assert_eq!(sneaky.len(), 64);
+        assert!(decode_key(&sneaky).is_err());
+    }
+
+    #[test]
     fn encode_then_decode_key_round_trips() {
         let bytes = [7u8; 32];
         assert_eq!(decode_key(&encode_hex(&bytes)).unwrap(), bytes);
