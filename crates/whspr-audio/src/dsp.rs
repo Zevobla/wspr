@@ -209,4 +209,19 @@ mod tests {
         // untouched rather than dividing by zero building the filter.
         assert_eq!(samples, original);
     }
+
+    #[test]
+    fn suppress_noise_removes_dc_offset() {
+        let sample_rate = 16000u32;
+        // A constant (DC) signal, no speech content at all.
+        let mut samples = vec![0.3f32; sample_rate as usize];
+        suppress_noise(&mut samples, sample_rate);
+
+        // The high-pass filter converges toward 0 for a constant input;
+        // check the back half (past the filter's settling time) has a
+        // mean and per-sample magnitude close to 0.
+        let tail = &samples[sample_rate as usize / 2..];
+        let mean: f32 = tail.iter().sum::<f32>() / tail.len() as f32;
+        assert!(mean.abs() < 0.01, "DC offset not removed: mean={mean}");
+    }
 }
