@@ -5,14 +5,21 @@
 //! Guards keep this conservative:
 //!   - only alphabetic words collapse, so a real repeat like "20 20" (a year
 //!     said twice, two scores) is preserved;
+//!   - a word that's itself a number ("five", "пять" -- reusing F-10's own
+//!     table via `numbers::parse_run` rather than duplicating it) never
+//!     collapses either, alphabetic or not: "five five five one two" is
+//!     very plausibly the number actually being read out, or dictated
+//!     twice on purpose, not a stutter -- collapsing it would silently eat
+//!     digits the user meant to keep;
 //!   - the previous word must carry no trailing punctuation and the current
 //!     word no leading punctuation, so a sentence boundary ("cat. Cat ran")
 //!     or a bracketed aside is never merged away.
 
+use super::numbers::parse_run;
 use super::split_punct;
 
 fn is_collapsible(core: &str) -> bool {
-    core.chars().any(char::is_alphabetic)
+    core.chars().any(char::is_alphabetic) && parse_run(&[core]).is_none()
 }
 
 /// Collapses runs of the same word into a single occurrence, keeping the
@@ -77,5 +84,17 @@ mod tests {
         assert_eq!(collapse_duplicate_words("the cat sat"), "the cat sat");
         assert_eq!(collapse_duplicate_words("hello world"), "hello world");
         assert_eq!(collapse_duplicate_words(""), "");
+    }
+
+    #[test]
+    fn does_not_collapse_repeated_number_words() {
+        // Unlike "the the" (a stutter of a real word), a repeated number
+        // word is very plausibly the number actually being read out digit
+        // by digit, or dictated twice on purpose -- never eaten.
+        assert_eq!(
+            collapse_duplicate_words("five five five one two"),
+            "five five five one two"
+        );
+        assert_eq!(collapse_duplicate_words("пять пять"), "пять пять");
     }
 }
