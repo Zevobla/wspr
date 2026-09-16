@@ -179,4 +179,20 @@ mod tests {
         // the default.
         assert_eq!(find_matching_device_name(&names, "USB"), None);
     }
+
+    #[test]
+    fn is_bluetooth_name_matches_known_markers() {
+        assert!(is_bluetooth_name("AirPods Pro"));
+        assert!(is_bluetooth_name("Bluetooth Headset"));
+        assert!(is_bluetooth_name("bluetooth headset")); // case-insensitive
+        assert!(is_bluetooth_name("Jabra BT Speaker")); // whole-word "BT"
+    }
+
+    #[test]
+    fn is_bluetooth_name_does_not_match_ordinary_devices() {
+        assert!(!is_bluetooth_name("Built-in Microphone"));
+        assert!(!is_bluetooth_name("USB Headset"));
+        // "bt" appears as a plain substring here, but not as a whole word.
+        assert!(!is_bluetooth_name("Subtotal Device"));
+    }
 }
