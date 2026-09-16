@@ -486,6 +486,28 @@ mod tests {
     }
 
     #[test]
+    fn a_static_tray_shows_idle_for_every_state() {
+        use PipelineState::*;
+        for state in [Idle, Recording, Transcribing, Refining, Injecting, Error] {
+            assert_eq!(visual_for_state(state, true), TrayVisual::Idle, "{state:?}");
+        }
+        assert_eq!(displayed_visual(TrayVisual::Done, true), TrayVisual::Idle);
+    }
+
+    #[test]
+    fn a_live_tray_follows_the_pipeline_state() {
+        use PipelineState::*;
+        for state in [Idle, Recording, Transcribing, Refining, Injecting, Error] {
+            assert_eq!(
+                visual_for_state(state, false),
+                visual_for(state),
+                "{state:?}"
+            );
+        }
+        assert_eq!(displayed_visual(TrayVisual::Done, false), TrayVisual::Done);
+    }
+
+    #[test]
     fn idle_maps_to_idle_visual() {
         assert_eq!(visual_for(PipelineState::Idle), TrayVisual::Idle);
     }
