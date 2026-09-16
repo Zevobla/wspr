@@ -165,4 +165,38 @@ mod tests {
         let updated = apply_device_change(&names(&["Built-in Microphone", "AirPods Pro"]), &change);
         assert_eq!(updated, names(&["Built-in Microphone", "USB Mic"]));
     }
+
+    #[test]
+    fn hotplug_notice_reacts_only_to_the_configured_device() {
+        let unplugged = DeviceChange {
+            added: vec![],
+            removed: names(&["USB Mic"]),
+        };
+        let replugged = DeviceChange {
+            added: names(&["USB Mic"]),
+            removed: vec![],
+        };
+        let fallback = fallback_notice("USB Mic");
+
+        assert_eq!(
+            hotplug_notice(Some("USB Mic"), &unplugged, None),
+            NoticeUpdate::Show(fallback.clone())
+        );
+        assert_eq!(
+            hotplug_notice(Some("USB Mic"), &replugged, Some(&fallback)),
+            NoticeUpdate::Clear
+        );
+        // An unrelated notice survives the device coming back.
+        assert_eq!(
+            hotplug_notice(Some("USB Mic"), &replugged, Some("copied to clipboard")),
+            NoticeUpdate::Keep
+        );
+        // Using the OS default device: nothing to warn about.
+        assert_eq!(hotplug_notice(None, &unplugged, None), NoticeUpdate::Keep);
+        // Some other device changing leaves the configured one's notice alone.
+        assert_eq!(
+            hotplug_notice(Some("Built-in Microphone"), &unplugged, None),
+            NoticeUpdate::Keep
+        );
+    }
 }
