@@ -4,6 +4,8 @@
 //! and any idle preroll -- then finalizes or discards it when the hotkey
 //! comes up, and keeps the idle preroll monitor in line with the settings.
 
+use std::time::Instant;
+
 use iced::futures::channel::mpsc;
 use iced::futures::sink::SinkExt;
 use tokio::sync::mpsc::UnboundedSender;
@@ -11,6 +13,7 @@ use whspr_audio::CaptureHandle;
 use whspr_config::Config;
 use whspr_inject::DebounceAction;
 
+use super::auto_send::{remainder_worth_sending, AutoSendDetector};
 use super::capture_plan::{
     capture_options, desired_monitor, resolve_device, trim_captured, DeviceResolution,
 };
@@ -20,12 +23,22 @@ use super::processor::Chunk;
 use super::WorkerEvent;
 use crate::sound::{play, Cue};
 
-/// A capture in progress.
+/// A capture in progress: one hotkey hold, possibly spanning several
+/// auto-sent chunks.
 struct ActiveCapture {
     handle: CaptureHandle,
+    /// The device the hold records from (`None` = OS default), reused for
+    /// every auto-sent chunk so one hold never switches microphones.
+    device: Option<String>,
     /// The focused app when the hotkey went down (see
     /// `crate::active_window`), passed to the refiner as context.
     app_name: Option<String>,
+    /// When the hotkey went down; auto-send levels are timed from here.
+    started: Instant,
+    /// Endpointing for `[capture].auto_send`.
+    detector: AutoSendDetector,
+    /// How many chunks auto-send has already sent from this hold.
+    chunks_sent: usize,
 }
 
 /// Everything the hotkey loop needs between events: the latest settings,
@@ -123,7 +136,14 @@ impl Session {
                     self.config.device.active_window,
                     crate::active_window::frontmost_app_name(),
                 );
-                self.active = Some(ActiveCapture { handle, app_name });
+                self.active = Some(ActiveCapture {
+                    handle,
+                    device: device.device.clone(),
+                    app_name,
+                    started: Instant::now(),
+                    detector: AutoSendDetector::new(self.config.capture.vad_threshold),
+                    chunks_sent: 0,
+                });
                 play(Cue::Start, self.config.sound.enabled);
             }
             Err(error) => self.emit(WorkerEvent::Failed(error.to_string())).await,
@@ -133,13 +153,53 @@ impl Session {
         self.reconcile_preroll(&device).await;
     }
 
-    /// Stops the active capture and hands it to the processor.
+    /// Whether the loop should be sampling levels for auto-send right now.
+    pub(super) fn auto_send_active(&self) -> bool {
+        self.config.capture.auto_send && self.active.is_some()
+    }
+
+    /// One auto-send tick: samples the capture level and, on a pause after
+    /// speech, sends the chunk recorded so far while recording carries on
+    /// into a fresh capture on the same device.
+    pub(super) async fn on_tick(&mut self) {
+        let Some(active) = self.active.as_mut() else {
+            return;
+        };
+        let level = active.handle.current_level();
+        if !active.detector.observe(level, active.started.elapsed()) {
+            return;
+        }
+        // Open the next chunk's capture before stopping this one, so
+        // nothing said across the boundary is lost.
+        let options = capture_options(&self.config, active.device.clone(), Vec::new());
+        let next = match whspr_audio::start_capture_with(options) {
+            Ok(next) => next,
+            Err(error) => {
+                let message = format!("auto-send could not keep recording: {error}");
+                return self.emit(WorkerEvent::Failed(message)).await;
+            }
+        };
+        let finished = std::mem::replace(&mut active.handle, next);
+        active.chunks_sent += 1;
+        let app_name = active.app_name.clone();
+        self.submit(finished, app_name).await;
+    }
+
+    /// Stops the active capture and hands it to the processor -- unless it
+    /// is only the speechless tail of a hold auto-send already sent from.
     async fn finalize(&mut self) {
         let Some(active) = self.active.take() else {
             return;
         };
         play(Cue::Stop, self.config.sound.enabled);
-        self.submit(active.handle, active.app_name).await;
+        let speech_seen = active.detector.speech_seen();
+        if remainder_worth_sending(
+            self.config.capture.auto_send,
+            active.chunks_sent,
+            speech_seen,
+        ) {
+            self.submit(active.handle, active.app_name).await;
+        }
     }
 
     /// Stops `handle`, trims the clip and queues it for transcription.
