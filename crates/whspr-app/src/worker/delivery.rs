@@ -27,3 +27,26 @@ pub(super) fn delivery_for(detection_enabled: bool, field_editable: Option<bool>
         Delivery::Inject
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_definite_non_text_focus_with_detection_on_copies_to_clipboard() {
+        let cases = [
+            ((true, Some(false)), Delivery::Clipboard),
+            ((true, Some(true)), Delivery::Inject),
+            ((true, None), Delivery::Inject),
+            ((false, Some(false)), Delivery::Inject),
+            ((false, None), Delivery::Inject),
+        ];
+        for ((enabled, editable), expected) in cases {
+            assert_eq!(
+                delivery_for(enabled, editable),
+                expected,
+                "detection={enabled} editable={editable:?}"
+            );
+        }
+    }
+}
