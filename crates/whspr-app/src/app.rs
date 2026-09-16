@@ -21,6 +21,7 @@ use iced::{window, Element, Task};
 
 use crate::config_ui;
 use crate::hotkey_capture::CaptureOutcome;
+use crate::secret_store::{self, SecretStore, StartupMigration};
 use crate::state::{Message, State};
 use crate::tray_state::{begin_tray_done_linger, set_pipeline_state, tray_done_active};
 
@@ -55,8 +56,13 @@ pub fn run() -> iced::Result {
 }
 
 fn boot() -> (State, Task<Message>) {
-    let config = whspr_config::load();
-    let mut state = State::new(config);
+    let mut config = whspr_config::load();
+    // P-06: plaintext API keys / HF token move into the OS keystore when it
+    // survives a reboot, before anything reads them.
+    let secrets = SecretStore::os();
+    let migration = secret_store::migrate_plaintext_secrets(&mut config, secrets.keystore());
+    let mut state = State::with_keystore(config, secrets);
+    report_secret_migration(&mut state, migration);
     state.input_devices = whspr_audio::input_device_names();
     // Restore the previously chosen input device if one was persisted,
     // otherwise fall back to the host's default input device.
@@ -486,6 +492,23 @@ pub(crate) fn persist_config(state: &mut State) {
     };
     if let Err(e) = state.config.save(dirs.config_dir()) {
         state.last_error = Some(format!("failed to save config: {e}"));
+    }
+}
+
+/// Logs what the boot-time secret migration did -- keystore entry names
+/// only, never values -- and saves the scrubbed config when secrets moved,
+/// so `config.toml` stops carrying them. A failure leaves the plaintext
+/// secrets in place, still working.
+fn report_secret_migration(state: &mut State, migration: StartupMigration) {
+    match migration {
+        StartupMigration::Moved(names) => {
+            tracing::info!(moved = ?names, "moved plaintext secrets into the OS keystore");
+            persist_config(state);
+        }
+        StartupMigration::Failed(error) => {
+            tracing::warn!("secrets stay in config.toml: {error}");
+        }
+        StartupMigration::Skipped | StartupMigration::NothingToMove => {}
     }
 }
 
