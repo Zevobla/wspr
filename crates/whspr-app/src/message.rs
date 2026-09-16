@@ -106,12 +106,12 @@ pub enum Message {
     /// The user pressed "Save" on a speaker's rename: speaker id.
     SpeakerRenameSubmitted(String),
     /// A tick of the tray icon's event-poll clock (see
-    /// `crate::app::tray_poll_subscription`): drains any pending tray
+    /// `crate::app::subscriptions::tray_poll_subscription`): drains any pending tray
     /// menu clicks (`crate::tray::Handle::poll_action`) and acts on the
     /// last one. Only ever fires once `state.tray` exists.
     TrayPoll,
     /// A tick of the tray's lingering-"Done" clock (see
-    /// `crate::app::tray_done_subscription`): once
+    /// `crate::app::subscriptions::tray_done_subscription`): once
     /// `State::tray_done_until` has passed, reverts the tray icon back to
     /// whatever `state.pipeline_state` actually is. Only ever fires while
     /// a "Done" display is pending.

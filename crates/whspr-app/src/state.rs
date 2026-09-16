@@ -121,7 +121,7 @@ pub struct State {
     /// `crate::tray::TrayVisual::Done`) that should revert once
     /// `std::time::Instant::now()` passes this deadline. Set by
     /// `Message::Worker`'s `Completed` arm, cleared by
-    /// `Message::TrayDoneTick` (see `crate::app::tray_done_subscription`)
+    /// `Message::TrayDoneTick` (see `crate::app::subscriptions::tray_done_subscription`)
     /// -- `None` whenever no dictation has completed recently enough to
     /// still be lingering.
     pub tray_done_until: Option<std::time::Instant>,

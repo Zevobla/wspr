@@ -8,7 +8,7 @@ use crate::state::State;
 use crate::tray::TrayVisual;
 
 /// How long the tray's "Done" icon lingers after a completed dictation
-/// before reverting -- see `crate::app`'s `tray_done_subscription` /
+/// before reverting -- see `crate::app::subscriptions`'s `tray_done_subscription` /
 /// `Message::TrayDoneTick` and `Message::Worker`'s `Completed` arm, which
 /// starts the linger.
 pub const TRAY_DONE_LINGER: std::time::Duration = std::time::Duration::from_secs(2);

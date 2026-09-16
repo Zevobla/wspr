@@ -58,7 +58,7 @@ pub enum WorkerEvent {
 }
 
 /// Builds the worker stream. Meant to run for the lifetime of the app once
-/// subscribed to -- see `crate::app::subscription`.
+/// subscribed to -- see `crate::app::subscriptions::subscription`.
 pub fn pipeline_worker() -> impl Stream<Item = WorkerEvent> {
     iced::stream::channel(100, run)
 }
