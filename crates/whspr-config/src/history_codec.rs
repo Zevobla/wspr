@@ -116,4 +116,14 @@ mod tests {
         let line = encode_line(JSON, &KEY);
         assert!(decode_line(&line, None).is_err());
     }
+
+    #[test]
+    fn plaintext_lines_pass_through_with_or_without_a_key() {
+        assert_eq!(decode_line(JSON, None).unwrap().as_deref(), Some(JSON));
+        assert_eq!(
+            decode_line(JSON, Some(&KEY)).unwrap().as_deref(),
+            Some(JSON)
+        );
+        assert_eq!(decode_line("   ", Some(&KEY)).unwrap(), None);
+    }
 }
