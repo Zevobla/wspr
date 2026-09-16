@@ -4,7 +4,7 @@
 //! both paths honor the same user choice.
 
 use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
-use whspr_config::{api_key_for, AsrChoice, RefineChoice};
+use whspr_config::{AsrChoice, Config, Keystore, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, TextRefiner};
 use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner};
@@ -16,7 +16,8 @@ use whspr_refine::{AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefin
 /// otherwise depend on) so the caller can forward it directly into
 /// `WorkerEvent::Failed`.
 pub(crate) fn build_asr_backend(
-    config: &whspr_config::Config,
+    config: &Config,
+    keystore: &dyn Keystore,
 ) -> Result<Box<dyn AsrBackend>, String> {
     match config.asr {
         AsrChoice::Mock => Ok(Box::new(MockAsr::default())),
@@ -31,15 +32,11 @@ pub(crate) fn build_asr_backend(
             Ok(Box::new(WhisperLocal::new(model_path)))
         }
         AsrChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai").ok_or_else(|| {
-                "OpenAI API key not configured (set [api_keys].openai in config)".to_string()
-            })?;
+            let api_key = required_api_key(config, keystore, "openai", "OpenAI")?;
             Ok(Box::new(OpenAiAsr::new(api_key)))
         }
         AsrChoice::Deepgram => {
-            let api_key = api_key_for(config, "deepgram").ok_or_else(|| {
-                "Deepgram API key not configured (set [api_keys].deepgram in config)".to_string()
-            })?;
+            let api_key = required_api_key(config, keystore, "deepgram", "Deepgram")?;
             Ok(Box::new(DeepgramAsr::new(api_key)))
         }
         AsrChoice::AppleSpeech => {
@@ -57,12 +54,32 @@ pub(crate) fn build_asr_backend(
     }
 }
 
+/// The API key for `backend_id` -- the OS keystore first, then the legacy
+/// `[api_keys]` table (see `Config::resolve_api_key`) -- or an error naming
+/// `provider` that tells the user where to add one.
+fn required_api_key(
+    config: &Config,
+    keystore: &dyn Keystore,
+    backend_id: &str,
+    provider: &str,
+) -> Result<String, String> {
+    match config.resolve_api_key(backend_id, keystore) {
+        Ok(Some(key)) => Ok(key),
+        Ok(None) => Err(format!(
+            "{provider} API key not configured (add it in Settings \u{2192} Accounts & keys)"
+        )),
+        Err(error) => Err(format!(
+            "{provider} API key could not be read from the keystore: {error}"
+        )),
+    }
+}
+
 /// Whether the config selects the local Whisper ASR but no model file is
 /// resolvable yet -- the fresh-install onboarding state (see
 /// `WorkerEvent::NeedsModel`), distinct from a genuine backend failure like a
 /// missing cloud API key. Mirrors the exact condition `build_asr_backend`'s
 /// `WhisperLocal` arm errors on, so the two never disagree.
-pub(super) fn is_missing_whisper_model(config: &whspr_config::Config) -> bool {
+pub(super) fn is_missing_whisper_model(config: &Config) -> bool {
     config.asr == AsrChoice::WhisperLocal
         && WhisperLocal::resolve_model_path(config.whisper.model_path.clone()).is_none()
 }
@@ -73,22 +90,21 @@ pub(super) fn is_missing_whisper_model(config: &whspr_config::Config) -> bool {
 /// `build_refiner` (`crates/whspr-cli/src/main.rs`). Model IDs/paths come
 /// from `config.refine_settings` rather than being hardcoded, so switching
 /// models never requires a rebuild.
-pub(crate) fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn TextRefiner>, String> {
+pub(crate) fn build_refiner(
+    config: &Config,
+    keystore: &dyn Keystore,
+) -> Result<Box<dyn TextRefiner>, String> {
     let inner: Box<dyn TextRefiner> = match config.refine {
         RefineChoice::Noop => Box::new(NoopRefiner),
         RefineChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai").ok_or_else(|| {
-                "OpenAI API key not configured (set [api_keys].openai in config)".to_string()
-            })?;
+            let api_key = required_api_key(config, keystore, "openai", "OpenAI")?;
             Box::new(OpenAiRefiner::new(
                 api_key,
                 config.refine_settings.openai_model.clone(),
             ))
         }
         RefineChoice::Anthropic => {
-            let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
-                "Anthropic API key not configured (set [api_keys].anthropic in config)".to_string()
-            })?;
+            let api_key = required_api_key(config, keystore, "anthropic", "Anthropic")?;
             Box::new(AnthropicRefiner::new(
                 api_key,
                 config.refine_settings.anthropic_model.clone(),
@@ -126,7 +142,7 @@ pub(crate) fn build_refiner(config: &whspr_config::Config) -> Result<Box<dyn Tex
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use whspr_config::Config;
+    use whspr_config::MemoryKeystore;
 
     #[test]
     fn build_asr_backend_mock_choice_succeeds() {
@@ -135,7 +151,8 @@ mod tests {
             ..Default::default()
         };
 
-        let backend = build_asr_backend(&config).expect("mock backend should always build");
+        let backend = build_asr_backend(&config, &MemoryKeystore::default())
+            .expect("mock backend should always build");
         assert_eq!(backend.id(), "mock");
     }
 
@@ -149,7 +166,7 @@ mod tests {
             ..Default::default()
         };
 
-        let backend = build_asr_backend(&config)
+        let backend = build_asr_backend(&config, &MemoryKeystore::default())
             .expect("an explicit model_path should be enough to build WhisperLocal");
         assert_eq!(backend.id(), "whisper-local");
     }
@@ -193,7 +210,7 @@ mod tests {
 
         // `Box<dyn AsrBackend>` isn't `Debug`, so `expect_err` isn't
         // available -- match directly instead.
-        match build_asr_backend(&config) {
+        match build_asr_backend(&config, &MemoryKeystore::default()) {
             Ok(_) => panic!("no [api_keys].openai entry should fail, not build a backend"),
             Err(error) => assert!(error.contains("OpenAI API key")),
         }
@@ -206,7 +223,8 @@ mod tests {
             ..Default::default()
         };
 
-        let refiner = build_refiner(&config).expect("noop refiner should always build");
+        let refiner = build_refiner(&config, &MemoryKeystore::default())
+            .expect("noop refiner should always build");
         // NormalizingRefiner::id() delegates to the inner refiner's id (see
         // whspr-refine's normalize/mod.rs), so this also proves the wrapping
         // happened rather than returning the bare NoopRefiner.
@@ -222,7 +240,7 @@ mod tests {
 
         // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
         // available -- match directly instead.
-        match build_refiner(&config) {
+        match build_refiner(&config, &MemoryKeystore::default()) {
             Ok(_) => panic!("no [api_keys].anthropic entry should fail, not build a refiner"),
             Err(error) => assert!(error.contains("Anthropic API key")),
         }
@@ -237,7 +255,7 @@ mod tests {
 
         // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
         // available -- match directly instead.
-        match build_refiner(&config) {
+        match build_refiner(&config, &MemoryKeystore::default()) {
             Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
             Err(error) => assert!(error.contains("llama_model_path")),
         }
@@ -254,8 +272,8 @@ mod tests {
             ..Default::default()
         };
 
-        let refiner =
-            build_refiner(&config).expect("an explicit llama_model_path should be enough to build");
+        let refiner = build_refiner(&config, &MemoryKeystore::default())
+            .expect("an explicit llama_model_path should be enough to build");
         assert_eq!(refiner.id(), "llama-local");
     }
 }

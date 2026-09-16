@@ -99,7 +99,9 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     // that through the same `WorkerEvent::Failed` + park-forever path used
     // below for a missing hotkey listener, rather than panicking or quietly
     // falling back to the mock the user didn't ask for.
-    let asr_backend = match build_asr_backend(&config) {
+    // API keys come from the OS keystore first (P-06), then `config.toml`.
+    let keystore = whspr_config::OsKeystore::new();
+    let asr_backend = match build_asr_backend(&config, &keystore) {
         Ok(backend) => backend,
         Err(error) => {
             // A fresh install with the default local Whisper ASR but no model
@@ -116,7 +118,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
             return;
         }
     };
-    let refiner = match build_refiner(&config) {
+    let refiner = match build_refiner(&config, &keystore) {
         Ok(refiner) => refiner,
         Err(error) => {
             let _ = output.send(WorkerEvent::Failed(error)).await;
