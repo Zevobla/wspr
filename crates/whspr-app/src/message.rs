@@ -36,6 +36,9 @@ pub enum Message {
     SoundFeedbackToggled(bool),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
+    /// The hotplug watcher saw input devices connect or disconnect (only
+    /// while `[device].device_hotplug` is on -- see `crate::devices`).
+    InputDevicesChanged(whspr_audio::DeviceChange),
     /// The user asked to rebind the push-to-talk hotkey by pressing a new
     /// combo. The next captured combo is persisted to `config.hotkey` and
     /// registered on the next launch (see `crate::hotkey_capture`).
@@ -73,6 +76,8 @@ pub enum Message {
     /// transcript yet -- see `crate::hub::dictate`'s `copy_enabled`, which
     /// also disables the button in that case.
     CopyTranscript,
+    /// The user dismissed the status banner's notice (`State::notice`).
+    DismissNotice,
     /// An event from the background pipeline worker (see `crate::worker`):
     /// a pipeline state change, a completed dictation turn, or a failure.
     Worker(crate::worker::WorkerEvent),
@@ -130,11 +135,11 @@ pub enum Message {
     TranslateToggled(bool),
     /// The user toggled "Shorten the transcript" in the Capture section.
     ShortenToggled(bool),
-    /// The user toggled "Auto-send when recording pauses" in the Capture
-    /// section.
+    /// The user toggled "Auto-send at each pause while you hold the hotkey"
+    /// in the Capture section (see `crate::worker`'s auto-send).
     AutoSendToggled(bool),
-    /// The user toggled "Detect input fields before injecting" in the
-    /// Capture section.
+    /// The user toggled "Copy to the clipboard instead when no text field is
+    /// focused" in the Capture section (`[capture].input_field_detection`).
     InputFieldDetectionToggled(bool),
     /// The user edited the Capture section's "Refine timeout (ms)"
     /// `text_input`. Always updates `State::refine_timeout_draft`; only
@@ -184,10 +189,16 @@ pub enum Message {
     ParagraphBreakToggled(bool),
     /// The user toggled "Auto-punctuate" in the Normalize section.
     PunctuationToggleToggled(bool),
-    /// The user edited one of the API keys section's `text_input` fields:
-    /// (backend id, e.g. "openai"/"anthropic"/"deepgram", new value).
-    /// Written straight into `config.api_keys` -- see `crate::app::update`.
-    ApiKeyChanged(&'static str, String),
+    /// The user typed in one of the API keys section's inputs: (backend id,
+    /// e.g. "openai"/"anthropic"/"deepgram", the unsaved draft). Held in
+    /// `State::api_key_drafts` until saved.
+    ApiKeyDraftChanged(&'static str, String),
+    /// The user saved a backend's drafted API key: it goes to the OS
+    /// keystore when that survives a reboot, else to `config.api_keys` (see
+    /// `crate::secret_store::store_secret`).
+    ApiKeySaved(&'static str),
+    /// The user removed a backend's saved API key from wherever it lives.
+    ApiKeyRemoved(&'static str),
     /// The user clicked "Sign in with HuggingFace" on the Models tab: starts
     /// the browser OAuth flow (see `crate::hf::run_login`).
     HfSignIn,

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use whspr_config::Config;
 use whspr_core::{AudioBuffer, Pipeline, RefineContext};
 
+use crate::secret_store::SecretStore;
 use crate::worker::{build_asr_backend, build_refiner};
 
 /// The recognized text, the recorded clip's duration in seconds, and -- when
@@ -21,14 +22,19 @@ use crate::worker::{build_asr_backend, build_refiner};
 pub type TranscribeOutcome = (String, f32, Option<Vec<f32>>);
 
 /// Decodes + resamples `file`, then transcribes it. See [`run_transcribe_audio`].
-pub async fn run_transcribe(file: PathBuf, config: Config) -> Result<TranscribeOutcome, String> {
+pub async fn run_transcribe(
+    file: PathBuf,
+    config: Config,
+    secrets: SecretStore,
+) -> Result<TranscribeOutcome, String> {
     let decoded = whspr_audio::decode_wav(&file).map_err(|e| e.to_string())?;
     let audio = whspr_audio::resample_to_16k_mono(&decoded).map_err(|e| e.to_string())?;
-    run_transcribe_audio(audio, config).await
+    run_transcribe_audio(audio, config, secrets).await
 }
 
 /// Transcribes and refines an already-decoded 16kHz-mono `audio` buffer using
-/// `config`'s backends (shared by the "Transcribe a file" button and the
+/// `config`'s backends, with API keys from `secrets` (shared by the
+/// "Transcribe a file" button and the
 /// in-app record button). Runs off the UI thread via `Task::perform`; any
 /// failure (no model configured, inference error) comes back as a string.
 /// Returns the recognized text, the recorded audio's duration, and an
@@ -38,9 +44,10 @@ pub async fn run_transcribe(file: PathBuf, config: Config) -> Result<TranscribeO
 pub async fn run_transcribe_audio(
     audio: AudioBuffer,
     config: Config,
+    secrets: SecretStore,
 ) -> Result<TranscribeOutcome, String> {
-    let asr = build_asr_backend(&config)?;
-    let refiner = build_refiner(&config)?;
+    let asr = build_asr_backend(&config, secrets.keystore())?;
+    let refiner = build_refiner(&config, secrets.keystore())?;
     let duration_secs = audio.duration_secs();
 
     // Fingerprint the speaker over the whole clip *before* the pipeline

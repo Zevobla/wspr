@@ -1,4 +1,5 @@
-//! Tolerant history reading.
+//! Tolerant history reading and writing, plaintext or encrypted per line
+//! (`[privacy].history_encryption` -- see `whspr_config::history_codec`).
 //!
 //! whspr-app doesn't own the on-disk history file's schema (no other crate
 //! has settled one yet), so this reads whatever's there defensively: any
@@ -11,6 +12,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use whspr_config::history_codec::{decode_line, encode_line};
+
+use crate::history_encryption::{history_write, HistoryWrite};
 
 /// One completed transcription, either read from the on-disk history file
 /// or appended in-memory as pipeline runs complete during this session.
@@ -36,32 +40,53 @@ impl HistoryEntry {
     }
 }
 
-/// Parses a JSONL history file's contents into entries, skipping any line
-/// that isn't a JSON object with at least a string `"text"` field.
-pub fn parse_history_jsonl(contents: &str) -> Vec<HistoryEntry> {
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter_map(|value| {
-            let text = value.get("text")?.as_str()?.to_string();
-            let duration_secs = value
-                .get("duration_secs")
-                .and_then(Value::as_f64)
-                .map(|d| d as f32);
-            // Tolerant like every other field here: a missing (or non-string)
-            // `"speaker"` reads back as `None` rather than skipping the line.
-            let speaker_id = value
-                .get("speaker")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            Some(HistoryEntry {
-                text,
-                duration_secs,
-                speaker_id,
-            })
-        })
-        .collect()
+/// Parses one history line's JSON into an entry; `None` when it isn't a
+/// JSON object with at least a string `"text"` field.
+fn parse_entry(json: &str) -> Option<HistoryEntry> {
+    let value = serde_json::from_str::<Value>(json).ok()?;
+    let text = value.get("text")?.as_str()?.to_string();
+    let duration_secs = value
+        .get("duration_secs")
+        .and_then(Value::as_f64)
+        .map(|d| d as f32);
+    // Tolerant like every other field here: a missing (or non-string)
+    // `"speaker"` reads back as `None` rather than skipping the line.
+    let speaker_id = value
+        .get("speaker")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    Some(HistoryEntry {
+        text,
+        duration_secs,
+        speaker_id,
+    })
+}
+
+/// What reading a history file produced: its entries, and how many
+/// encrypted lines could not be decrypted and were skipped.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HistoryRead {
+    pub entries: Vec<HistoryEntry>,
+    pub unreadable: usize,
+}
+
+/// Parses a JSONL history file's contents into entries. Plaintext lines are
+/// read as they are and `enc1:` lines are decrypted with `key` (see
+/// `whspr_config::history_codec::decode_line`), so a file holding both
+/// kinds reads whole. A line that isn't a JSON object with at least a string
+/// `"text"` field is skipped; an encrypted line that can't be decrypted (no
+/// key, a wrong key, tampering) is skipped and counted in
+/// [`HistoryRead::unreadable`].
+pub fn parse_history_jsonl(contents: &str, key: Option<&[u8; 32]>) -> HistoryRead {
+    let mut read = HistoryRead::default();
+    for line in contents.lines() {
+        match decode_line(line, key) {
+            Ok(Some(json)) => read.entries.extend(parse_entry(&json)),
+            Ok(None) => {}
+            Err(_) => read.unreadable += 1,
+        }
+    }
+    read
 }
 
 /// The whspr history file's path in the platform data dir, if determinable
@@ -72,12 +97,13 @@ pub fn history_file_path() -> Option<PathBuf> {
     Some(dirs.data_dir().join("history.jsonl"))
 }
 
-/// Reads and parses the history file at `path`, tolerating a missing file
+/// Reads and parses the history file at `path`, decrypting encrypted lines
+/// with `key` (see [`parse_history_jsonl`]), tolerating a missing file
 /// (returns empty, not an error) since a fresh install won't have one yet.
-pub fn read_history_file(path: &Path) -> Vec<HistoryEntry> {
+pub fn read_history_file(path: &Path, key: Option<&[u8; 32]>) -> HistoryRead {
     match std::fs::read_to_string(path) {
-        Ok(contents) => parse_history_jsonl(&contents),
-        Err(_) => Vec::new(),
+        Ok(contents) => parse_history_jsonl(&contents, key),
+        Err(_) => HistoryRead::default(),
     }
 }
 
@@ -87,8 +113,14 @@ pub fn read_history_file(path: &Path) -> Vec<HistoryEntry> {
 /// (`crates/whspr-cli/src/transcribe_cmd.rs`) so both tools keep reading
 /// the same file as one format rather than two -- extra fields either
 /// reader doesn't recognize are simply ignored (see this module's doc
-/// comment and `stats_cmd.rs`'s `#[serde(default)]` fields).
-fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()> {
+/// comment and `stats_cmd.rs`'s `#[serde(default)]` fields). With a `key`
+/// the line is written encrypted (`whspr_config::history_codec::encode_line`)
+/// instead of as plain JSON.
+fn append_history_entry(
+    path: &Path,
+    entry: &HistoryEntry,
+    key: Option<&[u8; 32]>,
+) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -108,6 +140,10 @@ fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()
     if let Some(speaker_id) = &entry.speaker_id {
         line["speaker"] = serde_json::Value::String(speaker_id.clone());
     }
+    let line = match key {
+        Some(key) => encode_line(&line.to_string(), key),
+        None => line.to_string(),
+    };
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -141,6 +177,9 @@ pub fn record_completed(
 /// [`record_completed`]'s logic, writing to `path` (or skipping the disk
 /// write entirely if `None`, e.g. the platform data dir couldn't be
 /// determined) instead of always resolving the real platform history file.
+/// The line is encrypted while `[privacy].history_encryption` is on, and
+/// kept in memory only if that setting is on but its key is unavailable
+/// (see `crate::history_encryption::history_write`).
 /// A blank/whitespace-only transcript (e.g. silence) is skipped entirely,
 /// in memory and on disk, rather than adding an empty row. A write failure
 /// is logged, not fatal -- the entry still lands in `state.history` so the
@@ -161,7 +200,19 @@ fn record_completed_at(
         speaker_id,
     };
     if let Some(path) = path {
-        if let Err(e) = append_history_entry(path, &entry) {
+        let key = match history_write(
+            state.config.privacy.history_encryption,
+            state.history_key.as_ref(),
+        ) {
+            HistoryWrite::Plain => None,
+            HistoryWrite::Encrypted(key) => Some(key),
+            HistoryWrite::MemoryOnly => {
+                tracing::warn!("history encryption key unavailable; entry kept in memory only");
+                state.history.push(entry);
+                return;
+            }
+        };
+        if let Err(e) = append_history_entry(path, &entry, key) {
             eprintln!("whspr: failed to save history entry: {e}");
         }
     }
@@ -177,7 +228,7 @@ mod tests {
         let contents = "{\"text\": \"hello world\", \"duration_secs\": 2.0}\n\
                          {\"text\": \"a second entry\"}\n";
 
-        let entries = parse_history_jsonl(contents);
+        let entries = parse_history_jsonl(contents, None).entries;
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].text, "hello world");
@@ -194,7 +245,7 @@ mod tests {
                          \n\
                          {\"text\": \"the only valid line\"}\n";
 
-        let entries = parse_history_jsonl(contents);
+        let entries = parse_history_jsonl(contents, None).entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "the only valid line");
@@ -202,7 +253,7 @@ mod tests {
 
     #[test]
     fn empty_contents_yields_empty_history() {
-        assert!(parse_history_jsonl("").is_empty());
+        assert_eq!(parse_history_jsonl("", None), HistoryRead::default());
     }
 
     #[test]
@@ -221,7 +272,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let missing = dir.path().join("does-not-exist.jsonl");
 
-        assert!(read_history_file(&missing).is_empty());
+        assert_eq!(read_history_file(&missing, None), HistoryRead::default());
     }
 
     #[test]
@@ -230,7 +281,7 @@ mod tests {
         let path = dir.path().join("history.jsonl");
         std::fs::write(&path, "{\"text\": \"from disk\"}\n").expect("failed to write history file");
 
-        let entries = read_history_file(&path);
+        let entries = read_history_file(&path, None).entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].text, "from disk");
@@ -246,10 +297,12 @@ mod tests {
             speaker_id: None,
         };
 
-        append_history_entry(&path, &entry).expect("append should create the file and its parent");
-        append_history_entry(&path, &entry).expect("a second append should append, not overwrite");
+        append_history_entry(&path, &entry, None)
+            .expect("append should create the file and its parent");
+        append_history_entry(&path, &entry, None)
+            .expect("a second append should append, not overwrite");
 
-        let entries = read_history_file(&path);
+        let entries = read_history_file(&path, None).entries;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].text, "hello from the app");
         assert_eq!(entries[0].duration_secs, Some(1.5));
@@ -272,14 +325,14 @@ mod tests {
             speaker_id: None,
         };
 
-        append_history_entry(&path, &attributed).expect("append should succeed");
-        append_history_entry(&path, &unattributed).expect("append should succeed");
+        append_history_entry(&path, &attributed, None).expect("append should succeed");
+        append_history_entry(&path, &unattributed, None).expect("append should succeed");
 
         // The raw line carries `"speaker"` only for the attributed entry.
         let raw = std::fs::read_to_string(&path).expect("history file should exist");
         assert!(raw.contains("\"speaker\":\"spk-uuid-123\""));
 
-        let entries = read_history_file(&path);
+        let entries = read_history_file(&path, None).entries;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].speaker_id, Some("spk-uuid-123".to_string()));
         assert_eq!(entries[1].speaker_id, None);
@@ -308,7 +361,7 @@ mod tests {
         assert_eq!(state.history[0].duration_secs, Some(3.0));
         assert_eq!(state.history[0].speaker_id, Some("spk-abc".to_string()));
 
-        let on_disk = read_history_file(&path);
+        let on_disk = read_history_file(&path, None).entries;
         assert_eq!(on_disk.len(), 1);
         assert_eq!(on_disk[0].text, "a real transcript");
         assert_eq!(on_disk[0].speaker_id, Some("spk-abc".to_string()));
@@ -325,6 +378,85 @@ mod tests {
         record_completed_at(&mut state, "   ".to_string(), None, None, Some(&path));
 
         assert!(state.history.is_empty());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_mixed_file_reads_both_kinds_and_counts_undecryptable_lines() {
+        let key = [3u8; 32];
+        let contents = format!(
+            "{}\n{}\n{}\n",
+            r#"{"text":"plain one"}"#,
+            whspr_config::history_codec::encode_line(r#"{"text":"secret two"}"#, &key),
+            whspr_config::history_codec::encode_line(r#"{"text":"other key"}"#, &[9u8; 32]),
+        );
+
+        let read = parse_history_jsonl(&contents, Some(&key));
+        let texts: Vec<&str> = read.entries.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(texts, vec!["plain one", "secret two"]);
+        assert_eq!(read.unreadable, 1);
+
+        let without_key = parse_history_jsonl(&contents, None);
+        assert_eq!(without_key.entries.len(), 1);
+        assert_eq!(without_key.unreadable, 2);
+    }
+
+    #[test]
+    fn an_encrypted_append_hides_the_text_but_reads_back_with_the_key() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let key = [5u8; 32];
+        let entry = HistoryEntry {
+            text: "private dictation".to_string(),
+            duration_secs: Some(2.0),
+            speaker_id: Some("spk-1".to_string()),
+        };
+
+        append_history_entry(&path, &entry, Some(&key)).expect("append should succeed");
+
+        let raw = std::fs::read_to_string(&path).expect("history file should exist");
+        assert!(raw.starts_with(whspr_config::history_codec::ENCRYPTED_PREFIX));
+        assert!(!raw.contains("private dictation"));
+        assert_eq!(read_history_file(&path, Some(&key)).entries, vec![entry]);
+    }
+
+    #[test]
+    fn record_completed_at_encrypts_while_encryption_is_on() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+        state.config.privacy.history_encryption = true;
+        state.history_key = Some(crate::history_encryption::HistoryKey::for_test([4; 32]));
+
+        record_completed_at(
+            &mut state,
+            "kept secret".to_string(),
+            None,
+            None,
+            Some(&path),
+        );
+
+        let raw = std::fs::read_to_string(&path).expect("history file should exist");
+        assert!(!raw.contains("kept secret"));
+        assert_eq!(read_history_file(&path, Some(&[4; 32])).entries.len(), 1);
+    }
+
+    #[test]
+    fn record_completed_at_keeps_entries_off_disk_without_the_key() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+        state.config.privacy.history_encryption = true;
+
+        record_completed_at(
+            &mut state,
+            "not in the clear".to_string(),
+            None,
+            None,
+            Some(&path),
+        );
+
+        assert_eq!(state.history.len(), 1);
         assert!(!path.exists());
     }
 }

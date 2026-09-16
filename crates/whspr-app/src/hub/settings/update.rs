@@ -9,6 +9,8 @@ use iced::Task;
 
 use crate::app::persist_config;
 use crate::config_ui;
+use crate::devices::NoticeUpdate;
+use crate::secret_store::{remove_secret, save_secret, SecretSlot};
 use crate::state::{Message, State};
 
 /// Handles a Settings-tab control message: mutates the matching
@@ -65,8 +67,9 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
         }
         Message::HistoryEncryptionToggled(enabled) => {
-            state.config.privacy.history_encryption = enabled;
-            persist_config(state);
+            if crate::history_encryption::set_history_encryption(state, enabled) {
+                persist_config(state);
+            }
         }
         Message::CookieBrowserChanged(browser) => {
             state.config.privacy.cookies_browser = browser;
@@ -88,8 +91,21 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.device.virtual_source = enabled;
             persist_config(state);
         }
+        Message::InputDevicesChanged(change) => {
+            state.input_devices =
+                crate::devices::apply_device_change(&state.input_devices, &change);
+            let configured = state.config.device.input_device.as_deref();
+            match crate::devices::hotplug_notice(configured, &change, state.notice.as_deref()) {
+                NoticeUpdate::Show(notice) => state.notice = Some(notice),
+                NoticeUpdate::Clear => state.notice = None,
+                NoticeUpdate::Keep => {}
+            }
+        }
         Message::TrayStaticToggled(enabled) => {
             state.config.device.tray_static = enabled;
+            if let Some(tray) = &state.tray {
+                tray.set_state(state.pipeline_state, enabled);
+            }
             persist_config(state);
         }
         Message::NormalizeNumbersToggled(enabled) => {
@@ -116,8 +132,26 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.normalize.punctuation_toggle = enabled;
             persist_config(state);
         }
-        Message::ApiKeyChanged(id, value) => {
-            state.config.api_keys.insert(id.to_string(), value);
+        Message::ApiKeyDraftChanged(id, draft) => {
+            state.api_key_drafts.insert(id, draft);
+        }
+        Message::ApiKeySaved(id) => {
+            let draft = state.api_key_drafts.remove(id).unwrap_or_default();
+            let key = draft.trim();
+            if !key.is_empty() {
+                match save_secret(state, SecretSlot::ApiKey(id), key) {
+                    Ok(()) => persist_config(state),
+                    Err(error) => {
+                        state.last_error = Some(format!("API key not saved: {error}"));
+                        state.api_key_drafts.insert(id, draft);
+                    }
+                }
+            }
+        }
+        Message::ApiKeyRemoved(id) => {
+            if let Err(error) = remove_secret(state, SecretSlot::ApiKey(id)) {
+                state.last_error = Some(format!("API key not fully removed: {error}"));
+            }
             persist_config(state);
         }
         // UI-only state (no config write): the Settings sub-nav selection
@@ -132,4 +166,47 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         _ => {}
     }
     Task::none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unplugging_the_configured_device_updates_the_list_and_warns() {
+        let mut config = whspr_config::Config::default();
+        config.device.input_device = Some("USB Mic".to_string());
+        let mut state = State::new(config);
+        state.input_devices = vec!["Built-in Microphone".to_string(), "USB Mic".to_string()];
+
+        let _ = update(
+            &mut state,
+            Message::InputDevicesChanged(whspr_audio::DeviceChange {
+                added: vec![],
+                removed: vec!["USB Mic".to_string()],
+            }),
+        );
+
+        assert_eq!(state.input_devices, vec!["Built-in Microphone".to_string()]);
+        assert_eq!(
+            state.notice,
+            Some(crate::devices::fallback_notice("USB Mic"))
+        );
+    }
+
+    #[test]
+    fn typing_an_api_key_only_updates_the_draft() {
+        let mut state = State::new(whspr_config::Config::default());
+
+        let _ = update(
+            &mut state,
+            Message::ApiKeyDraftChanged("openai", "sk-draft".to_string()),
+        );
+
+        assert_eq!(
+            state.api_key_drafts.get("openai").map(String::as_str),
+            Some("sk-draft")
+        );
+        assert!(state.config.api_keys.is_empty());
+    }
 }

@@ -44,7 +44,8 @@ whspr-import = { path = "../whspr-import" }
 # [workspace.dependencies] -- declared directly here, the same way
 # whspr-diarize/whspr-hf/whspr-import are (the GUI is its only consumer).
 whspr-typst = { path = "../whspr-typst" }
-tokio.workspace = true
+# `time` for the worker's auto-send level sampling (`tokio::time::interval`).
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 # Tolerant parsing of the (schema-less-to-us) JSONL history file.
 serde_json.workspace = true

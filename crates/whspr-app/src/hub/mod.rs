@@ -16,6 +16,7 @@ use iced::{Alignment, Background, Border, Element, Length};
 // Windows-only custom caption/resize chrome for the borderless window (see
 // `window_settings`). Compiled only on Windows so macOS/Linux chrome is
 // untouched.
+mod banner;
 #[cfg(target_os = "windows")]
 mod caption_windows;
 mod common;
@@ -234,7 +235,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     ))
     .on_press(Message::DragHubWindow);
 
-    let main = column![header, status_banner(state, scheme), body,]
+    let main = column![header, banner::status_banner(state, scheme), body,]
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -476,45 +477,6 @@ fn header_trailing<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     )
     .style(move |_theme, status| styles::button::text(scheme, status))
     .on_press(Message::ThemeToggled)
-    .into()
-}
-
-/// The under-header status banner. A genuine worker error takes precedence
-/// and shows the red error notice; a fresh install with no model yet shows a
-/// calm onboarding prompt instead; otherwise nothing. Keeping the two cases
-/// visually distinct means "no model configured" reads as first-run guidance,
-/// not as a failure (the bug this fixes).
-fn status_banner<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
-    if let Some(error) = &state.last_error {
-        banner(
-            format!("Last worker error: {error}"),
-            styles::container::error_banner(scheme),
-        )
-    } else if state.needs_model {
-        banner(
-            "Pick a speech model in Models to start dictating.".to_string(),
-            styles::container::onboarding_banner(scheme),
-        )
-    } else {
-        Space::new().into()
-    }
-}
-
-/// A full-width notice band under the header, carrying `message` in the given
-/// container `style`. Shared by both the error and onboarding cases of
-/// [`status_banner`] so only the copy and style differ.
-fn banner<'a>(message: String, style: iced::widget::container::Style) -> Element<'a, Message> {
-    container(
-        container(
-            text(message)
-                .size(type_scale::BODY_MEDIUM.size)
-                .font(type_scale::BODY_MEDIUM.font()),
-        )
-        .padding(spacing::MD)
-        .width(Length::Fill)
-        .style(move |_theme| style),
-    )
-    .padding([spacing::SM, spacing::XXL])
     .into()
 }
 

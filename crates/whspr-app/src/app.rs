@@ -21,6 +21,7 @@ use iced::{window, Element, Task};
 
 use crate::config_ui;
 use crate::hotkey_capture::CaptureOutcome;
+use crate::secret_store::{self, SecretStore, StartupMigration};
 use crate::state::{Message, State};
 use crate::tray_state::{begin_tray_done_linger, set_pipeline_state, tray_done_active};
 
@@ -55,8 +56,13 @@ pub fn run() -> iced::Result {
 }
 
 fn boot() -> (State, Task<Message>) {
-    let config = whspr_config::load();
-    let mut state = State::new(config);
+    let mut config = whspr_config::load();
+    // P-06: plaintext API keys / HF token move into the OS keystore when it
+    // survives a reboot, before anything reads them.
+    let secrets = SecretStore::os();
+    let migration = secret_store::migrate_plaintext_secrets(&mut config, secrets.keystore());
+    let mut state = State::with_keystore(config, secrets);
+    report_secret_migration(&mut state, migration);
     state.input_devices = whspr_audio::input_device_names();
     // Restore the previously chosen input device if one was persisted,
     // otherwise fall back to the host's default input device.
@@ -66,9 +72,7 @@ fn boot() -> (State, Task<Message>) {
         .input_device
         .clone()
         .or_else(whspr_audio::default_input_device_name);
-    state.history = crate::history::history_file_path()
-        .map(|path| crate::history::read_history_file(&path))
-        .unwrap_or_default();
+    crate::history_encryption::load_history(&mut state);
     state.speaker_db = crate::speakers::speaker_db_path()
         .map(|path| whspr_config::SpeakerDb::load(&path))
         .unwrap_or_default();
@@ -96,7 +100,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             // loop is unambiguously already running on this thread. See
             // `crate::tray`'s module doc comment for why that matters.
             if state.tray.is_none() {
-                state.tray = crate::tray::Handle::create(state.pipeline_state);
+                state.tray = crate::tray::Handle::create(
+                    state.pipeline_state,
+                    state.config.device.tray_static,
+                );
             }
             // Measure the primary monitor now the window exists, so a display
             // too small for the default size gets the window shrunk + re-
@@ -186,77 +193,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             Some(text) if !text.trim().is_empty() => iced::clipboard::write(text.clone()),
             _ => Task::none(),
         },
-        Message::Worker(event) => {
-            match event {
-                crate::worker::WorkerEvent::StateChanged(pipeline_state) => {
-                    state.pipeline_state = pipeline_state;
-
-                    let showing_done =
-                        tray_done_active(state.tray_done_until, std::time::Instant::now());
-                    match (showing_done, pipeline_state) {
-                        // A lingering "Done" (started by the `Completed`
-                        // arm below) wins over a same-window Idle -- the
-                        // pipeline reports `Injecting` then immediately
-                        // `Idle`, so without this the Idle transition
-                        // would erase the "Done" glance the linger exists
-                        // to provide; `TrayDoneTick` reverts it once the
-                        // linger actually elapses instead.
-                        (true, whspr_core::PipelineState::Idle) => {}
-                        // Any other state change (a fresh dictation
-                        // starting) preempts a still-pending linger
-                        // instead of fighting it every tick.
-                        _ => {
-                            if showing_done {
-                                state.tray_done_until = None;
-                            }
-                            if let Some(tray) = &state.tray {
-                                tray.set_state(pipeline_state);
-                            }
-                        }
-                    }
-                }
-                crate::worker::WorkerEvent::Completed {
-                    text,
-                    duration_secs,
-                    embedding,
-                } => {
-                    // Inject the dictated text into whatever app has focus.
-                    // This runs here in `update()` -- iced's MAIN thread, where
-                    // the winit/AppKit event loop lives -- rather than in the
-                    // background pipeline worker, because on macOS enigo's
-                    // synthetic input hard-traps when called off the main
-                    // thread while an NSApplication is running. A failure
-                    // degrades to an error line instead of crashing.
-                    match whspr_inject::EnigoTextSink.type_text(&text) {
-                        Ok(()) => state.last_error = None,
-                        Err(error) => {
-                            state.last_error = Some(format!("Text injection failed: {error}"));
-                        }
-                    }
-                    // Also surface it on-screen in the Hub's transcription field.
-                    state.transcribed_text = Some(text.clone());
-                    state.transcribe_status = Some("Dictated".to_string());
-                    // Attribute a speaker from the worker's clip embedding and
-                    // persist the dictation to history (in memory *and* on
-                    // disk), exactly like the record-button/file path -- which
-                    // also fixes the pre-existing bug where live-hotkey
-                    // dictations were never saved to disk.
-                    let speaker_id = crate::speakers::attribute_speaker(state, embedding);
-                    crate::history::record_completed(state, text, Some(duration_secs), speaker_id);
-                    // The pipeline has no "just finished" state to glance at
-                    // (see `crate::tray`), so it's timed app-side here.
-                    begin_tray_done_linger(state);
-                }
-                crate::worker::WorkerEvent::Failed(error) => {
-                    state.last_error = Some(error);
-                }
-                crate::worker::WorkerEvent::NeedsModel => {
-                    // Onboarding, not an error: no model installed yet. Kept
-                    // separate from `last_error` so the calm onboarding banner
-                    // shows instead of the red worker-error one.
-                    state.needs_model = true;
-                }
-            }
+        Message::Worker(event) => crate::worker_events::handle(state, event),
+        Message::DismissNotice => {
+            state.notice = None;
             Task::none()
         }
         Message::PickRecordingToDiarize => Task::perform(
@@ -329,7 +268,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.transcribe_status = Some(format!("Transcribing {}...", path.display()));
             state.transcribed_text = None;
             Task::perform(
-                crate::transcribe_file::run_transcribe(path, state.config.clone()),
+                crate::transcribe_file::run_transcribe(
+                    path,
+                    state.config.clone(),
+                    state.keystore.clone(),
+                ),
                 Message::FileTranscribed,
             )
         }
@@ -364,6 +307,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                             crate::transcribe_file::run_transcribe_audio(
                                 audio,
                                 state.config.clone(),
+                                state.keystore.clone(),
                             ),
                             Message::FileTranscribed,
                         )
@@ -376,8 +320,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     None => Task::none(),
                 }
             } else {
-                // Start capturing from the selected input device.
-                match whspr_audio::start_capture_on_device(state.selected_device.as_deref()) {
+                // Start capturing from the selected input device, with the
+                // same gain/noise-suppression settings as the hotkey path.
+                let options = crate::worker::capture_options(
+                    &state.config,
+                    state.selected_device.clone(),
+                    Vec::new(),
+                );
+                match whspr_audio::start_capture_with(options) {
                     Ok(handle) => {
                         RECORDER.with(|r| *r.borrow_mut() = Some(handle));
                         state.is_recording = true;
@@ -445,7 +395,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if !tray_done_active(state.tray_done_until, std::time::Instant::now()) {
                 state.tray_done_until = None;
                 if let Some(tray) = &state.tray {
-                    tray.set_state(state.pipeline_state);
+                    tray.set_state(state.pipeline_state, state.config.device.tray_static);
                 }
             }
             Task::none()
@@ -531,14 +481,37 @@ fn hide_or_exit_hub(state: &State) -> Task<Message> {
 /// surfacing a failure via `state.last_error` (the same field the pipeline
 /// worker uses) rather than silently dropping it -- a `pick_list` selection
 /// that doesn't actually persist should be visible to the user, not just a
-/// log line nobody's watching.
+/// log line nobody's watching. Also hands the new config to the running
+/// dictation worker (`State::worker_config`), so the change applies live.
 pub(crate) fn persist_config(state: &mut State) {
+    if let Some(worker) = &state.worker_config {
+        if worker.send(state.config.clone()).is_err() {
+            state.worker_config = None;
+        }
+    }
     let Some(dirs) = directories::ProjectDirs::from("", "", "whspr") else {
         state.last_error = Some("could not determine the app config directory".to_string());
         return;
     };
     if let Err(e) = state.config.save(dirs.config_dir()) {
         state.last_error = Some(format!("failed to save config: {e}"));
+    }
+}
+
+/// Logs what the boot-time secret migration did -- keystore entry names
+/// only, never values -- and saves the scrubbed config when secrets moved,
+/// so `config.toml` stops carrying them. A failure leaves the plaintext
+/// secrets in place, still working.
+fn report_secret_migration(state: &mut State, migration: StartupMigration) {
+    match migration {
+        StartupMigration::Moved(names) => {
+            tracing::info!(moved = ?names, "moved plaintext secrets into the OS keystore");
+            persist_config(state);
+        }
+        StartupMigration::Failed(error) => {
+            tracing::warn!("secrets stay in config.toml: {error}");
+        }
+        StartupMigration::Skipped | StartupMigration::NothingToMove => {}
     }
 }
 

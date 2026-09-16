@@ -12,6 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use whspr_config::Config;
 use whspr_hf::{DownloadProgress, HfIdentity, OauthConfig, ScanResult};
 
+use crate::secret_store::{hf_token, remove_secret, save_secret, SecretSlot};
 use crate::state::{Message, State};
 
 /// GUI state for the refiner section's live HuggingFace GGUF search: the query
@@ -82,9 +83,14 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
         }
         Message::HfSignedIn(Ok((username, token))) => {
             state.hf_busy = false;
-            state.config.huggingface.token = Some(token);
             state.hf_username = Some(username.clone());
-            state.hf_status = Some(format!("Signed in as {username}."));
+            // Keystore-first, like the API keys (see `crate::secret_store`).
+            state.hf_status = Some(match save_secret(state, SecretSlot::HfToken, &token) {
+                Ok(()) => format!("Signed in as {username}."),
+                Err(error) => {
+                    format!("Signed in as {username}, but the token was not saved: {error}")
+                }
+            });
             crate::app::persist_config(state);
             // A fresh token may unlock gated models -- rescan.
             state.hf_models = scan(&state.config);
@@ -96,15 +102,17 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
             Task::none()
         }
         Message::HfSignOut => {
-            state.config.huggingface.token = None;
             state.hf_username = None;
-            state.hf_status = Some("Signed out.".to_string());
+            state.hf_status = Some(match remove_secret(state, SecretSlot::HfToken) {
+                Ok(()) => "Signed out.".to_string(),
+                Err(error) => format!("Signed out, but the saved token was not removed: {error}"),
+            });
             crate::app::persist_config(state);
             Task::none()
         }
         Message::HfDownloadModel(model_id) => match start_download(state, model_id) {
             Some(dir) => {
-                let token = state.config.huggingface.token.clone();
+                let token = hf_token(state);
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 Task::batch([
                     crate::hf_progress::progress_task(rx),
@@ -118,7 +126,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
         },
         Message::HfDownloadLlm(model_id) => match start_download(state, model_id) {
             Some(dir) => {
-                let token = state.config.huggingface.token.clone();
+                let token = hf_token(state);
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 Task::batch([
                     crate::hf_progress::progress_task(rx),
@@ -179,7 +187,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
                 state.llm_search.error = None;
                 state.llm_search.selected_repo = None;
                 state.llm_search.files.clear();
-                let token = state.config.huggingface.token.clone();
+                let token = hf_token(state);
                 Task::perform(run_search_llm(query, token), Message::LlmSearchResults)
             }
         }
@@ -207,7 +215,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
                 state.llm_search.files.clear();
                 state.llm_search.busy = true;
                 state.llm_search.error = None;
-                let token = state.config.huggingface.token.clone();
+                let token = hf_token(state);
                 Task::perform(run_list_gguf_files(repo, token), Message::LlmSearchFiles)
             }
         }
@@ -223,7 +231,7 @@ pub(crate) fn update(state: &mut State, message: Message) -> Result<Task<Message
         }
         Message::LlmSearchDownload(repo, filename) => match start_download(state, &filename) {
             Some(dir) => {
-                let token = state.config.huggingface.token.clone();
+                let token = hf_token(state);
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 Task::batch([
                     crate::hf_progress::progress_task(rx),
@@ -381,7 +389,8 @@ pub async fn run_token_login(token: String) -> Result<(String, String), String> 
 }
 
 /// Downloads the curated whisper model `model_id` into `dir`, using `token`
-/// (from a completed login or a saved config token) as the bearer if present.
+/// (from a completed login or the saved token -- see
+/// `crate::secret_store::hf_token`) as the bearer if present.
 /// Returns the flat on-disk path the model landed at.
 pub async fn run_download(
     model_id: &'static str,

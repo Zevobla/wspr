@@ -11,12 +11,13 @@
 
 use whspr_config::Config;
 
+use crate::secret_store::SecretStore;
 use crate::transcribe_file::{run_transcribe_audio, TranscribeOutcome};
 
 /// Downloads the audio-only stream at `url` (whole clip, using `cookies` from
 /// the user's Privacy setting so gated media resolves the same way the
 /// note-desk import does), transcodes it to 16kHz mono, transcribes + refines
-/// it with `config`'s backends, then best-effort deletes the temp WAV
+/// it with `config`'s backends (API keys from `secrets`), then best-effort deletes the temp WAV
 /// `whspr-import` handed back (the caller owns that file -- see
 /// `whspr_import`'s temp-file policy).
 ///
@@ -30,11 +31,12 @@ pub async fn run_transcribe_url(
     url: String,
     cookies: whspr_import::CookiesFrom,
     config: Config,
+    secrets: SecretStore,
 ) -> Result<TranscribeOutcome, String> {
     let (wav, audio) = whspr_import::download_to_audio(&url, None, cookies, None)
         .await
         .map_err(|e| with_install_hint(e.to_string()))?;
-    let outcome = run_transcribe_audio(audio, config).await;
+    let outcome = run_transcribe_audio(audio, config, secrets).await;
     // Best-effort temp cleanup: `whspr-import` hands ownership of the WAV to
     // us and never reaps it. A failed delete isn't worth failing an
     // otherwise-good transcription over, so the result is ignored.

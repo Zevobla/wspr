@@ -6,9 +6,11 @@
 mod active_window;
 mod app;
 mod config_ui;
+mod devices;
 mod hf;
 mod hf_progress;
 mod history;
+mod history_encryption;
 mod hotkey_capture;
 mod hub;
 mod link_import;
@@ -19,6 +21,7 @@ mod note_desk;
 mod note_export;
 mod screen;
 mod screenshot;
+mod secret_store;
 mod sound;
 mod speakers;
 mod state;
@@ -30,6 +33,7 @@ mod transcribe_url;
 mod tray;
 mod tray_state;
 mod worker;
+mod worker_events;
 
 fn main() -> iced::Result {
     logging::init();

@@ -4,6 +4,8 @@ use iced::window;
 use whspr_config::Config;
 
 use crate::history::HistoryEntry;
+use crate::history_encryption::HistoryKey;
+use crate::secret_store::{SecretLocation, SecretSlot, SecretStore};
 // The Hub's navigation enums live in their own module (AA-06 line cap); they
 // were part of this file, so they're re-exported here to keep the existing
 // `crate::state::Screen` / `crate::state::SettingsSection` paths working.
@@ -27,8 +29,10 @@ pub struct State {
     /// language, embedding model, toggles, and the input device -- survives
     /// a restart.
     pub config: Config,
-    /// Names of the audio input devices found at boot (see
-    /// `whspr_audio::input_device_names`).
+    /// Names of the connected audio input devices: enumerated at boot (see
+    /// `whspr_audio::input_device_names`), then kept current by the hotplug
+    /// watcher (`Message::InputDevicesChanged`) while `[device].device_hotplug`
+    /// is on.
     pub input_devices: Vec<String>,
     /// The currently selected input device name, if any. At boot this is
     /// restored from `config.device.input_device` when one was persisted,
@@ -50,6 +54,14 @@ pub struct State {
     /// the live hotkey path only pushes here in-memory for now (see
     /// `Message::Worker`'s `Completed` arm in `crate::app`).
     pub history: Vec<HistoryEntry>,
+    /// The history-encryption key, loaded while `[privacy].history_encryption`
+    /// is on (see `crate::history_encryption`). `None` when encryption is off
+    /// or its key could not be loaded -- in which case new entries stay in
+    /// memory rather than being written in the clear.
+    pub history_key: Option<HistoryKey>,
+    /// Why history encryption could not be switched or used, shown under the
+    /// Privacy toggle; `None` when there is nothing to explain.
+    pub history_note: Option<String>,
     /// The active iced theme. Set from the OS appearance at boot and
     /// re-synced whenever it changes (see `crate::system_theme`); the Hub's
     /// theme button (`Message::ThemeToggled`) can override it temporarily,
@@ -83,6 +95,20 @@ pub struct State {
     /// banner (see `crate::hub`'s status banner) instead of `last_error`'s red
     /// worker-error banner.
     pub needs_model: bool,
+    /// A calm, non-error status line -- e.g. "your microphone is not
+    /// connected, using the default one" or "no text field focused, copied to
+    /// clipboard". Shown in the status banner until the user dismisses it
+    /// (`Message::DismissNotice`) or a newer notice replaces it; kept apart
+    /// from `last_error` so an informational message never reads as a
+    /// failure.
+    pub notice: Option<String>,
+    /// The running dictation worker's settings channel, once it reports
+    /// `WorkerEvent::Ready`. `crate::app::persist_config` pushes every saved
+    /// `Config` through it, so capture settings (device, gain, noise
+    /// suppression, mic privacy, auto-send, ...) apply to the next dictation
+    /// without a restart. `None` until the worker is up, or if it parked on
+    /// a startup failure.
+    pub worker_config: Option<tokio::sync::mpsc::UnboundedSender<Config>>,
     /// The persisted speaker-enrollment database (see
     /// `whspr_config::SpeakerDb`): every distinct speaker discovered across
     /// past diarization scans. Loaded at boot, written back to
@@ -152,6 +178,16 @@ pub struct State {
     /// `Message::HfDownloadProgress`, cleared on completion; drives the Models
     /// screen's progress bar (see `crate::hf_progress`).
     pub active_download: Option<crate::hf_progress::ActiveDownload>,
+    /// The keystore Hub-managed secrets (API keys, the HuggingFace token)
+    /// are read from and written to -- the OS keystore in the running app
+    /// (see `State::with_keystore` and `crate::secret_store`).
+    pub keystore: SecretStore,
+    /// Where each Hub-managed secret lives, cached at boot and after every
+    /// change so views never query the keychain on a redraw.
+    pub secret_locations: std::collections::HashMap<SecretSlot, SecretLocation>,
+    /// The Accounts & keys section's unsaved API-key inputs, by backend id.
+    /// Credentials: never logged, dropped as soon as they are saved.
+    pub api_key_drafts: std::collections::HashMap<&'static str, String>,
     /// Live contents of the Models tab's "sign in with a token" field: a
     /// HuggingFace access token the user pastes in place of the browser OAuth
     /// flow. Held here (never logged) only until `Message::HfTokenSubmit`
@@ -195,19 +231,27 @@ pub struct State {
 }
 
 impl State {
-    /// Builds the initial state from the config loaded at boot. Device
-    /// fields start empty; `crate::app::boot` fills them in separately since
-    /// enumerating devices is its own concern from loading config.
+    /// Builds the initial state from `config` with no OS keystore: secrets
+    /// stay in `config.toml`, as on a platform whose keystore does not
+    /// survive a reboot (see `SecretStore::plaintext_only`). Test-only: the
+    /// app itself boots through [`State::with_keystore`].
+    #[cfg(test)]
     pub fn new(config: Config) -> Self {
+        Self::with_keystore(config, SecretStore::plaintext_only())
+    }
+
+    /// Builds the initial state from the config loaded at boot, reading and
+    /// writing secrets through `keystore`. Device fields start empty;
+    /// `crate::app::boot` fills them in separately since enumerating devices
+    /// is its own concern from loading config.
+    pub fn with_keystore(config: Config, keystore: SecretStore) -> Self {
         let refine_timeout_draft = config.capture.refine_timeout_ms.to_string();
         let pre_paste_delay_draft = config.injection.pre_paste_delay_ms.to_string();
-        // Computed before the struct literal moves `config` into place: a
-        // saved token means "already signed in" even before any whoami call.
-        let hf_status = config
-            .huggingface
-            .token
-            .as_ref()
-            .map(|_| "Signed in with a saved token.".to_string());
+        let secret_locations = crate::secret_store::locate_all(&config, keystore.keystore());
+        // A saved token means "already signed in" even before any whoami call.
+        let hf_status = (secret_locations.get(&SecretSlot::HfToken)
+            != Some(&SecretLocation::Missing))
+        .then(|| "Signed in with a saved token.".to_string());
         Self {
             hub_window: None,
             config,
@@ -216,6 +260,8 @@ impl State {
             hotkey_capturing: false,
             captured_hotkey: None,
             history: Vec::new(),
+            history_key: None,
+            history_note: None,
             theme: iced::Theme::Light,
             system_theme: iced::Theme::Light,
             screen: Screen::default(),
@@ -224,6 +270,8 @@ impl State {
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
             needs_model: false,
+            notice: None,
+            worker_config: None,
             speaker_db: whspr_config::SpeakerDb::default(),
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,
@@ -239,6 +287,9 @@ impl State {
             hf_status,
             hf_busy: false,
             active_download: None,
+            keystore,
+            secret_locations,
+            api_key_drafts: std::collections::HashMap::new(),
             hf_token_input: String::new(),
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
@@ -271,6 +322,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Dictate);
         assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
         assert!(state.last_error.is_none());
+        assert!(state.notice.is_none());
         assert!(state.speaker_rename_drafts.is_empty());
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
@@ -303,5 +355,33 @@ mod tests {
         // Verify that the state has correct default values after init
         assert_eq!(state.theme, iced::Theme::Light);
         assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
+    }
+
+    #[test]
+    fn with_keystore_finds_secrets_held_in_the_keystore() {
+        let keystore = whspr_config::MemoryKeystore::default();
+        whspr_config::Keystore::set(&keystore, whspr_config::SecretName::HF_TOKEN, "hf_abc")
+            .unwrap();
+        let mut config = whspr_config::Config::default();
+        config.api_keys.insert("openai".into(), "sk-plain".into());
+
+        let state = State::with_keystore(config, SecretStore::new(std::sync::Arc::new(keystore)));
+
+        assert_eq!(
+            state.secret_locations[&SecretSlot::HfToken],
+            SecretLocation::Keystore
+        );
+        assert_eq!(
+            state.secret_locations[&SecretSlot::ApiKey("openai")],
+            SecretLocation::ConfigFile
+        );
+        assert_eq!(
+            state.secret_locations[&SecretSlot::ApiKey("anthropic")],
+            SecretLocation::Missing
+        );
+        assert_eq!(
+            state.hf_status.as_deref(),
+            Some("Signed in with a saved token.")
+        );
     }
 }

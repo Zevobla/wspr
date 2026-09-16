@@ -55,6 +55,7 @@ pub(super) fn subscription(state: &State) -> iced::Subscription<Message> {
         tray_poll_subscription(state),
         tray_done_subscription(state),
         mic_level_subscription(state),
+        device_hotplug_subscription(state),
         link_import_key_subscription(state),
         hub_close_subscription(state),
         crate::screenshot::subscription(state),
@@ -76,6 +77,17 @@ fn hub_close_subscription(_state: &State) -> iced::Subscription<Message> {
 fn link_import_key_subscription(state: &State) -> iced::Subscription<Message> {
     if state.link_import.is_some() {
         iced::keyboard::listen().map(Message::LinkImportKey)
+    } else {
+        iced::Subscription::none()
+    }
+}
+
+/// Polls for input devices being plugged in or unplugged (see
+/// `crate::devices::hotplug_watch`), only while `[device].device_hotplug` is
+/// on -- turning the setting off drops the subscription and stops polling.
+fn device_hotplug_subscription(state: &State) -> iced::Subscription<Message> {
+    if state.config.device.device_hotplug {
+        iced::Subscription::run(crate::devices::hotplug_watch).map(Message::InputDevicesChanged)
     } else {
         iced::Subscription::none()
     }

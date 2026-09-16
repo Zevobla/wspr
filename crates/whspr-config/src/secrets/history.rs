@@ -6,6 +6,7 @@
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit};
 
+use crate::hex::{decode_hex, encode_hex};
 use crate::secrets::{Keystore, SecretName};
 
 /// Returns the history-encryption key: the existing
@@ -16,7 +17,7 @@ use crate::secrets::{Keystore, SecretName};
 ///
 /// [`Keystore`] is a string store, so the 32 bytes are hex-encoded for
 /// storage and decoded back on the way out (no extra dependency needed for
-/// that -- see [`encode_hex`]/[`decode_hex`]).
+/// that -- see `crate::hex` and [`decode_key`]).
 ///
 /// Stable across calls for a given keystore: once generated, the same 32
 /// bytes come back every time until something deletes the entry.
@@ -33,7 +34,7 @@ pub fn history_key(ks: &dyn Keystore) -> whspr_core::Result<[u8; 32]> {
         ));
     }
     if let Some(existing) = ks.get(SecretName::HISTORY_KEY)? {
-        return decode_hex(&existing);
+        return decode_key(&existing);
     }
 
     let key = ChaCha20Poly1305::generate_key(&mut OsRng);
@@ -42,29 +43,18 @@ pub fn history_key(ks: &dyn Keystore) -> whspr_core::Result<[u8; 32]> {
     Ok(bytes)
 }
 
-/// Lowercase-hex-encodes `bytes` (64 chars for a 32-byte key).
-fn encode_hex(bytes: &[u8; 32]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// The inverse of [`encode_hex`]. Errors (as `WhsprError::Config`) on
-/// anything that isn't exactly 64 hex characters -- a corrupted or
-/// hand-edited keystore entry should fail loudly, not silently truncate or
-/// panic.
-fn decode_hex(hex: &str) -> whspr_core::Result<[u8; 32]> {
-    if hex.len() != 64 {
-        return Err(whspr_core::WhsprError::Config(format!(
-            "history key: expected 64 hex characters, got {}",
-            hex.len()
-        )));
-    }
-    let mut bytes = [0u8; 32];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).map_err(|e| {
-            whspr_core::WhsprError::Config(format!("history key: invalid hex: {e}"))
-        })?;
-    }
-    Ok(bytes)
+/// Decodes a stored key: exactly 64 hex characters. Errors (as
+/// `WhsprError::Config`) on anything else -- a corrupted or hand-edited
+/// keystore entry should fail loudly, not silently truncate or panic.
+fn decode_key(hex: &str) -> whspr_core::Result<[u8; 32]> {
+    decode_hex(hex)
+        .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+        .ok_or_else(|| {
+            whspr_core::WhsprError::Config(format!(
+                "history key: expected 64 hex characters, got {} characters",
+                hex.chars().count()
+            ))
+        })
 }
 
 #[cfg(test)]
@@ -106,7 +96,7 @@ mod tests {
         let stored = ks.get(SecretName::HISTORY_KEY).unwrap().unwrap();
         assert_eq!(stored.len(), 64);
         assert!(stored.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(decode_hex(&stored).unwrap(), key);
+        assert_eq!(decode_key(&stored).unwrap(), key);
     }
 
     #[test]
@@ -117,19 +107,28 @@ mod tests {
     }
 
     #[test]
-    fn decode_hex_rejects_the_wrong_length() {
-        assert!(decode_hex("abcd").is_err());
+    fn decode_key_rejects_the_wrong_length() {
+        assert!(decode_key("abcd").is_err());
     }
 
     #[test]
-    fn decode_hex_rejects_non_hex_characters() {
+    fn decode_key_rejects_non_hex_characters() {
         let not_hex = "z".repeat(64);
-        assert!(decode_hex(&not_hex).is_err());
+        assert!(decode_key(&not_hex).is_err());
     }
 
     #[test]
-    fn encode_then_decode_hex_round_trips() {
+    fn decode_key_rejects_multi_byte_text_without_panicking() {
+        // 64 bytes whose two-byte windows split a three-byte character --
+        // slicing that text pairwise would panic.
+        let sneaky = format!("a{}", "\u{2713}".repeat(21));
+        assert_eq!(sneaky.len(), 64);
+        assert!(decode_key(&sneaky).is_err());
+    }
+
+    #[test]
+    fn encode_then_decode_key_round_trips() {
         let bytes = [7u8; 32];
-        assert_eq!(decode_hex(&encode_hex(&bytes)).unwrap(), bytes);
+        assert_eq!(decode_key(&encode_hex(&bytes)).unwrap(), bytes);
     }
 }

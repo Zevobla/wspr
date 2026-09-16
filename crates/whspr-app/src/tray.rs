@@ -78,6 +78,23 @@ fn visual_for(state: PipelineState) -> TrayVisual {
     }
 }
 
+/// The visual actually drawn for `visual` under `[device].tray_static`: a
+/// static tray always shows the idle icon, so it never changes (or flickers)
+/// with dictation state.
+fn displayed_visual(visual: TrayVisual, tray_static: bool) -> TrayVisual {
+    if tray_static {
+        TrayVisual::Idle
+    } else {
+        visual
+    }
+}
+
+/// The icon the tray should show for a pipeline `state`, honouring
+/// `[device].tray_static` (see [`displayed_visual`]).
+pub fn visual_for_state(state: PipelineState, tray_static: bool) -> TrayVisual {
+    displayed_visual(visual_for(state), tray_static)
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod platform {
     use tray_icon::menu::{Menu, MenuEvent, MenuItem};
@@ -114,7 +131,7 @@ mod platform {
         /// Creates the tray icon and its menu. See the module doc comment
         /// for the threading/timing requirements this relies on the
         /// caller to satisfy.
-        pub fn create(state: PipelineState) -> Option<Self> {
+        pub fn create(state: PipelineState, tray_static: bool) -> Option<Self> {
             let menu = Menu::new();
             let show_hub = MenuItem::with_id("show-hub", "Show Hub", true, None);
             let quit = MenuItem::with_id("quit", "Quit", true, None);
@@ -122,7 +139,7 @@ mod platform {
             menu.append(&quit).ok()?;
 
             let icon = TrayIconBuilder::new()
-                .with_icon(icon_for(state))
+                .with_icon(icon_for_visual(super::visual_for_state(state, tray_static)))
                 .with_tooltip("whspr")
                 .with_menu(Box::new(menu))
                 .build()
@@ -136,19 +153,21 @@ mod platform {
         }
 
         /// Updates the icon to reflect a new pipeline state (via
-        /// `super::visual_for`). Guarded: a failure here is cosmetic,
-        /// never worth surfacing.
-        pub fn set_state(&self, state: PipelineState) {
-            self.set_visual(super::visual_for(state));
+        /// `super::visual_for_state`, so a static tray stays idle).
+        /// Guarded: a failure here is cosmetic, never worth surfacing.
+        pub fn set_state(&self, state: PipelineState, tray_static: bool) {
+            self.set_visual(super::visual_for(state), tray_static);
         }
 
         /// Updates the icon directly to `visual`, bypassing the
         /// `PipelineState` mapping -- used by `crate::app` for the
         /// lingering "Done" display after `WorkerEvent::Completed`, a
         /// moment `PipelineState` alone can't represent (see the module
-        /// doc comment). Guarded like `set_state`.
-        pub fn set_visual(&self, visual: TrayVisual) {
-            let _ = self.icon.set_icon(Some(icon_for_visual(visual)));
+        /// doc comment). A static tray (`tray_static`) still shows the idle
+        /// icon. Guarded like `set_state`.
+        pub fn set_visual(&self, visual: TrayVisual, tray_static: bool) {
+            let shown = super::displayed_visual(visual, tray_static);
+            let _ = self.icon.set_icon(Some(icon_for_visual(shown)));
         }
 
         /// Drains every pending menu click, returning the last one (if
@@ -165,10 +184,6 @@ mod platform {
             }
             action
         }
-    }
-
-    fn icon_for(state: PipelineState) -> Icon {
-        icon_for_visual(super::visual_for(state))
     }
 
     /// Renders the icon for a `TrayVisual` bucket. Modernist: each state is
@@ -425,13 +440,13 @@ mod platform {
     }
 
     impl Handle {
-        pub fn create(_state: PipelineState) -> Option<Self> {
+        pub fn create(_state: PipelineState, _tray_static: bool) -> Option<Self> {
             None
         }
 
-        pub fn set_state(&self, _state: PipelineState) {}
+        pub fn set_state(&self, _state: PipelineState, _tray_static: bool) {}
 
-        pub fn set_visual(&self, _visual: TrayVisual) {}
+        pub fn set_visual(&self, _visual: TrayVisual, _tray_static: bool) {}
 
         pub fn poll_action(&self) -> Option<Action> {
             None
@@ -468,6 +483,28 @@ mod tests {
         assert!(Action::ShowHub == Action::ShowHub);
         assert!(Action::Quit == Action::Quit);
         assert!(Action::ShowHub != Action::Quit);
+    }
+
+    #[test]
+    fn a_static_tray_shows_idle_for_every_state() {
+        use PipelineState::*;
+        for state in [Idle, Recording, Transcribing, Refining, Injecting, Error] {
+            assert_eq!(visual_for_state(state, true), TrayVisual::Idle, "{state:?}");
+        }
+        assert_eq!(displayed_visual(TrayVisual::Done, true), TrayVisual::Idle);
+    }
+
+    #[test]
+    fn a_live_tray_follows_the_pipeline_state() {
+        use PipelineState::*;
+        for state in [Idle, Recording, Transcribing, Refining, Injecting, Error] {
+            assert_eq!(
+                visual_for_state(state, false),
+                visual_for(state),
+                "{state:?}"
+            );
+        }
+        assert_eq!(displayed_visual(TrayVisual::Done, false), TrayVisual::Done);
     }
 
     #[test]

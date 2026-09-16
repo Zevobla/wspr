@@ -31,7 +31,7 @@ pub fn set_pipeline_state(state: &mut State, new: whspr_core::PipelineState) {
     state.pipeline_state = new;
     state.tray_done_until = None;
     if let Some(tray) = &state.tray {
-        tray.set_state(new);
+        tray.set_state(new, state.config.device.tray_static);
     }
 }
 
@@ -40,7 +40,7 @@ pub fn set_pipeline_state(state: &mut State, new: whspr_core::PipelineState) {
 /// `WorkerEvent::Completed` arm and the button's `FileTranscribed(Ok)` arm.
 pub fn begin_tray_done_linger(state: &mut State) {
     if let Some(tray) = &state.tray {
-        tray.set_visual(TrayVisual::Done);
+        tray.set_visual(TrayVisual::Done, state.config.device.tray_static);
     }
     state.tray_done_until = Some(std::time::Instant::now() + TRAY_DONE_LINGER);
 }

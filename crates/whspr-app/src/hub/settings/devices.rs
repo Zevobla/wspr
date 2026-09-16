@@ -20,12 +20,23 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
     .into()
 }
 
+/// The input-device picker: connected devices filtered by the Bluetooth/
+/// virtual source toggles, with the configured device kept listed (and
+/// explained) when the filter or a disconnect would hide it -- see
+/// `crate::devices::device_picker`.
 fn microphone_section<'a>(
     state: &'a State,
     scheme: &'static color::Scheme,
 ) -> Element<'a, Message> {
-    let device_picker = pick_list(
-        state.input_devices.clone(),
+    let device = &state.config.device;
+    let picker = crate::devices::device_picker(
+        &state.input_devices,
+        device.input_device.as_deref(),
+        device.bluetooth_source,
+        device.virtual_source,
+    );
+    let list = pick_list(
+        picker.options,
         state.selected_device.clone(),
         Message::DeviceSelected,
     )
@@ -33,11 +44,16 @@ fn microphone_section<'a>(
     .style(move |_theme, status| styles::pick_list::field(scheme, status))
     .menu_style(move |_theme| styles::pick_list::menu(scheme));
 
-    section(
-        scheme,
-        "Microphone",
-        field(scheme, "Input device", device_picker.into()),
-    )
+    let mut body = column![field(scheme, "Input device", list.into())].spacing(spacing::SM);
+    if let Some(note) = picker.note {
+        body = body.push(
+            text(note)
+                .size(type_scale::BODY_MEDIUM.size)
+                .font(type_scale::BODY_MEDIUM.font())
+                .color(scheme.on_surface_variant),
+        );
+    }
+    section(scheme, "Microphone", body.into())
 }
 
 fn flags_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
