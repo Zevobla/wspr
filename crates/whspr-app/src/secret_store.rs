@@ -346,4 +346,30 @@ mod tests {
             StartupMigration::NothingToMove
         );
     }
+
+    fn state_with(keystore: MemoryKeystore) -> State {
+        State::with_keystore(Config::default(), SecretStore::new(Arc::new(keystore)))
+    }
+
+    #[test]
+    fn saving_then_removing_a_key_updates_the_cached_location() {
+        let mut state = state_with(persistent());
+        let slot = SecretSlot::ApiKey("anthropic");
+
+        save_secret(&mut state, slot, "sk-ant").unwrap();
+        assert_eq!(state.secret_locations[&slot], SecretLocation::Keystore);
+
+        remove_secret(&mut state, slot).unwrap();
+        assert_eq!(state.secret_locations[&slot], SecretLocation::Missing);
+    }
+
+    #[test]
+    fn hf_token_reads_the_keystore_first() {
+        let keystore = persistent();
+        keystore.set(SecretName::HF_TOKEN, "hf_stored").unwrap();
+        let mut state = state_with(keystore);
+        state.config.huggingface.token = Some("hf_plain".into());
+
+        assert_eq!(hf_token(&state).as_deref(), Some("hf_stored"));
+    }
 }
