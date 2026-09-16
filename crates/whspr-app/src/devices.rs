@@ -2,7 +2,10 @@
 //! device picker: the fallback notice, which devices the picker lists, and
 //! the hotplug watcher that keeps that list current.
 
-use whspr_audio::DeviceChange;
+use iced::futures::channel::mpsc;
+use iced::futures::sink::SinkExt;
+use iced::futures::Stream;
+use whspr_audio::{DeviceChange, DeviceWatcher};
 
 /// The notice shown when the configured input device `name` is not
 /// connected, so recording falls back to the OS default input device. One
@@ -104,6 +107,30 @@ pub(crate) fn hotplug_notice(
         return NoticeUpdate::Clear;
     }
     NoticeUpdate::Keep
+}
+
+/// How often the hotplug watcher re-enumerates input devices while
+/// `[device].device_hotplug` is on.
+pub(crate) const HOTPLUG_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// A stream of input-device changes, polled every [`HOTPLUG_POLL_INTERVAL`]
+/// (cpal has no cross-platform hotplug callback -- see
+/// `whspr_audio::DeviceWatcher`). Subscribed to only while
+/// `[device].device_hotplug` is on (see `crate::app::subscriptions`).
+pub(crate) fn hotplug_watch() -> impl Stream<Item = DeviceChange> {
+    iced::stream::channel(4, watch_devices)
+}
+
+async fn watch_devices(mut output: mpsc::Sender<DeviceChange>) {
+    let mut watcher = DeviceWatcher::new(HOTPLUG_POLL_INTERVAL);
+    loop {
+        tokio::time::sleep(HOTPLUG_POLL_INTERVAL).await;
+        if let Some(change) = watcher.poll() {
+            if output.send(change).await.is_err() {
+                return;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
