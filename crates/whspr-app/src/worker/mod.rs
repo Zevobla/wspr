@@ -36,6 +36,10 @@ use hotkey_decision::{capture_decision, CaptureDecision};
 /// Events the worker reports back to the iced app.
 #[derive(Debug, Clone)]
 pub enum WorkerEvent {
+    /// The worker is listening for the hotkey. Carries the channel the app
+    /// pushes each saved `Config` through (see `State::worker_config`), so
+    /// settings apply to the next capture without a restart.
+    Ready(tokio::sync::mpsc::UnboundedSender<whspr_config::Config>),
     /// The pipeline moved to a new state.
     StateChanged(PipelineState),
     /// A dictation turn finished successfully; `duration_secs` is the

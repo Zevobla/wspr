@@ -11,6 +11,9 @@ use crate::worker::WorkerEvent;
 /// Applies one worker event to `state`, returning any follow-up task.
 pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
     match event {
+        WorkerEvent::Ready(config_channel) => {
+            state.worker_config = Some(config_channel);
+        }
         WorkerEvent::StateChanged(pipeline_state) => {
             state.pipeline_state = pipeline_state;
 
@@ -96,4 +99,5 @@ mod tests {
         assert_eq!(state.notice.as_deref(), Some("heads up"));
         assert!(state.last_error.is_none());
     }
+
 }
