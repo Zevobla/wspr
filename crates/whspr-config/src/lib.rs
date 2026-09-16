@@ -41,7 +41,7 @@ pub use normalize::{NormalizeSettings, NumberFormat};
 pub use privacy::PrivacySettings;
 pub use refine::RefineSettings;
 pub use reload::{api_key_for, config_reload};
-pub use secrets::{Keystore, MemoryKeystore, MigrationReport, OsKeystore, SecretName};
+pub use secrets::{history_key, Keystore, MemoryKeystore, MigrationReport, OsKeystore, SecretName};
 pub use sound::SoundSettings;
 pub use speaker::{SpeakerDb, SpeakerProfile, TurnEmbedding, TurnRef};
 pub use whisper::WhisperConfig;

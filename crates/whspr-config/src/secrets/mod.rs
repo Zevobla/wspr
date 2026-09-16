@@ -5,12 +5,14 @@
 //! [`Keystore`] is the storage abstraction: [`OsKeystore`] for the real
 //! platform keychain, [`MemoryKeystore`] for tests.
 
+mod history;
 mod keystore;
 mod keystore_os;
 mod migrate;
 mod names;
 mod resolve;
 
+pub use history::history_key;
 pub use keystore::{Keystore, MemoryKeystore};
 pub use keystore_os::OsKeystore;
 pub use migrate::MigrationReport;
