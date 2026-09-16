@@ -104,4 +104,16 @@ mod tests {
 
         assert!(decode_line(&tampered, Some(&KEY)).is_err());
     }
+
+    #[test]
+    fn a_line_under_another_key_is_rejected() {
+        let line = encode_line(JSON, &KEY);
+        assert!(decode_line(&line, Some(&[8; 32])).is_err());
+    }
+
+    #[test]
+    fn an_encrypted_line_without_a_key_is_an_error() {
+        let line = encode_line(JSON, &KEY);
+        assert!(decode_line(&line, None).is_err());
+    }
 }
