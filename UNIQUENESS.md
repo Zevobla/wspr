@@ -48,9 +48,10 @@ Reused libraries are standard crates opted into per-crate and pinned in
 global-hotkey, enigo, arboard, iced, tray-icon, rodio, mlua (LuaJIT), serde,
 tokio, reqwest. Licenses are enforced by `deny.toml` (`cargo deny check
 licenses bans` in CI): everything in the dependency graph is Apache-2.0/MIT-
-style permissive, plus two narrow, non-viral exceptions with no permissive
+style permissive, plus three narrow, non-viral exceptions with no permissive
 alternative available (`option-ext` via `directories`/`dirs-sys`: MPL-2.0;
-`webpki-roots`/`webpki-root-certs` via the rustls stack: CDLA-Permissive-2.0)
+`webpki-roots`/`webpki-root-certs` via the rustls stack: CDLA-Permissive-2.0;
+`libfuzzer-sys` via `image` → `rav1e`: NCSA, a BSD-style license)
 — no GPL/LGPL/AGPL anywhere in the graph (criterion Z-08). Model weights are
 fetched separately and never vendored into the repository (Z-12). We did not
 fork or copy another project's source tree; the architecture (a 15-crate
