@@ -68,4 +68,9 @@ mod tests {
             Some("Visual Studio Code".to_string())
         );
     }
+
+    #[test]
+    fn app_name_for_enabled_with_no_detected_name_returns_none() {
+        assert_eq!(app_name_for(true, None), None);
+    }
 }
