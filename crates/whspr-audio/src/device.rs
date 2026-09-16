@@ -344,4 +344,22 @@ mod tests {
         let filtered = filter_input_devices(names, false, false);
         assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
     }
+
+    #[test]
+    fn diff_device_names_reports_added_and_removed() {
+        let before = vec!["Built-in Microphone".to_string(), "USB Headset".to_string()];
+        let after = vec!["Built-in Microphone".to_string(), "AirPods Pro".to_string()];
+
+        let change = diff_device_names(&before, &after);
+        assert_eq!(change.added, vec!["AirPods Pro".to_string()]);
+        assert_eq!(change.removed, vec!["USB Headset".to_string()]);
+    }
+
+    #[test]
+    fn diff_device_names_is_empty_when_unchanged() {
+        let names = vec!["Built-in Microphone".to_string()];
+        let change = diff_device_names(&names, &names);
+        assert!(change.added.is_empty());
+        assert!(change.removed.is_empty());
+    }
 }
