@@ -25,6 +25,7 @@ fn stats_csv_prints_header_and_seeded_rows() {
             r#"{"text":"goodbye","timestamp":2000,"asr":"mock","refine":"noop","source":"cli","wpm":90.0,"word_count":1}"#,
         ],
     );
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -33,6 +34,8 @@ fn stats_csv_prints_header_and_seeded_rows() {
             "--csv",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -46,6 +49,7 @@ fn stats_csv_prints_header_and_seeded_rows() {
 #[test]
 fn stats_csv_with_no_history_prints_only_header() {
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -54,6 +58,8 @@ fn stats_csv_with_no_history_prints_only_header() {
             "--csv",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -69,6 +75,7 @@ fn stats_csv_quotes_text_containing_a_comma() {
             r#"{"text":"hello, world","timestamp":1000,"asr":"mock","refine":"noop","source":"cli","wpm":120.0,"word_count":2}"#,
         ],
     );
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -77,6 +84,8 @@ fn stats_csv_quotes_text_containing_a_comma() {
             "--csv",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -92,10 +101,17 @@ fn stats_table_mode_prints_wpm_and_words() {
             r#"{"text":"hello world","timestamp":1000,"asr":"mock","refine":"noop","source":"cli","wpm":120.0,"word_count":2}"#,
         ],
     );
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
-        .args(["stats", "--data-dir", data_dir.path().to_str().unwrap()])
+        .args([
+            "stats",
+            "--data-dir",
+            data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("wpm=120"))
@@ -126,6 +142,7 @@ fn stats_clear_removes_the_history_file() {
         history_path.exists(),
         "test setup should have seeded a file"
     );
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -134,6 +151,8 @@ fn stats_clear_removes_the_history_file() {
             "--clear",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -148,6 +167,7 @@ fn stats_clear_removes_the_history_file() {
 #[test]
 fn stats_clear_on_missing_history_is_not_an_error() {
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -156,6 +176,8 @@ fn stats_clear_on_missing_history_is_not_an_error() {
             "--clear",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -173,6 +195,7 @@ fn stats_by_backend_groups_and_averages_per_pair() {
             r#"{"text":"e","timestamp":3,"asr":"whisper-local","refine":"noop","source":"cli","wpm":60.0,"word_count":1}"#,
         ],
     );
+    let config_dir = tempfile::tempdir().expect("failed to create config dir");
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -181,6 +204,8 @@ fn stats_by_backend_groups_and_averages_per_pair() {
             "--by-backend",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
