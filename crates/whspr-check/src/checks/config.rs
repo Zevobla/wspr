@@ -1,6 +1,6 @@
-//! First-run/config checks. All three call `whspr_config` directly (a real
-//! workspace dependency of this crate) rather than statically reading its
-//! source, so these are dynamic behavioral checks, not text scans.
+//! First-run/config checks. All of these call `whspr_config` directly (a
+//! real workspace dependency of this crate) rather than statically reading
+//! its source, so these are dynamic behavioral checks, not text scans.
 
 use crate::repo;
 use crate::report::CheckResult;
@@ -67,6 +67,87 @@ pub fn check_config_format_is_toml() -> CheckResult {
             format!(
                 "wrote a TOML config file but load_from() returned asr = {:?}, not OpenAi",
                 config.asr
+            ),
+        )
+    }
+}
+
+/// The TOML section headers and nested keys `Config::default()` actually
+/// serializes to today (verified by hand: `toml::to_string_pretty` against
+/// a fresh `Config::default()`), one entry per top-level settings struct
+/// plus a couple of representative nested keys. Deliberately not every
+/// single field - this is a "did a whole settings surface silently vanish
+/// from the default config" tripwire, not a byte-for-byte schema diff.
+/// Update this list if `Config`'s fields genuinely change shape; keeping it
+/// hand-verified against the real struct (rather than generated) is the
+/// point - see B-05 below.
+const REQUIRED_CONFIG_SECTIONS: &[&str] = &[
+    "[api_keys]",
+    "[whisper]",
+    "[speaker]",
+    "similarity-threshold",
+    "embedding-model",
+    "[normalize]",
+    "numbers-format",
+    "[language_settings]",
+    "[device]",
+    "device-hotplug",
+    "active-window",
+    "[autostart]",
+    "[sound]",
+    "[injection]",
+    "[privacy]",
+    "mic-privacy",
+    "[capture]",
+    "[huggingface]",
+    "[refine_settings]",
+];
+
+/// B-05: the default config contains all required sections/keys.
+///
+/// Serializes `Config::default()` (the real struct from the `whspr-config`
+/// workspace crate, not a hand-copied schema) via `toml::to_string_pretty`
+/// and checks the result contains every section/key in
+/// `REQUIRED_CONFIG_SECTIONS` - one representative per top-level settings
+/// struct (`[whisper]`, `[speaker]`, `[normalize]`, `[device]`, ...), so a
+/// struct that got dropped from `Config` (or renamed out of kebab-case)
+/// would show up here as a missing section.
+pub fn check_config_sections() -> CheckResult {
+    let config = whspr_config::Config::default();
+    let toml_str = match toml::to_string_pretty(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return CheckResult::fail(
+                "B-05",
+                format!("could not serialize Config::default() to TOML: {e}"),
+            )
+        }
+    };
+
+    let missing: Vec<&str> = REQUIRED_CONFIG_SECTIONS
+        .iter()
+        .filter(|key| !toml_str.contains(*key))
+        .copied()
+        .collect();
+
+    if missing.is_empty() {
+        CheckResult::pass(
+            "B-05",
+            format!(
+                "Config::default()'s TOML serialization contains all {} required \
+                 sections/keys: {}",
+                REQUIRED_CONFIG_SECTIONS.len(),
+                REQUIRED_CONFIG_SECTIONS.join(", ")
+            ),
+        )
+    } else {
+        CheckResult::fail(
+            "B-05",
+            format!(
+                "default config is missing {} of {} required section(s)/key(s): {}",
+                missing.len(),
+                REQUIRED_CONFIG_SECTIONS.len(),
+                missing.join(", ")
             ),
         )
     }
@@ -156,5 +237,16 @@ mod tests {
                 "whspr should appear in config path"
             );
         }
+    }
+
+    #[test]
+    fn check_config_sections_passes_against_the_real_default_config() {
+        let result = super::check_config_sections();
+        assert_eq!(
+            result.verdict,
+            crate::report::Verdict::Pass,
+            "evidence: {}",
+            result.evidence
+        );
     }
 }

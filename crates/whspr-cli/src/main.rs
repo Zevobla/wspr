@@ -42,6 +42,18 @@ use whspr_core::AudioBuffer;
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+
+    /// Override the config directory whspr reads `config.toml` from (and
+    /// first-run-writes defaults into), routing through
+    /// `whspr_config::load_from` instead of `load()`. Hidden: test-only,
+    /// so the e2e suite can point every invocation at an isolated tempdir
+    /// instead of the real platform config dir -- whose developer-specific
+    /// settings (e.g. a non-default `refine` backend) would otherwise make
+    /// tests slow or nondeterministic. `global = true` so it parses
+    /// whether given before or after the subcommand, same as any other
+    /// clap global flag.
+    #[arg(long = "config-dir", hide = true, global = true)]
+    config_dir: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -272,7 +284,10 @@ fn resolve_data_dir(override_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = load_config();
+    let config = match cli.config_dir.as_deref() {
+        Some(dir) => whspr_config::load_from(Some(dir)),
+        None => load_config(),
+    };
 
     match cli.command {
         Some(Command::Transcribe {

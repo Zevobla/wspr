@@ -105,9 +105,11 @@ fn check_nonzero_exit_on_error(bin: &Path, root: &Path) -> CheckResult {
 ///
 /// Passes `--asr mock` so this stays offline and deterministic regardless
 /// of whether a real whisper model is configured (the CLI's no-flag
-/// default now builds a real `WhisperLocal` backend), and `--data-dir
+/// default now builds a real `WhisperLocal` backend), `--data-dir
 /// <tempdir>` so this smoke run's mock transcript never gets appended to
-/// the real platform history.jsonl.
+/// the real platform history.jsonl, and `--refine noop --config-dir
+/// <tempdir>` so it never inherits the machine's real refine backend
+/// (e.g. `refine = "llama-local"`).
 fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
@@ -119,6 +121,12 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
     let Some(data_dir_str) = data_dir.path().to_str() else {
         return CheckResult::fail("Y-15", "temp data dir path isn't valid UTF-8");
     };
+    let Ok(config_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("Y-15", "could not create a temp config dir");
+    };
+    let Some(config_dir_str) = config_dir.path().to_str() else {
+        return CheckResult::fail("Y-15", "temp config dir path isn't valid UTF-8");
+    };
     match run_whspr(
         bin,
         root,
@@ -129,6 +137,10 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
             "mock",
             "--data-dir",
             data_dir_str,
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir_str,
         ],
     ) {
         Ok(out) if out.success => {
@@ -174,8 +186,11 @@ fn check_progress_output_discipline(bin: &Path, root: &Path) -> CheckResult {
 /// "present") and confirms the mock/local transcribe path is unaffected.
 ///
 /// Passes `--asr mock` (offline/deterministic regardless of whether a real
-/// whisper model is configured) and `--data-dir <tempdir>` so this smoke
-/// run doesn't pollute the real platform history.jsonl.
+/// whisper model is configured), `--data-dir <tempdir>` so this smoke run
+/// doesn't pollute the real platform history.jsonl, and `--refine noop
+/// --config-dir <tempdir>` so it never inherits the machine's real refine
+/// backend (e.g. `refine = "llama-local"` would both rewrite the mock
+/// transcript this check matches on, and make it minutes slower).
 fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     let Some(bin_str) = bin.to_str() else {
         return CheckResult::fail("Y-13", "binary path isn't valid UTF-8");
@@ -190,6 +205,12 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
     let Some(data_dir_str) = data_dir.path().to_str() else {
         return CheckResult::fail("Y-13", "temp data dir path isn't valid UTF-8");
     };
+    let Ok(config_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("Y-13", "could not create a temp config dir");
+    };
+    let Some(config_dir_str) = config_dir.path().to_str() else {
+        return CheckResult::fail("Y-13", "temp config dir path isn't valid UTF-8");
+    };
     match repo::run_without_envs(
         root,
         bin_str,
@@ -200,6 +221,10 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
             "mock",
             "--data-dir",
             data_dir_str,
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir_str,
         ],
         &["DISPLAY", "WAYLAND_DISPLAY"],
     ) {
@@ -224,8 +249,12 @@ fn check_headless(bin: &Path, root: &Path) -> CheckResult {
 ///
 /// Passes `--asr mock` so this check isn't itself a source of
 /// nondeterminism (real whisper inference isn't guaranteed bit-identical
-/// across runs) and `--data-dir <tempdir>` (shared across both runs) so
-/// neither invocation pollutes the real platform history.jsonl.
+/// across runs), `--data-dir <tempdir>` (shared across both runs) so
+/// neither invocation pollutes the real platform history.jsonl, and
+/// `--refine noop --config-dir <tempdir>` (also shared) so this doesn't
+/// inherit the machine's real refine backend (e.g. `refine =
+/// "llama-local"` would make two runs of this check take minutes instead
+/// of milliseconds).
 fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
@@ -237,6 +266,12 @@ fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
     let Some(data_dir_str) = data_dir.path().to_str() else {
         return CheckResult::fail("Y-14", "temp data dir path isn't valid UTF-8");
     };
+    let Ok(config_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("Y-14", "could not create a temp config dir");
+    };
+    let Some(config_dir_str) = config_dir.path().to_str() else {
+        return CheckResult::fail("Y-14", "temp config dir path isn't valid UTF-8");
+    };
     let args = [
         "transcribe",
         fixture_str,
@@ -244,6 +279,10 @@ fn check_repeat_run_deterministic(bin: &Path, root: &Path) -> CheckResult {
         "mock",
         "--data-dir",
         data_dir_str,
+        "--refine",
+        "noop",
+        "--config-dir",
+        config_dir_str,
     ];
     let first = run_whspr(bin, root, &args);
     let second = run_whspr(bin, root, &args);

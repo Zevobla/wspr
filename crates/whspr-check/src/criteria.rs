@@ -143,6 +143,11 @@ pub const CATALOG: &[Criterion] = &[
         title: "Declared license is a recognized SPDX/OSI identifier",
     },
     Criterion {
+        id: "Z-03",
+        group: "Z",
+        title: "LICENSE/NOTICE has a filled copyright notice (not a placeholder)",
+    },
+    Criterion {
         id: "Z-04",
         group: "Z",
         title: "License is named on the README's first screen",
@@ -156,6 +161,11 @@ pub const CATALOG: &[Criterion] = &[
         id: "Z-08",
         group: "Z",
         title: "No copyleft dependency licenses under our permissive license",
+    },
+    Criterion {
+        id: "Z-09",
+        group: "Z",
+        title: "No GPL-family crate names in the resolved dependency tree",
     },
     Criterion {
         id: "Z-12",
@@ -315,9 +325,20 @@ pub const CATALOG: &[Criterion] = &[
         title: "Config file format is TOML",
     },
     Criterion {
+        id: "B-05",
+        group: "B",
+        title: "Default config contains all required sections/keys",
+    },
+    Criterion {
         id: "B-14",
         group: "B",
         title: "Config lives in the platform config directory",
+    },
+    // --- AE: Uniqueness ---
+    Criterion {
+        id: "AE-10",
+        group: "AE",
+        title: "UNIQUENESS.md is present and non-trivial",
     },
     // --- AC: Slop-meter ---
     Criterion {

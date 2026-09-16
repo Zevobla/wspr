@@ -4,6 +4,19 @@
 //! their own test binaries, so this naming keeps `common` a plain shared
 //! module instead of an (empty, pointless) test binary of its own.
 
+/// Creates a fresh, empty temp directory for an e2e test to pass via the
+/// CLI's hidden `--config-dir` flag (see `resolve_data_dir`/`Cli` in
+/// `main.rs`), so the CLI never reads -- or first-run-writes into -- the
+/// real platform config directory. Without this, every e2e invocation
+/// would inherit the developer's real `config.toml` (e.g. a non-default
+/// `refine = "llama-local"`), making the suite slow or nondeterministic
+/// depending on whose machine runs it. Both `tests/*.rs` files that
+/// `mod common;` (`e2e.rs`, `diarize_e2e.rs`) call this, so unlike
+/// `create_test_wav_with_tone` below it needs no `#[allow(dead_code)]`.
+pub fn isolated_config_dir() -> tempfile::TempDir {
+    tempfile::tempdir().expect("failed to create isolated config dir")
+}
+
 /// Creates a minimal test WAV file with a given sample rate.
 pub fn create_test_wav(
     path: &std::path::Path,

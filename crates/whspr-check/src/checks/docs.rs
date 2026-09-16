@@ -1,5 +1,6 @@
 //! README content checks: architecture diagram, settings table,
-//! model-swap docs, dependency/build docs, and the anti-slop honesty check.
+//! model-swap docs, dependency/build docs, the anti-slop honesty check, and
+//! (AE-10) UNIQUENESS.md's presence.
 
 use crate::repo;
 use crate::report::CheckResult;
@@ -235,9 +236,57 @@ pub fn check_readme_swap_docs(root: &Path) -> CheckResult {
     }
 }
 
+/// AE-10: UNIQUENESS.md is present at the repo root and non-empty.
+///
+/// This project's own uniqueness/provenance writeup (AE cluster) - a
+/// missing or empty file here means the "how this differs from other
+/// submissions" story never got written down.
+pub fn check_uniqueness_doc_present(root: &Path) -> CheckResult {
+    let path = root.join("UNIQUENESS.md");
+    match std::fs::read_to_string(&path) {
+        Ok(content) if !content.trim().is_empty() => CheckResult::pass(
+            "AE-10",
+            format!(
+                "{} exists and is non-empty ({} bytes)",
+                path.display(),
+                content.len()
+            ),
+        ),
+        Ok(_) => CheckResult::fail("AE-10", format!("{} exists but is empty", path.display())),
+        Err(e) => CheckResult::fail("AE-10", format!("could not read {}: {e}", path.display())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_uniqueness_doc_present_fails_on_a_missing_file() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let result = check_uniqueness_doc_present(temp_dir.path());
+        assert_eq!(result.verdict, crate::report::Verdict::Fail);
+    }
+
+    #[test]
+    fn check_uniqueness_doc_present_fails_on_an_empty_file() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(temp_dir.path().join("UNIQUENESS.md"), "   \n").expect("failed to write");
+        let result = check_uniqueness_doc_present(temp_dir.path());
+        assert_eq!(result.verdict, crate::report::Verdict::Fail);
+    }
+
+    #[test]
+    fn check_uniqueness_doc_present_passes_on_a_filled_file() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(
+            temp_dir.path().join("UNIQUENESS.md"),
+            "# Uniqueness\n\nreal content\n",
+        )
+        .expect("failed to write");
+        let result = check_uniqueness_doc_present(temp_dir.path());
+        assert_eq!(result.verdict, crate::report::Verdict::Pass);
+    }
 
     #[test]
     fn overclaim_phrases_has_entries() {

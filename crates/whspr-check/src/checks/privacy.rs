@@ -24,7 +24,11 @@ const POISON_ENV: &[(&str, &str)] = &[
 /// this check (the CLI's no-flag default now builds a real `WhisperLocal`
 /// backend - see `whspr-cli`'s `build_asr_backend`). Also passes
 /// `--data-dir <tempdir>` so this smoke run doesn't pollute the real
-/// platform history.jsonl.
+/// platform history.jsonl, and `--refine noop --config-dir <tempdir>` so
+/// it never inherits whatever refine backend the machine running this
+/// check has configured for real (e.g. `refine = "llama-local"` would
+/// both rewrite the mock transcript this check matches on, and make the
+/// check itself minutes slower).
 pub fn check_transcribe_offline(bin: &Path, root: &Path) -> CheckResult {
     let fixture = repo::fixture_wav_path(root);
     let Some(fixture_str) = fixture.to_str() else {
@@ -36,6 +40,12 @@ pub fn check_transcribe_offline(bin: &Path, root: &Path) -> CheckResult {
     let Some(data_dir_str) = data_dir.path().to_str() else {
         return CheckResult::fail("P-01", "temp data dir path isn't valid UTF-8");
     };
+    let Ok(config_dir) = tempfile::tempdir() else {
+        return CheckResult::fail("P-01", "could not create a temp config dir");
+    };
+    let Some(config_dir_str) = config_dir.path().to_str() else {
+        return CheckResult::fail("P-01", "temp config dir path isn't valid UTF-8");
+    };
     let output = repo::run_env(
         root,
         bin.to_str().unwrap_or("whspr"),
@@ -46,6 +56,10 @@ pub fn check_transcribe_offline(bin: &Path, root: &Path) -> CheckResult {
             "mock",
             "--data-dir",
             data_dir_str,
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir_str,
         ],
         POISON_ENV,
     );
