@@ -463,8 +463,14 @@ fn hide_or_exit_hub(state: &State) -> Task<Message> {
 /// surfacing a failure via `state.last_error` (the same field the pipeline
 /// worker uses) rather than silently dropping it -- a `pick_list` selection
 /// that doesn't actually persist should be visible to the user, not just a
-/// log line nobody's watching.
+/// log line nobody's watching. Also hands the new config to the running
+/// dictation worker (`State::worker_config`), so the change applies live.
 pub(crate) fn persist_config(state: &mut State) {
+    if let Some(worker) = &state.worker_config {
+        if worker.send(state.config.clone()).is_err() {
+            state.worker_config = None;
+        }
+    }
     let Some(dirs) = directories::ProjectDirs::from("", "", "whspr") else {
         state.last_error = Some("could not determine the app config directory".to_string());
         return;
