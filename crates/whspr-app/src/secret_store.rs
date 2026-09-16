@@ -171,6 +171,34 @@ pub fn clear_secret(
     Ok(())
 }
 
+/// What the startup migration of plaintext secrets did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartupMigration {
+    /// The keystore does not survive a reboot; secrets stay in `config.toml`.
+    Skipped,
+    /// There was no plaintext secret left to move.
+    NothingToMove,
+    /// These keystore entries received the plaintext secrets, which are now
+    /// gone from `config` -- the caller must save it.
+    Moved(Vec<String>),
+    /// Moving failed; `config` is exactly as it was.
+    Failed(String),
+}
+
+/// Moves every plaintext secret in `config` into `keystore` when the keystore
+/// survives a reboot (see `Config::migrate_secrets_to_keystore`, which is
+/// all-or-nothing). Does not save.
+pub fn migrate_plaintext_secrets(config: &mut Config, keystore: &dyn Keystore) -> StartupMigration {
+    if !keystore.is_persistent() {
+        return StartupMigration::Skipped;
+    }
+    match config.migrate_secrets_to_keystore(keystore) {
+        Ok(report) if report.moved.is_empty() => StartupMigration::NothingToMove,
+        Ok(report) => StartupMigration::Moved(report.moved),
+        Err(error) => StartupMigration::Failed(error.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
