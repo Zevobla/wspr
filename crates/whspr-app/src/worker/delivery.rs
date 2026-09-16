@@ -64,4 +64,9 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn detection_off_injects_without_querying_focus() {
+        assert_eq!(resolve_delivery(false).await, Delivery::Inject);
+    }
 }
