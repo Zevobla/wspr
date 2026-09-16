@@ -11,6 +11,8 @@ mod keystore_os;
 mod migrate;
 mod names;
 mod resolve;
+#[cfg(test)]
+mod test_support;
 
 pub use history::history_key;
 pub use keystore::{Keystore, MemoryKeystore};
