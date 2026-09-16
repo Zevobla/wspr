@@ -126,6 +126,26 @@ pub fn is_virtual_name(name: &str) -> bool {
     VIRTUAL_MARKERS.iter().any(|m| lower.contains(m))
 }
 
+/// Filters `names` (as from `input_device_names`) down to the devices
+/// allowed by the given policy - mirrors `whspr-config`'s `[device]
+/// bluetooth_source`/`virtual_source` toggles (this crate doesn't depend
+/// on `whspr-config`, so the caller reads those and passes them through).
+/// A name matching neither heuristic (an ordinary physical/wired mic)
+/// always passes through, regardless of either flag.
+pub fn filter_input_devices(
+    names: Vec<String>,
+    allow_bluetooth: bool,
+    allow_virtual: bool,
+) -> Vec<String> {
+    names
+        .into_iter()
+        .filter(|name| {
+            (allow_bluetooth || !is_bluetooth_name(name))
+                && (allow_virtual || !is_virtual_name(name))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
