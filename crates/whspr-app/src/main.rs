@@ -6,6 +6,7 @@
 mod active_window;
 mod app;
 mod config_ui;
+mod devices;
 mod hf;
 mod hf_progress;
 mod history;
