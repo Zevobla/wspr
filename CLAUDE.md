@@ -189,11 +189,29 @@ constructs or touches.
 
 ## Build & test
 
+Every `cargo`/`nix` command below must run through the Nix dev shell
+(`nix develop -c <command>`, or `nix develop` first to enter it
+interactively) — the toolchain (cmake, libclang, the pinned Rust) only
+exists there.
+
 ```sh
-nix develop                              # enter the dev shell (rustc/cargo/clippy/rustfmt + system libs)
-cargo build --workspace                  # should always succeed fast
-cargo test --workspace                   # core pipeline test + config test + cli e2e test
-cargo run -p whspr-cli -- --version
-cargo run -p whspr-cli -- transcribe /dev/null   # prints the mock transcript
-nix flake check                          # evaluates cargoTest via crane
+nix develop                                                              # enter the dev shell (rustc/cargo/clippy/rustfmt + system libs)
+nix develop -c cargo build --workspace                                   # should always succeed fast
+nix develop -c cargo test --workspace                                    # full workspace test suite
+nix develop -c cargo run -p whspr-cli -- --version
+nix develop -c cargo run -p whspr-cli -- transcribe /dev/null --asr mock # prints the mock transcript, no model required
+nix flake check                                                          # evaluates cargoTest via crane
 ```
+
+**Acceptance gate** (run before calling anything done):
+
+```sh
+nix develop -c cargo fmt --all --check
+nix develop -c cargo clippy --workspace --all-targets -- -D warnings
+nix develop -c cargo run -p whspr-check                                  # must report 0 fail
+```
+
+No source file should exceed 600 lines (AA-06) — split a growing module
+into a submodule (see e.g. `whspr-cli`'s `transcribe_cmd.rs`/
+`diarize_cmd.rs`/`stats_cmd.rs` split out of `main.rs`, or `whspr-config`'s
+per-section files) before it crosses that line.
