@@ -10,6 +10,7 @@ use whspr_core::{HotkeyEvent, HotkeyListener};
 
 mod clipboard;
 mod debounce;
+mod focus;
 mod hotkey_config;
 mod text_sink;
 
