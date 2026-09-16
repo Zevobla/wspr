@@ -1,13 +1,26 @@
-//! Turning a note desk into a self-contained Typst document.
+//! Turning a note desk into a self-contained Typst document, and that
+//! document into a PDF.
 //!
-//! [`document_typ`] renders a [`NoteDeskState`] into standalone `.typ` source
-//! the system `typst` binary can compile directly -- a title heading, the kept
-//! chapters as a bullet list, and every transcript row as a timestamped
-//! paragraph (kept rows carry an accent timestamp, mirroring the desk gutter).
-//! Unlike `whspr-typst`'s in-process generator, this imports no `@local`
-//! package, so `typst compile <in.typ> <out.pdf>` works without whspr's own
-//! `World`. Arbitrary title/heading/transcript text is escaped so it can never
-//! break the surrounding markup.
+//! [`document_typ`] renders a [`NoteDeskState`] into standalone `.typ`
+//! source -- a title heading, the kept chapters as a bullet list, and every
+//! transcript row as a timestamped paragraph (kept rows carry an accent
+//! timestamp, mirroring the desk gutter). It imports no `@local` package, so
+//! it needs nothing beyond `whspr_typst::export_pdf`'s own `World` and
+//! `typst-assets` base faces to compile. [`export_pdf`] does exactly that,
+//! **in-process** -- no system `typst` binary is spawned anywhere in this
+//! crate.
+//!
+//! This document is a distinct, bespoke layout from `whspr-typst`'s own
+//! generic `lecture`/`point` template ([`whspr_typst::generate_notes_typ`]):
+//! the gutter-accented timestamps, kept-chapters list, and per-row speaker
+//! attribution here have no equivalent in that template's metadata/point-
+//! stream model, so the two aren't the same document reimplemented twice.
+//! What *is* shared is lifted into `whspr-typst` proper: [`escape_markup`]/
+//! [`typst_string`] (re-exported below) and, now, PDF compilation itself.
+//! Arbitrary title/heading/transcript text is escaped so it can never break
+//! the surrounding markup.
+
+use whspr_typst::{escape_markup, typst_string};
 
 use crate::note_desk::{Gutter, NoteDeskState};
 
@@ -18,8 +31,9 @@ const ACCENT: &str = "#ec3013";
 pub fn document_typ(nd: &NoteDeskState) -> String {
     let mut out = String::new();
     // Metadata + a plain page/paragraph setup. No custom font is set: the
-    // system `typst` may not have Archivo installed, and the default face
-    // always compiles.
+    // compiled-in `typst-assets` base faces (see `export_pdf`'s doc) always
+    // cover Typst's default family, so this compiles offline with no font
+    // the app has to supply.
     out.push_str(&format!(
         "#set document(title: {})\n",
         typst_string(&nd.title)
@@ -71,46 +85,23 @@ pub fn document_typ(nd: &NoteDeskState) -> String {
     out
 }
 
-/// Escape a Rust string into a double-quoted Typst string literal (used for
-/// `#set document(title: ..)`).
-fn typst_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => {}
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-/// Backslash-escape Typst markup metacharacters so arbitrary transcript text
-/// is safe in markup position. Ordinary prose contains none of these, so this
-/// is the identity for the common case and the sentence survives verbatim.
-fn escape_markup(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        if matches!(
-            c,
-            '\\' | '[' | ']' | '#' | '$' | '*' | '_' | '`' | '<' | '>' | '@' | '~'
-        ) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
+/// Compile `main_typ` (as produced by [`document_typ`]) straight to PDF
+/// bytes, **in-process** via `whspr_typst::export_pdf` -- no system `typst`
+/// binary is spawned. No caller fonts are supplied: `document_typ` never
+/// sets a custom font (see its doc comment above), so Typst's default family
+/// resolves against the `typst-assets` base faces `whspr-typst`'s `World`
+/// always loads, and compilation succeeds fully offline with nothing the app
+/// has to embed or ship itself. Failures collapse to a plain message so the
+/// caller can fold them into the desk's export-status line the same way a
+/// save-dialog or IO failure is.
+pub fn export_pdf(main_typ: &str) -> Result<Vec<u8>, String> {
+    whspr_typst::export_pdf(main_typ, &[]).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::note_desk::{NoteDeskState, NoteHeading};
+    use crate::note_desk::{NoteDeskState, NoteHeading, TranscriptFilter};
 
     #[test]
     fn document_carries_the_title() {
@@ -174,34 +165,30 @@ mod tests {
         assert!(!document_typ(&nd).contains("== Chapters"));
     }
 
-    /// End-to-end: the generated source compiles cleanly with the system
-    /// `typst` binary. Skipped when `typst` isn't on PATH (e.g. a CI sandbox)
-    /// so it never fails the gate where the tool is absent.
+    /// End-to-end: the generated source compiles in-process to real PDF
+    /// bytes, with no system `typst` binary involved (nothing here shells
+    /// out at all -- see the module doc).
     #[test]
-    fn generated_document_compiles_with_typst() {
-        if std::process::Command::new("typst")
-            .arg("--version")
-            .output()
-            .is_err()
-        {
-            eprintln!("skipping: `typst` not on PATH");
-            return;
-        }
-        let dir = tempfile::tempdir().expect("tempdir");
-        let src = dir.path().join("note.typ");
-        let pdf = dir.path().join("note.pdf");
-        std::fs::write(&src, document_typ(&NoteDeskState::sample())).expect("write .typ");
-        let output = std::process::Command::new("typst")
-            .arg("compile")
-            .arg(&src)
-            .arg(&pdf)
-            .output()
-            .expect("run typst");
-        assert!(
-            output.status.success(),
-            "typst compile failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(pdf.exists(), "no PDF produced");
+    fn sample_note_desk_compiles_to_a_pdf() {
+        let pdf = export_pdf(&document_typ(&NoteDeskState::sample())).expect("pdf export");
+        assert!(pdf.starts_with(b"%PDF-"), "exported bytes are not a PDF");
+    }
+
+    /// A note desk with no rows, no headings, and no title is still a
+    /// syntactically valid document (`document_typ` never omits its
+    /// `#set`/heading scaffolding), so it compiles to a PDF rather than
+    /// erroring -- that's the honest current behaviour, not a special case.
+    #[test]
+    fn empty_note_desk_still_compiles_to_a_pdf() {
+        let nd = NoteDeskState {
+            title: String::new(),
+            rows: Vec::new(),
+            headings: Vec::new(),
+            filter: TranscriptFilter::default(),
+            view_code: false,
+            export_status: None,
+        };
+        let pdf = export_pdf(&document_typ(&nd)).expect("empty notes still compile");
+        assert!(pdf.starts_with(b"%PDF-"), "exported bytes are not a PDF");
     }
 }
