@@ -143,6 +143,11 @@ pub const CATALOG: &[Criterion] = &[
         title: "Declared license is a recognized SPDX/OSI identifier",
     },
     Criterion {
+        id: "Z-03",
+        group: "Z",
+        title: "LICENSE/NOTICE has a filled copyright notice (not a placeholder)",
+    },
+    Criterion {
         id: "Z-04",
         group: "Z",
         title: "License is named on the README's first screen",
