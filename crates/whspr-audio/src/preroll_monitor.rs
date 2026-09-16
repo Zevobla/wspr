@@ -165,3 +165,22 @@ impl PrerollMonitor {
         drop(self.stream);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::preroll::DEFAULT_PREROLL_MS;
+
+    #[test]
+    fn start_without_device_does_not_panic() {
+        // Mirrors device::tests::default_input_device_name_does_not_panic:
+        // in a sandboxed/headless environment (no input device, or one
+        // present but access-denied) this returns Err; on a machine with a
+        // real, accessible default input device it returns Ok. Either is
+        // fine - only a panic would be a bug. If it does succeed, release
+        // the stream again immediately.
+        if let Ok(monitor) = PrerollMonitor::start(None, DEFAULT_PREROLL_MS as u32) {
+            monitor.stop();
+        }
+    }
+}
