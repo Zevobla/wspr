@@ -231,4 +231,43 @@ mod tests {
         assert!(!is_virtual_name("Built-in Microphone"));
         assert!(!is_virtual_name("USB Headset"));
     }
+
+    #[test]
+    fn filter_input_devices_allows_everything_when_both_flags_true() {
+        let names = vec![
+            "Built-in Microphone".to_string(),
+            "AirPods Pro".to_string(),
+            "BlackHole 2ch".to_string(),
+        ];
+        let filtered = filter_input_devices(names.clone(), true, true);
+        assert_eq!(filtered, names);
+    }
+
+    #[test]
+    fn filter_input_devices_drops_bluetooth_when_disallowed() {
+        let names = vec!["Built-in Microphone".to_string(), "AirPods Pro".to_string()];
+        let filtered = filter_input_devices(names, false, true);
+        assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
+    }
+
+    #[test]
+    fn filter_input_devices_drops_virtual_when_disallowed() {
+        let names = vec![
+            "Built-in Microphone".to_string(),
+            "BlackHole 2ch".to_string(),
+        ];
+        let filtered = filter_input_devices(names, true, false);
+        assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
+    }
+
+    #[test]
+    fn filter_input_devices_drops_both_when_both_disallowed() {
+        let names = vec![
+            "Built-in Microphone".to_string(),
+            "AirPods Pro".to_string(),
+            "BlackHole 2ch".to_string(),
+        ];
+        let filtered = filter_input_devices(names, false, false);
+        assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
+    }
 }
