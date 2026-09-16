@@ -13,12 +13,22 @@
 //! committed as a `.typ` file — the package and templates live as Rust
 //! constants so the Nix crane source filter stays unchanged. Every fallible
 //! path maps into [`whspr_core::WhsprError`].
+//!
+//! `whspr-app`'s Note desk export (`note_export.rs`) is a consumer of two
+//! kinds: it builds its own bespoke `.typ` document (gutter-accented
+//! timestamps, a kept-chapters list -- content [`generate_notes_typ`]'s
+//! generic `lecture`/`point` template doesn't model) but compiles it through
+//! this crate's [`export_pdf`], and reuses [`escape_markup`]/[`typst_string`]
+//! rather than re-implementing the same escaping rules.
 
 mod generate;
 mod package;
 mod templates;
 mod world;
 
-pub use generate::{export_typ, export_typ_to_path, generate_notes_typ, NotePoint, NotesMeta};
+pub use generate::{
+    escape_markup, export_typ, export_typ_to_path, generate_notes_typ, typst_string, NotePoint,
+    NotesMeta,
+};
 pub use templates::Template;
 pub use world::{compile_preview_svg, export_pdf};
