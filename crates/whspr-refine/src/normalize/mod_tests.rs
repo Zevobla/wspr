@@ -392,3 +392,62 @@ async fn normalizing_refiner_shorten_runs_after_macros_not_before() {
         .expect("refine should succeed");
     assert_eq!(result, "DONE please");
 }
+
+/// Regression coverage for the oracle's fillers-corruption review: every
+/// sentence the always-on `fillers` pass used to destroy must survive the
+/// default pipeline byte-for-byte, whether or not `shorten` is on.
+#[test]
+fn point1_corruption_examples_survive_the_default_pipeline() {
+    let settings = NormalizeSettings::default();
+    let cases = [
+        "I like it",
+        "5 мм",
+        "10 м",
+        "я пошёл, а он остался",
+        "это значит, что",
+        "сделай короче",
+        "данные типа int",
+        "испечь блин",
+        "как бы ты поступил",
+        "what I mean is",
+        "вот дом",
+    ];
+    for input in cases {
+        assert_eq!(apply(input, &settings, false), input, "input: {input:?}");
+    }
+}
+
+#[test]
+fn default_pipeline_still_removes_unambiguous_hesitations() {
+    let settings = NormalizeSettings::default();
+    assert_eq!(apply("um so", &settings, false), "so");
+    assert_eq!(apply("эээ привет", &settings, false), "привет");
+    assert_eq!(apply("ммм да", &settings, false), "да");
+}
+
+#[test]
+fn shorten_true_drops_parenthetical_fillers_through_the_full_pipeline() {
+    let settings = NormalizeSettings::default();
+    assert_eq!(
+        apply("ну, короче, это работает", &settings, true),
+        "это работает"
+    );
+}
+
+#[test]
+fn shorten_true_keeps_kind_of_after_a_wh_word_through_the_full_pipeline() {
+    let settings = NormalizeSettings::default();
+    assert_eq!(
+        apply("what kind of car", &settings, true),
+        "what kind of car"
+    );
+}
+
+#[test]
+fn shorten_true_keeps_repeated_number_words_which_numbers_then_digitizes() {
+    let settings = NormalizeSettings::default();
+    // shorten's dedup guard keeps all five words (none of them collapse as
+    // a stutter); the numbers pass then digitizes each independently.
+    let result = apply("five five five one two", &settings, true);
+    assert_eq!(result, "5 5 5 1 2");
+}
