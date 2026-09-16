@@ -324,7 +324,7 @@ grepping every non-config, non-Settings-screen read site.
 
 | Key | Default | Status | Meaning |
 |---|---|---|---|
-| `device.input_device` | `None` | wired | Selected input device name (`None` = host default). |
+| `device.input_device` | `None` | wired (partially) | Selected input device name (`None` = host default). Used by the Dictate screen's manual record button; the global-hotkey capture path in `worker.rs` still always opens the OS default device. |
 | `device.device_hotplug` | `true` | persisted; no effect yet | Intended to rescan devices on plug/unplug. |
 | `device.active_window` | `true` | persisted; no effect yet | Intended to record the focused app's name for per-app context. |
 | `device.bluetooth_source` | `true` | persisted; no effect yet | Intended to allow Bluetooth input sources. |
