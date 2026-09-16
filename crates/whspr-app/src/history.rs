@@ -36,31 +36,35 @@ impl HistoryEntry {
     }
 }
 
+/// Parses one history line's JSON into an entry; `None` when it isn't a
+/// JSON object with at least a string `"text"` field.
+fn parse_entry(json: &str) -> Option<HistoryEntry> {
+    let value = serde_json::from_str::<Value>(json).ok()?;
+    let text = value.get("text")?.as_str()?.to_string();
+    let duration_secs = value
+        .get("duration_secs")
+        .and_then(Value::as_f64)
+        .map(|d| d as f32);
+    // Tolerant like every other field here: a missing (or non-string)
+    // `"speaker"` reads back as `None` rather than skipping the line.
+    let speaker_id = value
+        .get("speaker")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    Some(HistoryEntry {
+        text,
+        duration_secs,
+        speaker_id,
+    })
+}
+
 /// Parses a JSONL history file's contents into entries, skipping any line
 /// that isn't a JSON object with at least a string `"text"` field.
 pub fn parse_history_jsonl(contents: &str) -> Vec<HistoryEntry> {
     contents
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter_map(|value| {
-            let text = value.get("text")?.as_str()?.to_string();
-            let duration_secs = value
-                .get("duration_secs")
-                .and_then(Value::as_f64)
-                .map(|d| d as f32);
-            // Tolerant like every other field here: a missing (or non-string)
-            // `"speaker"` reads back as `None` rather than skipping the line.
-            let speaker_id = value
-                .get("speaker")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            Some(HistoryEntry {
-                text,
-                duration_secs,
-                speaker_id,
-            })
-        })
+        .filter_map(parse_entry)
         .collect()
 }
 
