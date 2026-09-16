@@ -362,4 +362,12 @@ mod tests {
         assert!(change.added.is_empty());
         assert!(change.removed.is_empty());
     }
+
+    #[test]
+    fn device_watcher_poll_returns_none_before_interval_elapses() {
+        let mut watcher = DeviceWatcher::new(std::time::Duration::from_secs(3600));
+        // Freshly constructed, well within the poll interval - must not
+        // re-enumerate or report a change yet.
+        assert_eq!(watcher.poll(), None);
+    }
 }
