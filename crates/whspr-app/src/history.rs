@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use whspr_config::history_codec::decode_line;
+use whspr_config::history_codec::{decode_line, encode_line};
 
 /// One completed transcription, either read from the on-disk history file
 /// or appended in-memory as pipeline runs complete during this session.
@@ -111,8 +111,14 @@ pub fn read_history_file(path: &Path, key: Option<&[u8; 32]>) -> HistoryRead {
 /// (`crates/whspr-cli/src/transcribe_cmd.rs`) so both tools keep reading
 /// the same file as one format rather than two -- extra fields either
 /// reader doesn't recognize are simply ignored (see this module's doc
-/// comment and `stats_cmd.rs`'s `#[serde(default)]` fields).
-fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()> {
+/// comment and `stats_cmd.rs`'s `#[serde(default)]` fields). With a `key`
+/// the line is written encrypted (`whspr_config::history_codec::encode_line`)
+/// instead of as plain JSON.
+fn append_history_entry(
+    path: &Path,
+    entry: &HistoryEntry,
+    key: Option<&[u8; 32]>,
+) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -132,6 +138,10 @@ fn append_history_entry(path: &Path, entry: &HistoryEntry) -> std::io::Result<()
     if let Some(speaker_id) = &entry.speaker_id {
         line["speaker"] = serde_json::Value::String(speaker_id.clone());
     }
+    let line = match key {
+        Some(key) => encode_line(&line.to_string(), key),
+        None => line.to_string(),
+    };
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -185,7 +195,7 @@ fn record_completed_at(
         speaker_id,
     };
     if let Some(path) = path {
-        if let Err(e) = append_history_entry(path, &entry) {
+        if let Err(e) = append_history_entry(path, &entry, None) {
             eprintln!("whspr: failed to save history entry: {e}");
         }
     }
@@ -270,8 +280,10 @@ mod tests {
             speaker_id: None,
         };
 
-        append_history_entry(&path, &entry).expect("append should create the file and its parent");
-        append_history_entry(&path, &entry).expect("a second append should append, not overwrite");
+        append_history_entry(&path, &entry, None)
+            .expect("append should create the file and its parent");
+        append_history_entry(&path, &entry, None)
+            .expect("a second append should append, not overwrite");
 
         let entries = read_history_file(&path, None).entries;
         assert_eq!(entries.len(), 2);
@@ -296,8 +308,8 @@ mod tests {
             speaker_id: None,
         };
 
-        append_history_entry(&path, &attributed).expect("append should succeed");
-        append_history_entry(&path, &unattributed).expect("append should succeed");
+        append_history_entry(&path, &attributed, None).expect("append should succeed");
+        append_history_entry(&path, &unattributed, None).expect("append should succeed");
 
         // The raw line carries `"speaker"` only for the attributed entry.
         let raw = std::fs::read_to_string(&path).expect("history file should exist");
