@@ -164,4 +164,25 @@ mod tests {
         let trimmed = trim_captured(&audio, &config);
         assert_eq!(trimmed.samples.len(), audio.samples.len());
     }
+
+    #[test]
+    fn mic_privacy_on_wants_no_preroll_monitor() {
+        let config = Config::default();
+        assert!(config.privacy.mic_privacy, "mic privacy defaults on");
+        let resolved = resolve_device(None, &[]);
+        assert_eq!(desired_monitor(&config, &resolved), None);
+    }
+
+    #[test]
+    fn mic_privacy_off_monitors_the_resolved_capture_device() {
+        let mut config = Config::default();
+        config.privacy.mic_privacy = false;
+        let resolved = resolve_device(Some("USB Mic"), &names(&["USB Mic"]));
+        assert_eq!(
+            desired_monitor(&config, &resolved),
+            Some(MonitorTarget {
+                device: Some("USB Mic".to_string())
+            })
+        );
+    }
 }
