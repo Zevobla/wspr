@@ -195,4 +195,20 @@ mod tests {
         // "bt" appears as a plain substring here, but not as a whole word.
         assert!(!is_bluetooth_name("Subtotal Device"));
     }
+
+    #[test]
+    fn is_virtual_name_matches_known_markers() {
+        assert!(is_virtual_name("BlackHole 2ch"));
+        assert!(is_virtual_name("Soundflower (2ch)"));
+        assert!(is_virtual_name("VB-Cable"));
+        assert!(is_virtual_name("Loopback Audio"));
+        assert!(is_virtual_name("Virtual Input"));
+        assert!(is_virtual_name("Aggregate Device"));
+    }
+
+    #[test]
+    fn is_virtual_name_does_not_match_ordinary_devices() {
+        assert!(!is_virtual_name("Built-in Microphone"));
+        assert!(!is_virtual_name("USB Headset"));
+    }
 }
