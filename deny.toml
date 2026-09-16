@@ -36,6 +36,11 @@ allow = [
     # webpki-roots/webpki-root-certs (pulled in via the rustls stack) ship
     # under CDLA-Permissive-2.0 only, with no permissive alternative.
     "CDLA-Permissive-2.0",
+    # libfuzzer-sys (pulled in via image -> ravif -> rav1e, which iced,
+    # arboard and typst all depend on) ships as "(MIT OR Apache-2.0) AND
+    # NCSA". NCSA is a permissive, OSI-approved BSD-style license, not
+    # copyleft.
+    "NCSA",
 ]
 confidence-threshold = 0.8
 
