@@ -77,6 +77,14 @@ mod tests {
     }
 
     #[test]
+    fn default_input_device_name_does_not_panic() {
+        // Same reasoning as `input_device_names_does_not_panic`: we can't
+        // assert on the actual value in a sandboxed/headless environment,
+        // only that calling it is safe.
+        let _ = default_input_device_name();
+    }
+
+    #[test]
     fn find_matching_device_name_returns_index_of_exact_match() {
         let names = vec!["Built-in Microphone".to_string(), "USB Headset".to_string()];
         assert_eq!(find_matching_device_name(&names, "USB Headset"), Some(1));
