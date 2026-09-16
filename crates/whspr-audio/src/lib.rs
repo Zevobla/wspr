@@ -4,13 +4,14 @@
 //! `capture` (live mic capture, `CaptureOptions`), `device` (enumeration/
 //! selection/hotplug polling), `dsp` (gain/noise suppression),
 //! `preroll`/`preroll_monitor` (pre-trigger sample retention, at rest and
-//! live).
+//! live), `stream` (shared cpal sample-format/channel-downmix plumbing).
 
 mod capture;
 mod device;
 mod dsp;
 mod preroll;
 mod preroll_monitor;
+mod stream;
 
 pub use capture::{
     start_capture, start_capture_on_device, start_capture_with, CaptureHandle, CaptureOptions,
