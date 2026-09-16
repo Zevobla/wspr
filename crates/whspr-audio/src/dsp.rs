@@ -313,4 +313,45 @@ mod tests {
              original={original_tone_rms}, output={output_tone_rms}, ratio={ratio}"
         );
     }
+
+    #[test]
+    fn suppress_noise_does_not_gate_speech_only_clip_without_silence() {
+        let sample_rate = 16000u32;
+        // A clip with no genuine "quiet" stretch: amplitude alternates
+        // between 0.3 and 0.6 every 100ms window, mimicking push-to-talk
+        // where the user talks the whole time - only ~2x dynamic range
+        // (well under MIN_GATE_DYNAMIC_RANGE) and never actually quiet
+        // (both amplitudes are well above MAX_NOISE_FLOOR_RMS). The gate
+        // must not engage anywhere; only the high-pass (negligible at
+        // 1kHz) should touch the signal.
+        let window_len = ((sample_rate as u64 * NOISE_FLOOR_WINDOW_MS as u64) / 1000) as usize;
+        let num_windows = 10;
+        let carrier_freq = 1000.0f32;
+
+        let mut samples = Vec::with_capacity(window_len * num_windows);
+        for w in 0..num_windows {
+            let amplitude = if w % 2 == 0 { 0.3 } else { 0.6 };
+            for i in 0..window_len {
+                let sample_idx = w * window_len + i;
+                let t = sample_idx as f32 / sample_rate as f32;
+                samples.push(amplitude * (2.0 * std::f32::consts::PI * carrier_freq * t).sin());
+            }
+        }
+
+        let original = samples.clone();
+        suppress_noise(&mut samples, sample_rate);
+
+        let mut start = 0;
+        while start + window_len <= samples.len() {
+            let before = rms(&original[start..start + window_len]);
+            let after = rms(&samples[start..start + window_len]);
+            let ratio = after / before;
+            assert!(
+                ratio > 0.9,
+                "window at {start} should not be gated (no clear noise floor in this clip): \
+                 before={before}, after={after}, ratio={ratio}"
+            );
+            start += window_len;
+        }
+    }
 }
