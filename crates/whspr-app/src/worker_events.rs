@@ -72,6 +72,9 @@ pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
         WorkerEvent::Failed(error) => {
             state.last_error = Some(error);
         }
+        WorkerEvent::Notice(notice) => {
+            state.notice = Some(notice);
+        }
         WorkerEvent::NeedsModel => {
             // Onboarding, not an error: no model installed yet. Kept
             // separate from `last_error` so the calm onboarding banner

@@ -51,6 +51,10 @@ pub enum WorkerEvent {
     },
     /// Hotkey listener startup, mic capture, or a pipeline run failed.
     Failed(String),
+    /// Something the user should know that is not a failure -- e.g. the
+    /// configured microphone is gone and capture fell back to the default
+    /// device. Shown as a calm, dismissible notice (`State::notice`).
+    Notice(String),
     /// A first-run onboarding state, *not* a failure: the default local
     /// Whisper ASR is selected but no model file is installed yet, so there's
     /// nothing to transcribe with until the user picks one. Surfaced as a
