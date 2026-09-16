@@ -10,7 +10,7 @@ use whspr_config::history_codec::{decode_line, encode_line};
 use whspr_config::Keystore;
 use whspr_core::WhsprError;
 
-use crate::history::history_file_path;
+use crate::history::{history_file_path, read_history_file};
 use crate::state::State;
 
 /// The 32-byte history key (`whspr_config::history_key`), held in memory
@@ -182,6 +182,41 @@ pub(crate) fn set_history_encryption_at(
 /// [`set_history_encryption_at`] on the real history file.
 pub(crate) fn set_history_encryption(state: &mut State, enabled: bool) -> bool {
     set_history_encryption_at(state, enabled, history_file_path().as_deref())
+}
+
+/// Boot step: loads the history key when encryption is on, then
+/// `state.history` from the file at `path`, decrypting as it goes. A key
+/// that can't be loaded is explained in `state.history_note` (new entries
+/// then stay in memory -- see [`history_write`]); lines that can't be
+/// decrypted are skipped and reported once through `state.notice`.
+pub(crate) fn load_history_at(state: &mut State, path: Option<&Path>) {
+    if state.config.privacy.history_encryption {
+        match load_key(state.keystore.keystore()) {
+            Ok(key) => state.history_key = Some(key),
+            Err(reason) => {
+                state.history_note = Some(format!(
+                    "History encryption is on but its key could not be loaded ({reason}); \
+                     new dictations are kept for this session only."
+                ));
+            }
+        }
+    }
+    let key = state.history_key.as_ref().map(HistoryKey::bytes);
+    let read = path
+        .map(|path| read_history_file(path, key))
+        .unwrap_or_default();
+    state.history = read.entries;
+    if read.unreadable > 0 {
+        state.notice = Some(format!(
+            "{} history entries could not be decrypted and were skipped.",
+            read.unreadable
+        ));
+    }
+}
+
+/// [`load_history_at`] on the real history file.
+pub(crate) fn load_history(state: &mut State) {
+    load_history_at(state, history_file_path().as_deref());
 }
 
 #[cfg(test)]
