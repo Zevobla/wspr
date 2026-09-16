@@ -73,6 +73,23 @@ pub(super) fn trim_captured(audio: &AudioBuffer, config: &Config) -> AudioBuffer
     )
 }
 
+/// Where an idle preroll monitor listens: the device the next capture would
+/// open (`None` is the OS default input device).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct MonitorTarget {
+    pub device: Option<String>,
+}
+
+/// The preroll monitor the settings call for. One runs on the capture
+/// device whenever `[privacy].mic_privacy` is off; none while it is on,
+/// because a standing input stream is exactly what mic privacy promises not
+/// to keep open (see `whspr_audio::PrerollMonitor`'s contract).
+pub(super) fn desired_monitor(config: &Config, device: &DeviceResolution) -> Option<MonitorTarget> {
+    (!config.privacy.mic_privacy).then(|| MonitorTarget {
+        device: device.device.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
