@@ -62,3 +62,52 @@ impl Keystore for MemoryKeystore {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_on_missing_entry_is_none_not_an_error() {
+        let ks = MemoryKeystore::default();
+        assert_eq!(ks.get("nope").unwrap(), None);
+    }
+
+    #[test]
+    fn set_then_get_round_trips() {
+        let ks = MemoryKeystore::default();
+        ks.set("k", "v").unwrap();
+        assert_eq!(ks.get("k").unwrap(), Some("v".to_string()));
+    }
+
+    #[test]
+    fn set_overwrites_an_existing_value() {
+        let ks = MemoryKeystore::default();
+        ks.set("k", "v1").unwrap();
+        ks.set("k", "v2").unwrap();
+        assert_eq!(ks.get("k").unwrap(), Some("v2".to_string()));
+    }
+
+    #[test]
+    fn delete_removes_the_value() {
+        let ks = MemoryKeystore::default();
+        ks.set("k", "v").unwrap();
+        ks.delete("k").unwrap();
+        assert_eq!(ks.get("k").unwrap(), None);
+    }
+
+    #[test]
+    fn delete_of_an_absent_entry_is_not_an_error() {
+        let ks = MemoryKeystore::default();
+        assert!(ks.delete("nope").is_ok());
+    }
+
+    #[test]
+    fn entries_are_independent_by_name() {
+        let ks = MemoryKeystore::default();
+        ks.set("a", "1").unwrap();
+        ks.set("b", "2").unwrap();
+        assert_eq!(ks.get("a").unwrap(), Some("1".to_string()));
+        assert_eq!(ks.get("b").unwrap(), Some("2".to_string()));
+    }
+}
