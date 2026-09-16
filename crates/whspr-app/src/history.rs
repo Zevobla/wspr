@@ -351,4 +351,24 @@ mod tests {
         assert!(state.history.is_empty());
         assert!(!path.exists());
     }
+
+    #[test]
+    fn a_mixed_file_reads_both_kinds_and_counts_undecryptable_lines() {
+        let key = [3u8; 32];
+        let contents = format!(
+            "{}\n{}\n{}\n",
+            r#"{"text":"plain one"}"#,
+            whspr_config::history_codec::encode_line(r#"{"text":"secret two"}"#, &key),
+            whspr_config::history_codec::encode_line(r#"{"text":"other key"}"#, &[9u8; 32]),
+        );
+
+        let read = parse_history_jsonl(&contents, Some(&key));
+        let texts: Vec<&str> = read.entries.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(texts, vec!["plain one", "secret two"]);
+        assert_eq!(read.unreadable, 1);
+
+        let without_key = parse_history_jsonl(&contents, None);
+        assert_eq!(without_key.entries.len(), 1);
+        assert_eq!(without_key.unreadable, 2);
+    }
 }
