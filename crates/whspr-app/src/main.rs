@@ -10,6 +10,7 @@ mod devices;
 mod hf;
 mod hf_progress;
 mod history;
+mod history_encryption;
 mod hotkey_capture;
 mod hub;
 mod link_import;
