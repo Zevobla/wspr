@@ -11,8 +11,10 @@ pub struct PrivacySettings {
     /// Whether the microphone is released/turned off outside of active capture.
     /// Default true — when not actively recording, the mic stays isolated.
     pub mic_privacy: bool,
-    /// Whether transcripts stored in history are encrypted at rest.
-    /// Default false — plaintext history for now; encryption is a future security wave.
+    /// Whether transcripts stored in history are encrypted at rest
+    /// (ChaCha20-Poly1305, `history_codec`, key held in the OS keystore via
+    /// `history_key`). Default false — it needs a keystore that survives a
+    /// reboot, so it is an explicit opt-in.
     pub history_encryption: bool,
     /// Which browser's logged-in cookies media import may borrow (a
     /// `yt-dlp --cookies-from-browser` id like `"firefox"`), to get a
