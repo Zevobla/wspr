@@ -2,6 +2,8 @@
 //! device picker: the fallback notice, which devices the picker lists, and
 //! the hotplug watcher that keeps that list current.
 
+use whspr_audio::DeviceChange;
+
 /// The notice shown when the configured input device `name` is not
 /// connected, so recording falls back to the OS default input device. One
 /// wording for every place that detects it -- the worker at capture start
@@ -52,6 +54,22 @@ pub(crate) fn device_picker(
         _ => None,
     };
     DevicePicker { options, note }
+}
+
+/// `connected` after a hotplug `change`: removed devices dropped, newly
+/// added ones appended, nothing listed twice.
+pub(crate) fn apply_device_change(connected: &[String], change: &DeviceChange) -> Vec<String> {
+    let mut devices: Vec<String> = connected
+        .iter()
+        .filter(|device| !change.removed.contains(device))
+        .cloned()
+        .collect();
+    for added in &change.added {
+        if !devices.contains(added) {
+            devices.push(added.clone());
+        }
+    }
+    devices
 }
 
 #[cfg(test)]
