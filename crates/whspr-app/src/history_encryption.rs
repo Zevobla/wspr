@@ -20,6 +20,13 @@ impl HistoryKey {
     pub fn bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// A key with fixed bytes, for tests that exercise encrypted history
+    /// without a keystore.
+    #[cfg(test)]
+    pub(crate) fn for_test(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
 }
 
 impl std::fmt::Debug for HistoryKey {
