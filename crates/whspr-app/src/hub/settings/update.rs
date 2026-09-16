@@ -192,4 +192,20 @@ mod tests {
             Some(crate::devices::fallback_notice("USB Mic"))
         );
     }
+
+    #[test]
+    fn typing_an_api_key_only_updates_the_draft() {
+        let mut state = State::new(whspr_config::Config::default());
+
+        let _ = update(
+            &mut state,
+            Message::ApiKeyDraftChanged("openai", "sk-draft".to_string()),
+        );
+
+        assert_eq!(
+            state.api_key_drafts.get("openai").map(String::as_str),
+            Some("sk-draft")
+        );
+        assert!(state.config.api_keys.is_empty());
+    }
 }
