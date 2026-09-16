@@ -146,3 +146,23 @@ fn ram_note<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a,
         scheme,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_token_saved_in_the_keystore_counts_as_signed_in() {
+        let keystore = whspr_config::MemoryKeystore::default();
+        whspr_config::Keystore::set(&keystore, whspr_config::SecretName::HF_TOKEN, "hf_abc")
+            .unwrap();
+        let signed_in = State::with_keystore(
+            whspr_config::Config::default(),
+            crate::secret_store::SecretStore::new(std::sync::Arc::new(keystore)),
+        );
+        assert!(is_signed_in(&signed_in));
+
+        let signed_out = State::new(whspr_config::Config::default());
+        assert!(!is_signed_in(&signed_out));
+    }
+}
