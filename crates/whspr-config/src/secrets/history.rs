@@ -20,7 +20,18 @@ use crate::secrets::{Keystore, SecretName};
 ///
 /// Stable across calls for a given keystore: once generated, the same 32
 /// bytes come back every time until something deletes the entry.
+///
+/// Refuses (`Err`) when [`Keystore::is_persistent`] is `false`: a key that
+/// vanishes on reboot would make every history entry encrypted under it
+/// permanently unreadable, so history encryption must stay off there.
 pub fn history_key(ks: &dyn Keystore) -> whspr_core::Result<[u8; 32]> {
+    if !ks.is_persistent() {
+        return Err(whspr_core::WhsprError::Config(
+            "history encryption needs a keystore that survives a reboot, \
+             and this platform's does not"
+                .to_string(),
+        ));
+    }
     if let Some(existing) = ks.get(SecretName::HISTORY_KEY)? {
         return decode_hex(&existing);
     }
@@ -96,6 +107,13 @@ mod tests {
         assert_eq!(stored.len(), 64);
         assert!(stored.chars().all(|c| c.is_ascii_hexdigit()));
         assert_eq!(decode_hex(&stored).unwrap(), key);
+    }
+
+    #[test]
+    fn history_key_refuses_a_non_persistent_keystore() {
+        let ks = MemoryKeystore::non_persistent();
+        assert!(history_key(&ks).is_err());
+        assert_eq!(ks.get(SecretName::HISTORY_KEY).unwrap(), None);
     }
 
     #[test]
