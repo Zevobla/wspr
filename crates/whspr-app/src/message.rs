@@ -73,6 +73,8 @@ pub enum Message {
     /// transcript yet -- see `crate::hub::dictate`'s `copy_enabled`, which
     /// also disables the button in that case.
     CopyTranscript,
+    /// The user dismissed the status banner's notice (`State::notice`).
+    DismissNotice,
     /// An event from the background pipeline worker (see `crate::worker`):
     /// a pipeline state change, a completed dictation turn, or a failure.
     Worker(crate::worker::WorkerEvent),

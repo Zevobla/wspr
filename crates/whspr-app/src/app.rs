@@ -187,6 +187,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             _ => Task::none(),
         },
         Message::Worker(event) => crate::worker_events::handle(state, event),
+        Message::DismissNotice => {
+            state.notice = None;
+            Task::none()
+        }
         Message::PickRecordingToDiarize => Task::perform(
             async {
                 rfd::AsyncFileDialog::new()
