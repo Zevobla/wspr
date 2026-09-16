@@ -7,7 +7,7 @@
 mod device;
 mod preroll;
 
-pub use device::input_device_names;
+pub use device::{default_input_device_name, input_device_names};
 pub use preroll::{PrerollBuffer, DEFAULT_PREROLL_MS};
 
 use std::path::Path;

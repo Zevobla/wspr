@@ -9237,12 +9237,12 @@ dependencies = [
 name = "whspr-app"
 version = "0.1.0"
 dependencies = [
- "cpal 0.18.2",
  "dark-light",
  "directories",
  "file-rotate",
  "hound",
  "iced",
+ "objc2-app-kit 0.3.2",
  "png 0.17.16",
  "resvg 0.45.1",
  "rfd",

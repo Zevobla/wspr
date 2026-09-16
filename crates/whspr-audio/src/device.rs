@@ -24,6 +24,14 @@ pub fn input_device_names() -> Vec<String> {
     devices.map(|device| device.to_string()).collect()
 }
 
+/// The name of the host's default input device, if any - used to pre-select
+/// it in a UI picker (e.g. the Hub's device dropdown) when the user hasn't
+/// chosen one explicitly. Never panics: no default host/device is a normal,
+/// expected outcome (e.g. a headless/sandboxed environment), not an error.
+pub fn default_input_device_name() -> Option<String> {
+    Some(cpal::default_host().default_input_device()?.to_string())
+}
+
 /// Finds `requested` among `available` device names (exact match),
 /// returning its index. Pure and hardware-independent, unlike
 /// `resolve_input_device` (which needs real cpal devices to enumerate) -
@@ -66,6 +74,14 @@ mod tests {
         // CI environment (there may be zero devices) - only that
         // enumerating them is safe to call and returns without panicking.
         let _ = input_device_names();
+    }
+
+    #[test]
+    fn default_input_device_name_does_not_panic() {
+        // Same reasoning as `input_device_names_does_not_panic`: we can't
+        // assert on the actual value in a sandboxed/headless environment,
+        // only that calling it is safe.
+        let _ = default_input_device_name();
     }
 
     #[test]

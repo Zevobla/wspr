@@ -27,7 +27,8 @@ pub struct State {
     /// language, embedding model, toggles, and the input device -- survives
     /// a restart.
     pub config: Config,
-    /// Names of the audio input devices found at boot (see `crate::devices`).
+    /// Names of the audio input devices found at boot (see
+    /// `whspr_audio::input_device_names`).
     pub input_devices: Vec<String>,
     /// The currently selected input device name, if any. At boot this is
     /// restored from `config.device.input_device` when one was persisted,
@@ -121,7 +122,7 @@ pub struct State {
     /// `crate::tray::TrayVisual::Done`) that should revert once
     /// `std::time::Instant::now()` passes this deadline. Set by
     /// `Message::Worker`'s `Completed` arm, cleared by
-    /// `Message::TrayDoneTick` (see `crate::app::tray_done_subscription`)
+    /// `Message::TrayDoneTick` (see `crate::app::subscriptions::tray_done_subscription`)
     /// -- `None` whenever no dictation has completed recently enough to
     /// still be lingering.
     pub tray_done_until: Option<std::time::Instant>,

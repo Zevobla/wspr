@@ -40,11 +40,6 @@ whspr-hf = { path = "../whspr-hf" }
 whspr-import = { path = "../whspr-import" }
 tokio.workspace = true
 tracing.workspace = true
-# whspr-audio doesn't expose a device-listing helper (it only starts capture
-# on the default input device), so the Hub's mic device list talks to cpal
-# directly rather than growing whspr-audio's public API for one small list
-# call. See the final report for the reasoning.
-cpal.workspace = true
 # Tolerant parsing of the (schema-less-to-us) JSONL history file.
 serde_json.workspace = true
 # Locates the platform data dir the history file would live in.
@@ -72,6 +67,15 @@ png = "0.17"
 # it's declared directly here rather than growing the shared workspace set
 # (not in the root `[workspace.dependencies]`).
 dark-light = "3.0"
+
+# Real "style by window" detection (J-04): reads the frontmost app's
+# localized name via NSWorkspace so refiners can format text differently
+# depending on what it's being dictated into (see `crate::active_window`).
+# macOS-only -- the crate itself only builds on Apple platforms, so it's
+# scoped to this target rather than living in the unconditional
+# [dependencies] above.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { workspace = true, features = ["NSWorkspace", "NSRunningApplication"] }
 
 [build-dependencies]
 # Rasterizes `assets/icon.svg` into the window icon at build time (see

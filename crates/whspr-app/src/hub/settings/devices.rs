@@ -53,7 +53,7 @@ fn flags_section<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elemen
             ),
             toggle_row(
                 scheme,
-                "Track the focused app for per-app stats",
+                "Use the focused app's name as context for cleaning up your dictation (macOS today)",
                 state.config.device.active_window,
                 Message::ActiveWindowToggled,
             ),

@@ -17,7 +17,7 @@
 //! `tray-icon`'s own event channels (`MenuEvent::receiver()`) are plain
 //! `Receiver`s, not a `Stream` iced can subscribe to directly, so
 //! `crate::app` polls `Handle::poll_action` from a ticking `Subscription`
-//! instead (see `tray_poll_subscription`) -- a small, deliberate latency
+//! instead (see `crate::app::subscriptions::tray_poll_subscription`) -- a small, deliberate latency
 //! trade (up to the poll interval) for not needing a winit
 //! `EventLoopProxy` hook into iced's internals.
 //!

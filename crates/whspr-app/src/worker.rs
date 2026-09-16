@@ -58,7 +58,7 @@ pub enum WorkerEvent {
 }
 
 /// Builds the worker stream. Meant to run for the lifetime of the app once
-/// subscribed to -- see `crate::app::subscription`.
+/// subscribed to -- see `crate::app::subscriptions::subscription`.
 pub fn pipeline_worker() -> impl Stream<Item = WorkerEvent> {
     iced::stream::channel(100, run)
 }
@@ -317,12 +317,22 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     let debounced = DebouncedHotkeyListener::new(listener);
     let mut actions = debounced.subscribe_actions();
     let mut capture: Option<whspr_audio::CaptureHandle> = None;
+    // Captured at the moment capture STARTS (the hotkey press) -- that's
+    // the app the user is dictating into; by the time the pipeline runs
+    // focus should be unchanged, but reading it at press is the safe
+    // moment. `None` whenever `[device].active_window` is off or nothing
+    // was detected (see `crate::active_window::app_name_for`).
+    let mut capture_app_name: Option<String> = None;
 
     while let Some(action) = actions.recv().await {
         match capture_decision(action, capture.is_some()) {
             CaptureDecision::Start => match whspr_audio::start_capture() {
                 Ok(handle) => {
                     capture = Some(handle);
+                    capture_app_name = crate::active_window::app_name_for(
+                        config.device.active_window,
+                        crate::active_window::frontmost_app_name(),
+                    );
                     crate::sound::play(crate::sound::Cue::Start, config.sound.enabled);
                 }
                 Err(error) => {
@@ -334,6 +344,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                 // pipeline: the D-10 too-short-hold outcome, so an
                 // accidental tap never produces an empty transcript.
                 capture = None;
+                capture_app_name = None;
             }
             CaptureDecision::Finalize => {
                 let Some(handle) = capture.take() else {
@@ -352,6 +363,7 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
                         let embedding =
                             crate::transcribe_file::compute_embedding(&audio, &config).await;
                         let ctx = RefineContext {
+                            app_name: capture_app_name.take(),
                             instructions: Some(whspr_refine::effective_instructions(
                                 config.refine_settings.instructions.as_deref(),
                             )),
