@@ -17,6 +17,56 @@ pub fn check_license_file_present(root: &Path) -> CheckResult {
     }
 }
 
+/// Looks for a filled-in "Copyright <year> <holder>" line in `text` and
+/// returns the holder token, skipping the Apache-2.0 appendix's own unfilled
+/// boilerplate ("Copyright [yyyy] [name of copyright owner]").
+fn filled_copyright_holder(text: &str) -> Option<&str> {
+    text.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let after = trimmed.strip_prefix("Copyright")?;
+        if after.contains('[') || after.contains(']') {
+            return None; // unfilled placeholder, e.g. "[yyyy] [name ...]"
+        }
+        after
+            .split_whitespace()
+            .find(|word| !word.chars().all(|c| c.is_ascii_digit()))
+    })
+}
+
+/// Z-03: LICENSE or NOTICE carries a filled-in copyright notice, not just
+/// the Apache-2.0 appendix's unfilled "[yyyy] [name of copyright owner]"
+/// placeholder.
+///
+/// Checks NOTICE first, then falls back to LICENSE: the Apache-2.0
+/// appendix's own instructions are to attach the copyright *boilerplate to
+/// your own source files*, not to edit LICENSE itself, so idiomatic
+/// Apache-2.0 projects (this one included) keep LICENSE as the pristine,
+/// unmodified license text and put the actual copyright statement in
+/// NOTICE (Apache License v2, SS4(d)) instead. A checker that only looked
+/// at LICENSE would incorrectly fail a project that did this correctly.
+pub fn check_copyright_notice_filled(root: &Path) -> CheckResult {
+    for name in ["NOTICE", "LICENSE"] {
+        let path = root.join(name);
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(holder) = filled_copyright_holder(&content) {
+            return CheckResult::pass(
+                "Z-03",
+                format!(
+                    "{} has a filled copyright notice (holder: {holder})",
+                    path.display()
+                ),
+            );
+        }
+    }
+    CheckResult::fail(
+        "Z-03",
+        "neither NOTICE nor LICENSE has a filled 'Copyright <year> <holder>' line - only the \
+         Apache-2.0 appendix's unfilled placeholder, if anything",
+    )
+}
+
 /// A conservative allow-list of common OSI-approved / well-known SPDX
 /// license identifiers. Not exhaustive (SPDX has hundreds) - just enough
 /// to recognize the licenses a project like this would plausibly use, so
@@ -492,5 +542,41 @@ mod tests {
                 "pattern {pattern:?} should match its own planted line"
             );
         }
+    }
+
+    #[test]
+    fn filled_copyright_holder_extracts_the_holder() {
+        assert_eq!(
+            filled_copyright_holder("whspr\nCopyright 2026 Zevobla\n"),
+            Some("Zevobla")
+        );
+    }
+
+    #[test]
+    fn filled_copyright_holder_rejects_the_apache_placeholder() {
+        assert_eq!(
+            filled_copyright_holder("   Copyright [yyyy] [name of copyright owner]\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn filled_copyright_holder_returns_none_with_no_copyright_line() {
+        assert_eq!(
+            filled_copyright_holder("just some text\nno notice here\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn check_copyright_notice_filled_passes_against_this_repo() {
+        let root = crate::repo::find_repo_root().expect("repo root should be discoverable");
+        let result = check_copyright_notice_filled(&root);
+        assert_eq!(
+            result.verdict,
+            crate::report::Verdict::Pass,
+            "evidence: {}",
+            result.evidence
+        );
     }
 }
