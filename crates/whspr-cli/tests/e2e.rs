@@ -438,3 +438,13 @@ fn transcribe_help_mentions_format_flag() {
         .success()
         .stdout(predicate::str::contains("--format"));
 }
+
+#[test]
+fn transcribe_help_mentions_shorten_flag() {
+    Command::cargo_bin("whspr")
+        .unwrap()
+        .args(["transcribe", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--shorten"));
+}

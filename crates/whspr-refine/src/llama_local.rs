@@ -16,6 +16,7 @@ use crate::local_llm::{GenOpts, LocalLlm};
 /// `AnthropicRefiner`, nothing leaves the machine.
 pub struct LlamaLocal {
     llm: LocalLlm,
+    shorten: bool,
 }
 
 impl LlamaLocal {
@@ -26,7 +27,15 @@ impl LlamaLocal {
     pub fn new(model_path: impl Into<PathBuf>) -> Self {
         Self {
             llm: LocalLlm::new(model_path),
+            shorten: false,
         }
+    }
+
+    /// J-11: append the concise-mode instruction to the cleanup prompt.
+    /// Off by default; whspr-cli wires this from `[capture].shorten`.
+    pub fn with_shorten(mut self, shorten: bool) -> Self {
+        self.shorten = shorten;
+        self
     }
 }
 
@@ -34,7 +43,7 @@ impl LlamaLocal {
 impl TextRefiner for LlamaLocal {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
         let llm = self.llm.clone();
-        let prompt = build_cleanup_prompt(raw, ctx);
+        let prompt = build_cleanup_prompt(raw, ctx, self.shorten);
 
         // The primitive is synchronous and CPU-bound (a C++ library under the
         // hood), unlike the cloud refiners' awaited HTTP calls - run it on a
@@ -62,6 +71,23 @@ mod tests {
     #[tokio::test]
     async fn test_llama_local_missing_model_errors_no_panic() {
         let refiner = LlamaLocal::new("/definitely/does/not/exist.gguf");
+
+        let result = refiner
+            .refine("hello um world", &RefineContext::default())
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_llama_local_with_shorten_still_errors_cleanly_without_a_model() {
+        // No real GGUF model is available in this offline test environment
+        // (see `test_llama_local_real_model` below for the real prompt
+        // proof, guarded by WHSPR_LLAMA_TEST_MODEL); this just proves the
+        // builder wires through without panicking or changing the missing-
+        // model error path. `build_cleanup_prompt`'s own tests (in lib.rs)
+        // cover what the "Be concise" sentence actually looks like.
+        let refiner = LlamaLocal::new("/definitely/does/not/exist.gguf").with_shorten(true);
 
         let result = refiner
             .refine("hello um world", &RefineContext::default())

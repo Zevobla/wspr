@@ -113,9 +113,15 @@ fn build_asr_backend(
 /// `NormalizingRefiner`'s own doc comment: it's meant to wrap any refiner,
 /// `NoopRefiner` included, not replace one. Model IDs/paths come from
 /// `config.refine_settings` rather than being hardcoded.
+///
+/// `shorten` (J-11, resolved by the caller from `--shorten` / `[capture].
+/// shorten`) is passed to both the inner LLM backend (an extra "be concise"
+/// prompt sentence) and the outer `NormalizingRefiner` (the rule-based
+/// shorten pass) -- see each one's own `with_shorten` doc comment.
 fn build_refiner(
     config: &whspr_config::Config,
     refine_id: Option<&str>,
+    shorten: bool,
 ) -> anyhow::Result<Box<dyn TextRefiner>> {
     let choice = if let Some(id) = refine_id {
         RefineChoice::from_str(id).map_err(|e| anyhow::anyhow!("{}", e))?
@@ -129,10 +135,10 @@ fn build_refiner(
             let api_key = api_key_for(config, "openai").ok_or_else(|| {
                 anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
             })?;
-            Box::new(OpenAiRefiner::new(
-                api_key,
-                config.refine_settings.openai_model.clone(),
-            ))
+            Box::new(
+                OpenAiRefiner::new(api_key, config.refine_settings.openai_model.clone())
+                    .with_shorten(shorten),
+            )
         }
         RefineChoice::Anthropic => {
             let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
@@ -140,10 +146,10 @@ fn build_refiner(
                     "Anthropic API key not configured (set [api_keys].anthropic in config)"
                 )
             })?;
-            Box::new(AnthropicRefiner::new(
-                api_key,
-                config.refine_settings.anthropic_model.clone(),
-            ))
+            Box::new(
+                AnthropicRefiner::new(api_key, config.refine_settings.anthropic_model.clone())
+                    .with_shorten(shorten),
+            )
         }
         RefineChoice::LlamaLocal => {
             let model_path = config
@@ -157,11 +163,11 @@ fn build_refiner(
                      or fetch one for you), or pass --refine noop for no LLM cleanup"
                 )
                 })?;
-            Box::new(LlamaLocal::new(model_path))
+            Box::new(LlamaLocal::new(model_path).with_shorten(shorten))
         }
         RefineChoice::AppleFoundation => {
             if whspr_refine::apple_foundation_available() {
-                Box::new(whspr_refine::AppleFoundation::new())
+                Box::new(whspr_refine::AppleFoundation::new().with_shorten(shorten))
             } else {
                 anyhow::bail!(
                     "Apple Foundation Models is unavailable — it needs macOS 26 with Apple \
@@ -172,10 +178,9 @@ fn build_refiner(
         }
     };
 
-    Ok(Box::new(NormalizingRefiner::new(
-        inner,
-        config.normalize.clone(),
-    )))
+    Ok(Box::new(
+        NormalizingRefiner::new(inner, config.normalize.clone()).with_shorten(shorten),
+    ))
 }
 
 /// Words-per-minute from a word count and the *speech* duration (the
@@ -247,7 +252,11 @@ pub async fn run(
     asr_base_url: Option<String>,
     asr_api_key: Option<String>,
     asr_mock_text: Option<String>,
+    shorten: Option<bool>,
 ) -> anyhow::Result<()> {
+    // J-11: --shorten overrides [capture].shorten when given, like --asr
+    // overrides the configured ASR backend.
+    let shorten = shorten.unwrap_or(config.capture.shorten);
     let export_format = format
         .as_deref()
         .map(crate::subtitles::ExportFormat::from_str)
@@ -256,6 +265,13 @@ pub async fn run(
 
     eprintln!("Loading audio...");
     let audio = crate::load_audio(&file).await?;
+    // E-04: [capture].vad_threshold on top of decode_wav's own fixed-default
+    // trim, reusing the same min_keep floor that default uses.
+    let audio = whspr_audio::trim_silence(
+        &audio,
+        config.capture.vad_threshold,
+        whspr_audio::DEFAULT_MIN_KEEP_SAMPLES,
+    );
     let audio_duration_secs = audio.duration_secs();
 
     eprintln!("Building pipeline...");
@@ -266,7 +282,7 @@ pub async fn run(
         asr_api_key.as_deref(),
         asr_mock_text.as_deref(),
     )?;
-    let refiner = build_refiner(config, refine.as_deref())?;
+    let refiner = build_refiner(config, refine.as_deref(), shorten)?;
 
     let asr_id = asr_backend.id();
     let refine_id = refiner.id();
@@ -357,7 +373,7 @@ pub async fn run_batch(
         asr_api_key.as_deref(),
         None,
     )?;
-    let refiner = build_refiner(config, refine.as_deref())?;
+    let refiner = build_refiner(config, refine.as_deref(), config.capture.shorten)?;
 
     let asr_id = asr_backend.id();
     let refine_id = refiner.id();
@@ -375,6 +391,11 @@ pub async fn run_batch(
             eprintln!("Processing {}...", path.display());
             match crate::load_audio(&path).await {
                 Ok(audio) => {
+                    let audio = whspr_audio::trim_silence(
+                        &audio,
+                        config.capture.vad_threshold,
+                        whspr_audio::DEFAULT_MIN_KEEP_SAMPLES,
+                    );
                     let audio_duration_secs = audio.duration_secs();
                     let ctx = RefineContext {
                         instructions: Some(effective_instructions(
@@ -472,8 +493,8 @@ mod tests {
     fn build_refiner_noop_choice_is_wrapped_in_normalizing_refiner() {
         let config = whspr_config::Config::default();
 
-        let refiner =
-            build_refiner(&config, None).expect("default (noop) refiner should always build");
+        let refiner = build_refiner(&config, None, false)
+            .expect("default (noop) refiner should always build");
         // NormalizingRefiner::id() delegates to the inner refiner's id, so
         // this also proves the wrapping happened rather than returning the
         // bare NoopRefiner.
@@ -488,8 +509,8 @@ mod tests {
             .insert("openai".to_string(), "test-key".to_string());
         config.refine_settings.openai_model = "gpt-4o".to_string();
 
-        let refiner =
-            build_refiner(&config, Some("openai")).expect("configured api key should be enough");
+        let refiner = build_refiner(&config, Some("openai"), false)
+            .expect("configured api key should be enough");
         assert_eq!(refiner.id(), "openai");
     }
 
@@ -499,7 +520,7 @@ mod tests {
 
         // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
         // available -- match directly instead.
-        match build_refiner(&config, Some("llama-local")) {
+        match build_refiner(&config, Some("llama-local"), false) {
             Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
             Err(error) => assert!(error.to_string().contains("llama_model_path")),
         }
@@ -510,8 +531,22 @@ mod tests {
         let mut config = whspr_config::Config::default();
         config.refine_settings.llama_model_path = Some(PathBuf::from("/explicit/model.gguf"));
 
-        let refiner = build_refiner(&config, Some("llama-local"))
+        let refiner = build_refiner(&config, Some("llama-local"), false)
             .expect("an explicit llama_model_path should be enough to build");
         assert_eq!(refiner.id(), "llama-local");
+    }
+
+    #[tokio::test]
+    async fn build_refiner_shorten_true_shortens_noop_output() {
+        let config = whspr_config::Config::default();
+        let refiner =
+            build_refiner(&config, Some("noop"), true).expect("noop refiner should always build");
+
+        let result = refiner
+            .refine("it's sort of working", &RefineContext::default())
+            .await
+            .expect("refine should succeed");
+
+        assert_eq!(result, "it's working");
     }
 }
