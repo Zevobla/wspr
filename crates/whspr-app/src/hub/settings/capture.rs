@@ -44,7 +44,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
             ),
             toggle_row(
                 scheme,
-                "Detect input fields before injecting",
+                "Copy to the clipboard instead when no text field is focused (macOS)",
                 state.config.capture.input_field_detection,
                 Message::InputFieldDetectionToggled,
             ),

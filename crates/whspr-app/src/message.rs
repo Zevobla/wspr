@@ -138,8 +138,8 @@ pub enum Message {
     /// The user toggled "Auto-send at each pause while you hold the hotkey"
     /// in the Capture section (see `crate::worker`'s auto-send).
     AutoSendToggled(bool),
-    /// The user toggled "Detect input fields before injecting" in the
-    /// Capture section.
+    /// The user toggled "Copy to the clipboard instead when no text field is
+    /// focused" in the Capture section (`[capture].input_field_detection`).
     InputFieldDetectionToggled(bool),
     /// The user edited the Capture section's "Refine timeout (ms)"
     /// `text_input`. Always updates `State::refine_timeout_draft`; only
