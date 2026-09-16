@@ -207,10 +207,18 @@ pub struct Config {
     /// matching `AsrBackend::id()` / `TextRefiner::id()`), read from the
     /// config file's `[api_keys]` table.
     ///
-    /// Stored in plaintext in the config file for now. Moving these into
-    /// the OS keystore (criterion P-06) is planned for a later privacy
-    /// wave and is *not* implemented here — this field is the honest
-    /// interim placeholder. Never read from environment variables.
+    /// Stored in plaintext here, but this is now the *legacy* fallback
+    /// path (criterion P-06): the OS keystore is the primary store (see
+    /// the `secrets` module — `Keystore`, `OsKeystore`,
+    /// `SecretName::api_key`). Read a key through
+    /// [`Config::resolve_api_key`] rather than this map directly — it
+    /// checks the keystore first and only falls back here for a config
+    /// that hasn't been migrated yet.
+    /// [`Config::migrate_secrets_to_keystore`] moves entries out of this
+    /// map into the keystore and blanks them; nothing does that
+    /// automatically, so a config written before P-06 keeps using this
+    /// field until something calls it. Never read from environment
+    /// variables.
     #[serde(default)]
     pub api_keys: BTreeMap<String, String>,
     /// `WhisperLocal` (whisper-rs) settings, read from the config file's
