@@ -1,5 +1,6 @@
 //! Input-device helpers shared by the live-dictation worker and the Settings
-//! device picker.
+//! device picker: the fallback notice, which devices the picker lists, and
+//! the hotplug watcher that keeps that list current.
 
 /// The notice shown when the configured input device `name` is not
 /// connected, so recording falls back to the OS default input device. One
@@ -10,6 +11,47 @@ pub(crate) fn fallback_notice(name: &str) -> String {
     format!(
         "\u{201c}{name}\u{201d} is not connected \u{2014} recording from the default microphone instead."
     )
+}
+
+/// What the Settings input-device picker lists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DevicePicker {
+    /// Connected devices allowed by the `[device]` Bluetooth/virtual source
+    /// toggles, in host order -- plus the configured device at the end when
+    /// the filter or a disconnect would otherwise hide it.
+    pub options: Vec<String>,
+    /// Why the configured device is listed anyway, when it is.
+    pub note: Option<String>,
+}
+
+/// Builds the picker from the `connected` device names, the `configured`
+/// `[device].input_device`, and the source toggles (see
+/// `whspr_audio::filter_input_devices`). The configured device is never
+/// silently dropped: a filtered-out or disconnected selection stays listed,
+/// with a note saying which it is.
+pub(crate) fn device_picker(
+    connected: &[String],
+    configured: Option<&str>,
+    allow_bluetooth: bool,
+    allow_virtual: bool,
+) -> DevicePicker {
+    let mut options =
+        whspr_audio::filter_input_devices(connected.to_vec(), allow_bluetooth, allow_virtual);
+    let note = match configured {
+        Some(name) if !options.iter().any(|option| option == name) => {
+            options.push(name.to_string());
+            Some(if connected.iter().any(|device| device == name) {
+                format!(
+                    "\u{201c}{name}\u{201d} is hidden by the source settings above but is \
+                     still the microphone whspr records from."
+                )
+            } else {
+                fallback_notice(name)
+            })
+        }
+        _ => None,
+    };
+    DevicePicker { options, note }
 }
 
 #[cfg(test)]
