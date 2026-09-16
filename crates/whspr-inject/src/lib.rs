@@ -1,5 +1,7 @@
-//! Global hotkey listening and text injection. Implements
-//! `whspr_core::HotkeyListener` and `whspr_core::TextSink`.
+//! Global hotkey listening, text injection, and focused-field detection.
+//! Implements `whspr_core::HotkeyListener` and `whspr_core::TextSink`, and
+//! answers whether the focused element takes text
+//! ([`focused_field_is_editable`]).
 
 use global_hotkey::hotkey::Modifiers;
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
@@ -30,6 +32,7 @@ mod hotkey_windows;
 pub use hotkey_windows::GlobalHotkeyListener;
 
 pub use debounce::{DebounceAction, DebouncedHotkeyListener, HotkeyDebouncer};
+pub use focus::focused_field_is_editable;
 pub use hotkey_config::hotkey_supported;
 pub use text_sink::EnigoTextSink;
 

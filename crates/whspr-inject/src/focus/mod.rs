@@ -5,6 +5,15 @@
 
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+use macos::focused_element_traits;
+
+/// Off macOS there is no Accessibility query wired up yet, so the focused
+/// element is never known.
+#[cfg(not(target_os = "macos"))]
+fn focused_element_traits() -> Option<(Option<String>, Option<bool>)> {
+    None
+}
 
 /// Accessibility roles of text-entry controls.
 const TEXT_INPUT_ROLES: &[&str] = &["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"];
@@ -37,6 +46,22 @@ const NON_TEXT_ROLES: &[&str] = &[
     "AXProgressIndicator",
 ];
 
+/// Whether the UI element with keyboard focus accepts typed text.
+///
+/// `Some(true)` for a text-entry control, `Some(false)` for a focusable
+/// control that never takes text (a button, list, table, menu, ...), and
+/// `None` when it cannot be determined: no Accessibility permission, an
+/// Accessibility error, an element whose role says nothing either way (see
+/// [`classify_focused_element`]), or a platform other than macOS. Callers
+/// should keep their normal delivery on `None`.
+///
+/// This is a cross-process Accessibility query (bounded by a short
+/// messaging timeout), so call it off the UI thread.
+pub fn focused_field_is_editable() -> Option<bool> {
+    let (role, value_settable) = focused_element_traits()?;
+    classify_focused_element(role.as_deref(), value_settable)
+}
+
 /// Classifies the focused element from its Accessibility `role` and whether
 /// its `AXValue` is settable (`value_settable`, `None` if that query failed).
 ///
@@ -64,7 +89,7 @@ mod tests {
     #[test]
     fn focused_elements_classify_by_role_then_settable_value() {
         // (role, value settable) -> editable?
-        let cases: [((Option<&str>, Option<bool>), Option<bool>); 10] = [
+        let cases = [
             ((Some("AXTextField"), Some(true)), Some(true)),
             ((Some("AXTextArea"), Some(false)), Some(true)),
             ((Some("AXComboBox"), None), Some(true)),
