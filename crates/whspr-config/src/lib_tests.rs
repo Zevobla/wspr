@@ -4,11 +4,26 @@ use super::*;
 use std::io::Write;
 
 #[test]
-fn load_returns_defaults() {
-    let cfg = load();
+fn load_from_tempdir_returns_defaults_and_writes_config() {
+    // Regression test for the old `load_returns_defaults`, which called
+    // the real `load()` and so read (and first-run-wrote) the developer's
+    // actual platform config dir -- a test with side effects on the
+    // user's home, and one that silently inherited whatever non-default
+    // settings (e.g. `refine = "llama-local"`) happened to be there. This
+    // exercises the same defaults-on-first-run behavior through the
+    // testable `load_from`, pointed at an isolated tempdir instead.
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let config_path = temp_dir.path().join("config.toml");
+
+    let cfg = load_from(Some(temp_dir.path()));
     assert_eq!(cfg.asr, AsrChoice::WhisperLocal);
     assert_eq!(cfg.refine, RefineChoice::Noop);
     assert_eq!(cfg.language, None);
+
+    assert!(
+        config_path.is_file(),
+        "load_from should persist the first-run defaults to config.toml"
+    );
 }
 
 #[test]
