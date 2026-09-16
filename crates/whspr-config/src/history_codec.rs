@@ -126,4 +126,22 @@ mod tests {
         );
         assert_eq!(decode_line("   ", Some(&KEY)).unwrap(), None);
     }
+
+    #[test]
+    fn every_encoding_uses_a_fresh_nonce() {
+        let first = encode_line(JSON, &KEY);
+        let second = encode_line(JSON, &KEY);
+        assert_ne!(first, second);
+        let nonce = |line: &str| {
+            line[ENCRYPTED_PREFIX.len()..ENCRYPTED_PREFIX.len() + 2 * NONCE_LEN].to_string()
+        };
+        assert_ne!(nonce(&first), nonce(&second));
+    }
+
+    #[test]
+    fn malformed_encrypted_lines_are_errors_not_panics() {
+        for line in ["enc1:", "enc1:zz", "enc1:abc", "enc1:00ff"] {
+            assert!(decode_line(line, Some(&KEY)).is_err(), "{line}");
+        }
+    }
 }
