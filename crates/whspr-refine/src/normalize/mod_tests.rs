@@ -356,3 +356,39 @@ fn normalizing_refiner_id_delegates_to_inner() {
     let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
     assert_eq!(refiner.id(), "echo");
 }
+
+#[tokio::test]
+async fn normalizing_refiner_shorten_toggle() {
+    // "sort of"/"kind of" aren't touched by any other pass here, so
+    // this is a clean toggle probe: off is a no-op, on removes both.
+    let text = "it's sort of working and kind of tired";
+    let off = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default());
+    let on = NormalizingRefiner::new(Box::new(EchoRefiner), NormalizeSettings::default())
+        .with_shorten(true);
+    assert_eq!(
+        off.refine(text, &RefineContext::default()).await.unwrap(),
+        text
+    );
+    assert_eq!(
+        on.refine(text, &RefineContext::default()).await.unwrap(),
+        "it's working and tired"
+    );
+}
+
+#[tokio::test]
+async fn normalizing_refiner_shorten_runs_after_macros_not_before() {
+    // "kind of" is a `shorten` filler phrase; if shorten ran before
+    // macro expansion it would strip "kind of" out of this trigger and
+    // the macro below would never match -- proves the documented order.
+    let mut settings = NormalizeSettings::default();
+    settings.macros.insert(
+        "call kind of urgent".to_string(),
+        "lua: return 'DONE'".to_string(),
+    );
+    let refiner = NormalizingRefiner::new(Box::new(EchoRefiner), settings).with_shorten(true);
+    let result = refiner
+        .refine("call kind of urgent please", &RefineContext::default())
+        .await
+        .expect("refine should succeed");
+    assert_eq!(result, "DONE please");
+}
