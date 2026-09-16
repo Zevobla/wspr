@@ -25,15 +25,42 @@ pub trait Keystore: Send + Sync {
     fn set(&self, name: &str, value: &str) -> Result<()>;
     /// Removes a secret by name. Deleting an absent entry is not an error.
     fn delete(&self, name: &str) -> Result<()>;
+
+    /// Whether values written here survive an app restart *and* a reboot.
+    /// Moving a secret out of `config.toml` into a store that forgets it
+    /// would silently lose the user's API keys (and make encrypted history
+    /// unreadable), so [`crate::Config::migrate_secrets_to_keystore`] and
+    /// [`super::history_key`] refuse to run against a store that answers
+    /// `false`. Defaults to `true`; stores that know better override it.
+    fn is_persistent(&self) -> bool {
+        true
+    }
 }
 
-/// An in-process, non-persistent [`Keystore`] double for tests -- and for
-/// any environment where the platform keychain plain doesn't exist (e.g. a
-/// CI runner with no Secret Service session). Values live only as long as
-/// this struct does and never touch the OS.
+/// An in-process [`Keystore`] double for tests -- and for any environment
+/// where the platform keychain doesn't exist (e.g. a CI runner with no
+/// Secret Service session). Values live only as long as this struct does
+/// and never touch the OS.
+///
+/// [`MemoryKeystore::default`] *simulates* a persistent keychain
+/// ([`Keystore::is_persistent`] is `true`) so migration and history-key
+/// logic can be exercised; [`MemoryKeystore::non_persistent`] simulates a
+/// store that forgets on reboot, to test the refusal paths.
 #[derive(Debug, Default)]
 pub struct MemoryKeystore {
     values: Mutex<HashMap<String, String>>,
+    non_persistent: bool,
+}
+
+impl MemoryKeystore {
+    /// A memory keystore that reports [`Keystore::is_persistent`] as
+    /// `false`, like a platform backend that loses entries on reboot.
+    pub fn non_persistent() -> Self {
+        Self {
+            non_persistent: true,
+            ..Self::default()
+        }
+    }
 }
 
 impl Keystore for MemoryKeystore {
@@ -60,6 +87,10 @@ impl Keystore for MemoryKeystore {
             .expect("MemoryKeystore mutex poisoned")
             .remove(name);
         Ok(())
+    }
+
+    fn is_persistent(&self) -> bool {
+        !self.non_persistent
     }
 }
 
@@ -100,6 +131,16 @@ mod tests {
     fn delete_of_an_absent_entry_is_not_an_error() {
         let ks = MemoryKeystore::default();
         assert!(ks.delete("nope").is_ok());
+    }
+
+    #[test]
+    fn default_memory_keystore_simulates_a_persistent_store() {
+        assert!(MemoryKeystore::default().is_persistent());
+    }
+
+    #[test]
+    fn non_persistent_memory_keystore_says_so() {
+        assert!(!MemoryKeystore::non_persistent().is_persistent());
     }
 
     #[test]

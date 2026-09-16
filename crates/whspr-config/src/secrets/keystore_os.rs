@@ -13,10 +13,12 @@ use super::Keystore;
 /// platform keychain.
 const SERVICE: &str = "whspr";
 
-/// The real, OS-native keystore: the macOS Keychain, Windows Credential
-/// Manager, or the Linux Secret Service / kernel keyutils (whichever the
-/// `keyring` crate's compiled-in native backends resolve to on this
-/// platform), under the service name `"whspr"`.
+/// The real, OS-native keystore under the service name `"whspr"`: the
+/// macOS Keychain or the Windows Credential Manager, both persistent. On
+/// Linux the compiled-in `keyring` backend is kernel keyutils, which does
+/// **not** survive a reboot, and on any other platform `keyring` falls back
+/// to an in-memory mock -- so [`Keystore::is_persistent`] is `false` there
+/// and callers keep secrets in `config.toml` instead.
 #[derive(Debug, Default)]
 pub struct OsKeystore;
 
@@ -53,5 +55,27 @@ impl Keystore for OsKeystore {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(WhsprError::Config(format!("keystore delete {name}: {e}"))),
         }
+    }
+
+    fn is_persistent(&self) -> bool {
+        os_keystore_is_persistent()
+    }
+}
+
+/// `true` only on the platforms whose compiled-in `keyring` backend is a
+/// real, reboot-surviving credential store (see [`OsKeystore`]'s doc).
+fn os_keystore_is_persistent() -> bool {
+    cfg!(any(target_os = "macos", target_os = "ios", target_os = "windows"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pure platform check -- never touches the real keychain.
+    #[test]
+    fn os_keystore_persistence_matches_the_platform_backend() {
+        let expected = cfg!(any(target_os = "macos", target_os = "ios", target_os = "windows"));
+        assert_eq!(OsKeystore::new().is_persistent(), expected);
     }
 }
