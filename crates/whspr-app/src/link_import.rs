@@ -315,6 +315,7 @@ fn start_import(state: &mut State) -> Task<Message> {
     let clip = parse_clip_range(&li.clip_start, &li.clip_end);
     let cookies = cookies_from(&state.config);
     let config = state.config.clone();
+    let secrets = state.keystore.clone();
 
     if let Some(li) = state.link_import.as_mut() {
         li.error = None;
@@ -358,7 +359,7 @@ fn start_import(state: &mut State) -> Task<Message> {
                     whspr_import::download_to_audio(&url, clip, cookies, Some(dl_tx))
                         .await
                         .map_err(|e| e.to_string())?;
-                let asr = crate::worker::build_asr_backend(&config)?;
+                let asr = crate::worker::build_asr_backend(&config, secrets.keystore())?;
                 let language =
                     whspr_config::effective_language(&config.language_settings, &config.language);
                 let opts = whspr_core::AsrOptions {
@@ -417,7 +418,7 @@ fn start_transcribe_to_dictate(state: &mut State) -> Task<Message> {
     state.transcribe_status = Some(format!("Transcribing {title}\u{2026}"));
 
     Task::perform(
-        crate::transcribe_url::run_transcribe_url(url, cookies, config),
+        crate::transcribe_url::run_transcribe_url(url, cookies, config, state.keystore.clone()),
         Message::FileTranscribed,
     )
 }

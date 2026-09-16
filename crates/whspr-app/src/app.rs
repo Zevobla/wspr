@@ -270,7 +270,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.transcribe_status = Some(format!("Transcribing {}...", path.display()));
             state.transcribed_text = None;
             Task::perform(
-                crate::transcribe_file::run_transcribe(path, state.config.clone()),
+                crate::transcribe_file::run_transcribe(
+                    path,
+                    state.config.clone(),
+                    state.keystore.clone(),
+                ),
                 Message::FileTranscribed,
             )
         }
@@ -305,6 +309,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                             crate::transcribe_file::run_transcribe_audio(
                                 audio,
                                 state.config.clone(),
+                                state.keystore.clone(),
                             ),
                             Message::FileTranscribed,
                         )
