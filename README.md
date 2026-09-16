@@ -231,10 +231,11 @@ nix build          # builds ./result/bin/whspr
 
 ```sh
 nix develop                                        # dev shell: Rust toolchain + ffmpeg/whisper.cpp/llama.cpp/cmake/clang
-cargo build --workspace                             # builds all 8 crates
-cargo test --workspace                              # pipeline + config + CLI e2e tests
+cargo build --workspace                             # builds all 15 crates
+cargo test --workspace                              # pipeline + config + CLI/diarize e2e tests
+cargo run -p whspr-check                            # the acceptance gate (should report 0 fail)
 cargo run -p whspr-cli -- --version                 # -> whspr 0.1.0
-cargo run -p whspr-cli -- transcribe path/to/file    # runs the pipeline end-to-end; prints a mock transcript today
+cargo run -p whspr-cli -- transcribe path/to/file.wav --asr mock  # runs the real pipeline end-to-end; --asr mock needs no model file configured
 nix flake check                                     # builds whspr-cli (release) + runs the full test suite in a sandbox
 ```
 
@@ -248,16 +249,16 @@ listed here so you know what's actually needed if you set up a toolchain by
 hand:
 
 - Rust (edition 2021; pinned via [fenix](https://github.com/nix-community/fenix) in the flake)
-- `ffmpeg`, `whisper-cpp`, `llama-cpp` — not linked by any crate yet, but
-  declared up front so the asr/audio/refine work doesn't need flake changes
-  later
-- `cmake`, `clang`/`libclang` — needed once `whisper-rs` / `llama-cpp-2` are
-  wired in (they compile native C/C++ via cmake and generate bindings via
-  bindgen)
+- `ffmpeg` — shelled out to by `whspr-import`'s media-download path (alongside `yt-dlp`)
+- `cmake`, `clang`/`libclang` — build whisper.cpp/llama.cpp's native C/C++ trees and generate their bindgen bindings
+- whisper.cpp / llama.cpp / sherpa-onnx — linked via `whisper-rs`, `llama-cpp-2`, and `sherpa-rs` respectively (`whspr-asr`, `whspr-refine`, `whspr-diarize`); sherpa-onnx ships no prebuilt native library on aarch64-windows
 - On Linux: `alsa-lib`, `libxkbcommon`, `wayland`, `vulkan-loader`, `libGL`
-  (for audio capture and the planned `iced` GUI)
+  (for audio capture and the `iced` GUI)
 - On macOS: the unified `apple-sdk` package (AudioUnit, CoreAudio, AppKit,
   Metal, etc.)
+- `typst` (optional, system binary, not provisioned by the flake) — only
+  needed for the Hub's Note desk "Export PDF" action; `.typ` export needs
+  nothing extra
 
 ## Settings
 
