@@ -17,10 +17,17 @@ pub struct HuggingFaceSettings {
     /// The OAuth access token from a completed browser sign-in (or a token
     /// the user pasted in). Used as the bearer token for downloads.
     ///
-    /// Stored in plaintext, mirroring the existing `[api_keys]` precedent
-    /// (see `Config::api_keys`). Moving it into the OS keystore (criterion
-    /// P-06) is a planned follow-up, not done here. Never read from an
-    /// environment variable.
+    /// Stored in plaintext here, mirroring the existing `[api_keys]`
+    /// precedent (see `Config::api_keys`) -- and, like that field, this is
+    /// now the *legacy* fallback path (criterion P-06): the OS keystore is
+    /// the primary store, under `SecretName::HF_TOKEN` (see the `secrets`
+    /// module). Read the token through
+    /// [`Config::resolve_hf_token`](crate::Config::resolve_hf_token)
+    /// rather than this field directly — it checks the keystore first and
+    /// only falls back here for a config that hasn't been migrated yet
+    /// via
+    /// [`Config::migrate_secrets_to_keystore`](crate::Config::migrate_secrets_to_keystore).
+    /// Never read from an environment variable.
     pub token: Option<String>,
     /// Directory downloaded model files are placed in (a flat directory of
     /// `ggml-*.bin` files; see `whspr_hf::installed`). `None` means the GUI

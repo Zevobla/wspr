@@ -12,6 +12,13 @@ directories.workspace = true
 toml.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
+# OS keystore for API keys / the HF token / the history-encryption key (P-06).
+keyring.workspace = true
+# AEAD crate; only used here for its `OsRng` re-export to generate the
+# random history-encryption key (see `secrets::history_key`). The actual
+# encryption/decryption of history entries is the app team's job, not
+# whspr-config's.
+chacha20poly1305.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
