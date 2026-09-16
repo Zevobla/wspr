@@ -35,6 +35,7 @@ use whspr_inject::{DebouncedHotkeyListener, GlobalHotkeyListener};
 mod auto_send;
 mod backends;
 mod capture_plan;
+mod delivery;
 mod hotkey_decision;
 mod preroll;
 mod processor;
