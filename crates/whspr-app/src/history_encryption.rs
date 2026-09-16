@@ -341,4 +341,48 @@ mod tests {
             "{\"text\":\"dictated\"}\n"
         );
     }
+
+    #[test]
+    fn boot_loads_encrypted_history_and_reports_skipped_lines() {
+        let keystore = whspr_config::MemoryKeystore::default();
+        let key = whspr_config::history_key(&keystore).expect("persistent keystore");
+        let foreign = encode_line("{\"text\":\"other key\"}", &[9; 32]);
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = history_file(
+            &dir,
+            &format!(
+                "{}\n{{\"text\":\"plain\"}}\n{foreign}\n",
+                encode_line("{\"text\":\"secret\"}", &key)
+            ),
+        );
+        let mut state = state_with(keystore);
+        state.config.privacy.history_encryption = true;
+
+        load_history_at(&mut state, Some(&path));
+
+        let texts: Vec<&str> = state.history.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(texts, vec!["secret", "plain"]);
+        assert_eq!(
+            state.history_key.as_ref().map(HistoryKey::bytes),
+            Some(&key)
+        );
+        assert_eq!(
+            state.notice.as_deref(),
+            Some("1 history entries could not be decrypted and were skipped.")
+        );
+    }
+
+    #[test]
+    fn boot_without_a_usable_key_explains_and_keeps_new_entries_in_memory() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = history_file(&dir, "{\"text\":\"plain\"}\n");
+        let mut state = state_with(whspr_config::MemoryKeystore::non_persistent());
+        state.config.privacy.history_encryption = true;
+
+        load_history_at(&mut state, Some(&path));
+
+        assert_eq!(state.history.len(), 1);
+        assert!(state.history_key.is_none());
+        assert!(state.history_note.is_some());
+    }
 }
