@@ -122,4 +122,29 @@ mod tests {
         assert!(opts.noise_suppression);
         assert_eq!(opts.preroll, vec![0.25; 4]);
     }
+
+    /// Half a second of silence, half a second of a loud tone, half a second
+    /// of silence, at 16 kHz.
+    fn padded_tone() -> AudioBuffer {
+        let mut samples = vec![0.0; 8000];
+        samples.extend((0..8000).map(|i| if i % 2 == 0 { 0.5 } else { -0.5 }));
+        samples.extend(vec![0.0; 8000]);
+        AudioBuffer::new(samples, 16000)
+    }
+
+    #[test]
+    fn trim_captured_drops_the_silent_padding() {
+        let config = Config::default();
+        let trimmed = trim_captured(&padded_tone(), &config);
+        assert_eq!(trimmed.samples.len(), 8000);
+    }
+
+    #[test]
+    fn trim_captured_keeps_a_clip_quieter_than_the_threshold_whole() {
+        let mut config = Config::default();
+        config.capture.vad_threshold = 0.9;
+        let audio = padded_tone();
+        let trimmed = trim_captured(&audio, &config);
+        assert_eq!(trimmed.samples.len(), audio.samples.len());
+    }
 }
