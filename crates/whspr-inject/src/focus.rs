@@ -53,3 +53,32 @@ fn classify_focused_element(role: Option<&str>, value_settable: Option<bool>) ->
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focused_elements_classify_by_role_then_settable_value() {
+        // (role, value settable) -> editable?
+        let cases: [((Option<&str>, Option<bool>), Option<bool>); 10] = [
+            ((Some("AXTextField"), Some(true)), Some(true)),
+            ((Some("AXTextArea"), Some(false)), Some(true)),
+            ((Some("AXComboBox"), None), Some(true)),
+            ((Some("AXSearchField"), Some(true)), Some(true)),
+            ((Some("AXButton"), Some(false)), Some(false)),
+            ((Some("AXSlider"), Some(true)), Some(false)),
+            ((Some("AXOutline"), None), Some(false)),
+            ((Some("AXGroup"), Some(true)), Some(true)),
+            ((Some("AXWebArea"), Some(false)), None),
+            ((None, None), None),
+        ];
+        for ((role, settable), expected) in cases {
+            assert_eq!(
+                classify_focused_element(role, settable),
+                expected,
+                "role={role:?} settable={settable:?}"
+            );
+        }
+    }
+}
