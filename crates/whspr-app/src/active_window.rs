@@ -43,3 +43,16 @@ pub fn frontmost_app_name() -> Option<String> {
 pub fn frontmost_app_name() -> Option<String> {
     None
 }
+
+/// Whether to attach the frontmost app's name to a dictation's
+/// `RefineContext`, per the user's `[device].active_window` setting.
+/// Returns `None` whenever the setting is off, regardless of what was
+/// detected -- pulled out as a pure fn so this on/off decision is
+/// unit-testable without a real `NSWorkspace` call.
+pub(crate) fn app_name_for(enabled: bool, detected: Option<String>) -> Option<String> {
+    if enabled {
+        detected
+    } else {
+        None
+    }
+}
