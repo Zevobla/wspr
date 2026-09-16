@@ -79,6 +79,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
 
     results.push(config::check_config_created_on_first_run());
     results.push(config::check_config_format_is_toml());
+    results.push(config::check_config_sections());
     results.push(config::check_config_in_platform_dir(root));
 
     results.push(slop::check_stub_function_count(root));

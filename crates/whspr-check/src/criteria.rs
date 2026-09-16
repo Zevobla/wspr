@@ -315,6 +315,11 @@ pub const CATALOG: &[Criterion] = &[
         title: "Config file format is TOML",
     },
     Criterion {
+        id: "B-05",
+        group: "B",
+        title: "Default config contains all required sections/keys",
+    },
+    Criterion {
         id: "B-14",
         group: "B",
         title: "Config lives in the platform config directory",
