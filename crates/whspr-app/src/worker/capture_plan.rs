@@ -6,6 +6,7 @@
 
 use whspr_audio::CaptureOptions;
 use whspr_config::Config;
+use whspr_core::AudioBuffer;
 
 /// The input device a capture should open, after checking the configured
 /// name against the devices actually connected.
@@ -58,6 +59,18 @@ pub(super) fn capture_options(
         noise_suppression: config.capture.noise_suppression,
         preroll,
     }
+}
+
+/// Trims leading and trailing silence off a finished clip, classifying
+/// silence with the user's `[capture].vad_threshold` and never shrinking
+/// below `whspr_audio::DEFAULT_MIN_KEEP_SAMPLES` (so a quiet clip is handed
+/// on unchanged rather than emptied).
+pub(super) fn trim_captured(audio: &AudioBuffer, config: &Config) -> AudioBuffer {
+    whspr_audio::trim_silence(
+        audio,
+        config.capture.vad_threshold,
+        whspr_audio::DEFAULT_MIN_KEEP_SAMPLES,
+    )
 }
 
 #[cfg(test)]
