@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use whspr_config::history_codec::{decode_line, encode_line};
 
+use crate::history_encryption::{history_write, HistoryWrite};
+
 /// One completed transcription, either read from the on-disk history file
 /// or appended in-memory as pipeline runs complete during this session.
 #[derive(Debug, Clone, PartialEq)]
@@ -175,6 +177,9 @@ pub fn record_completed(
 /// [`record_completed`]'s logic, writing to `path` (or skipping the disk
 /// write entirely if `None`, e.g. the platform data dir couldn't be
 /// determined) instead of always resolving the real platform history file.
+/// The line is encrypted while `[privacy].history_encryption` is on, and
+/// kept in memory only if that setting is on but its key is unavailable
+/// (see `crate::history_encryption::history_write`).
 /// A blank/whitespace-only transcript (e.g. silence) is skipped entirely,
 /// in memory and on disk, rather than adding an empty row. A write failure
 /// is logged, not fatal -- the entry still lands in `state.history` so the
@@ -195,7 +200,19 @@ fn record_completed_at(
         speaker_id,
     };
     if let Some(path) = path {
-        if let Err(e) = append_history_entry(path, &entry, None) {
+        let key = match history_write(
+            state.config.privacy.history_encryption,
+            state.history_key.as_ref(),
+        ) {
+            HistoryWrite::Plain => None,
+            HistoryWrite::Encrypted(key) => Some(key),
+            HistoryWrite::MemoryOnly => {
+                tracing::warn!("history encryption key unavailable; entry kept in memory only");
+                state.history.push(entry);
+                return;
+            }
+        };
+        if let Err(e) = append_history_entry(path, &entry, key) {
             eprintln!("whspr: failed to save history entry: {e}");
         }
     }
