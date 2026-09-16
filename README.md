@@ -14,33 +14,91 @@ below is aspirational unless it's explicitly marked "planned."
 
 **Works today**
 
-- A compiling, tested 8-crate Cargo workspace (`cargo build --workspace` /
-  `cargo test --workspace`, all green).
-- `whspr-core`: the domain types, the four backend traits (`AsrBackend`,
-  `TextRefiner`, `HotkeyListener`, `TextSink`), and the `Pipeline`
-  orchestrator (transcribe → refine → inject) are real, with passing unit
-  tests.
-- `whspr-cli` (the `whspr` binary): `whspr --version`, and
-  `whspr transcribe <FILE>`, which runs the **real** `Pipeline` end-to-end —
-  but currently against a **mock** ASR backend and a no-op refiner. It does
-  not read or transcribe your audio file yet; it always returns a canned
-  transcript. This exists to prove the pipeline wiring and give the project
-  a real, testable end-to-end path before real backends land.
-- `whspr-config`: `Config`, `AsrChoice`, `RefineChoice` types exist and
-  `load()` returns their defaults. No file-based config yet — see Settings
-  below.
-- `whspr-asr`: `WhisperLocal` (local whisper.cpp via `whisper-rs`),
-  `OpenAiAsr`, and `DeepgramAsr` are real, tested `AsrBackend`
-  implementations — not stubs.
-- `whspr-refine`: `NoopRefiner` (pass raw text through unchanged, the
-  default), `OpenAiRefiner`, `AnthropicRefiner`, and `LlamaLocal` (local
-  llama.cpp via `llama-cpp-2`) are all real, tested `TextRefiner`
-  implementations.
-- `whspr-audio`: mic capture, WAV decoding, resampling to 16kHz mono, and
-  silence trimming are real and exercised by the real pipeline.
+- A compiling, tested 15-crate Cargo workspace (`cargo build --workspace` /
+  `cargo test --workspace`, all green; `cargo run -p whspr-check` is the
+  automated acceptance gate all of this is held to).
+- `whspr-core`: the domain types, the five backend traits (`AsrBackend`,
+  `TextRefiner`, `HotkeyListener`, `TextSink`, `Diarizer`), and the
+  `Pipeline` orchestrator (transcribe → refine → inject) are real, with
+  passing unit tests.
+- `whspr-cli` (the `whspr` binary): `whspr transcribe <FILE>` runs the
+  **real** `Pipeline` end-to-end against a **real** ASR backend — the
+  no-flag default is `WhisperLocal` (local whisper.cpp via `whisper-rs`),
+  which reads `[whisper].model_path` (or the `WHISPER_MODEL_PATH`
+  environment variable) for a GGML model file you've downloaded — whspr is
+  bring-your-own-model and never ships or fetches one for you.
+  `--asr openai` / `--asr deepgram` / `--asr apple-speech` (macOS on-device)
+  select cloud/on-device backends instead; `--asr mock` is an explicit,
+  documented opt-in to a canned transcript, used by the test suite and
+  `whspr-check` so neither needs a real model file on disk. `--refine`
+  works the same way (`noop` / `openai` / `anthropic` / `llama-local` /
+  `apple-foundation`). Also real: `transcribe-batch` (a directory of .wav
+  files), `diarize` (speaker fingerprinting, see below), `stats`
+  (per-utterance history), `uninstall`, and SRT/VTT subtitle export
+  (`--format srt|vtt`; see `crates/whspr-cli/src/subtitles.rs`).
+- `whspr-config`: `Config` loads from `config.toml` in the platform config
+  directory (e.g. `~/.config/whspr/config.toml` on Linux), overlaid on
+  compiled-in defaults, and writes those defaults out on first run so
+  there's a real, editable file waiting for the user. The config file is
+  the *only* override mechanism — no environment variables, by design. See
+  Settings below.
+- `whspr-asr`: `WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`, and (macOS only)
+  `AppleSpeech` (the OS's on-device `SFSpeechRecognizer`) are real, tested
+  `AsrBackend` implementations.
+- `whspr-refine`: `NoopRefiner` (pass text through unchanged, the default),
+  `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal` (local llama.cpp via
+  `llama-cpp-2`), and (macOS 26+ with Apple Intelligence, when built with
+  the shim) `AppleFoundation` are all real, tested `TextRefiner`
+  implementations. Every choice is wrapped in a `NormalizingRefiner`
+  decorator that layers rule-based number/date/time normalization, a
+  macro/dictionary substitution table (including a sandboxed LuaJIT
+  scripting layer for `lua:`-prefixed macros), dedup, and paragraph breaks
+  on top.
+- `whspr-audio`: mic capture (device enumeration/selection), WAV decoding,
+  resampling to 16kHz mono, and RMS-energy-based leading/trailing silence
+  trimming are real and exercised by the real pipeline. A `PrerollBuffer`
+  ring buffer (pre-trigger sample retention, E-10) is implemented and
+  unit-tested, but not yet wired into the live hotkey-capture path — see
+  Planned.
 - `whspr-inject`: the global hotkey listener and text injection
-  (clipboard-paste-first, with debounce and clipboard save/restore) are
-  real `HotkeyListener`/`TextSink` implementations.
+  (clipboard-paste-first, with a synthetic-typing fallback, debounce, and
+  clipboard save/restore) are real `HotkeyListener`/`TextSink`
+  implementations.
+- `whspr-diarize` + speaker fingerprinting: a real, tested, bring-your-own-
+  model diarization backend — see "Original feature: speaker
+  fingerprinting" below.
+- `whspr-app`: a real, ~14,000-line `iced` 0.14 desktop GUI — not a
+  placeholder. The Hub has Dictate / History / Speakers / Models
+  (HuggingFace download via `whspr-hf`) / Settings / Note desk / link
+  import (`whspr-import`: yt-dlp + ffmpeg) screens, a system tray
+  (macOS/Windows), a background worker running the real hotkey → mic
+  capture → `Pipeline` → inject loop, hotkey rebinding, close-to-tray,
+  sound cues, log rotation, and a headless screenshot dev path.
+- `whspr-hf`: the in-app HuggingFace client (browser OAuth sign-in, browse
+  a curated whisper.cpp model set with a "fits your machine" badge,
+  download, list installed) the Models tab uses to point
+  `whisper.model_path` at a real file without hand-editing config.
+- `whspr-import`: media-import orchestration — shells out to `yt-dlp`/
+  `ffmpeg` to pull published captions instantly, or download audio and
+  transcribe it, from a URL (a lecture, podcast, or video).
+- `whspr-typst`: a real, tested library that renders structured notes to a
+  Typst document, an SVG preview, and a PDF export — but it's not yet
+  wired into `whspr-app`; no crate in the workspace depends on it. The
+  Hub's Note desk handles its own export separately (see Planned).
+- `whspr-setup`: a standalone Windows installer — a real `iced` GUI
+  (Install → Installing → Done, with a Failure state) that performs a
+  genuine per-user install (copies an embedded app payload into
+  `%LOCALAPPDATA%\whspr`, creates Start-menu/Desktop shortcuts, writes the
+  autostart registry value). It also builds and renders on macOS (a no-op
+  install path) so the shared UI stays testable everywhere. See
+  `docs/RELEASING.md` for how (and whether) it ships today.
+- `whspr-bench`: a CLI that benchmarks ASR backends (e.g. `WhisperLocal`
+  vs `MockAsr`) over a set of audio fixtures.
+- `whspr-check`: an independent acceptance checker
+  (`cargo run -p whspr-check`) that scores this repo against a curated
+  subset of the project's acceptance criteria — the gate every claim in
+  this README is held to. It only ever reports PASS for something it
+  actually verified.
 - A Nix flake: `nix develop` gives a working dev shell (Rust toolchain,
   ffmpeg, whisper.cpp, llama.cpp, cmake/clang + libclang for bindgen);
   `nix build` builds the `whspr` binary; `nix flake check` builds it in
@@ -48,13 +106,37 @@ below is aspirational unless it's explicitly marked "planned."
 
 **Planned / not yet implemented**
 
-- Wiring `whspr-cli`'s `--asr` / `--refine` flags to actually select a
-  backend (they're accepted today but ignored — every run uses the mock
-  pipeline).
-- On-disk config file loading (`whspr-config::load()` always returns
-  defaults today; no file discovery, no env overrides yet).
-- The GUI (`whspr-app`): currently a placeholder binary that prints
-  `whspr gui (todo)` and exits. No window, no Hub, no Flow Bar yet.
+- A cluster of Settings toggles are persisted in `config.toml` and
+  editable in the Hub, but nothing reads them yet — toggling them changes
+  nothing about capture/device/privacy behavior today: `[capture]`
+  `auto_send`, `input_field_detection`, `input_gain`, `noise_suppression`,
+  `shorten`, `vad_threshold`; `[device]` `bluetooth_source`,
+  `device_hotplug`, `tray_static`, `virtual_source`, `active_window`;
+  `[privacy]` `history_encryption`, `mic_privacy`. See the Status column
+  in Settings below for the full, verified list.
+- `whspr-audio`'s `PrerollBuffer` (pre-trigger sample retention, E-10) is
+  implemented and unit-tested but not called from the live hotkey-capture
+  path, so the very first instant of speech can still be clipped in
+  practice.
+- `whspr-typst` (Typst/SVG/PDF rendering library) has no caller anywhere
+  in the workspace. The Hub's Note desk exports notes itself, via
+  `whspr-app`'s own `note_export.rs`: `.typ` source directly, or a PDF by
+  shelling out to the system `typst compile` binary (`typst` must be
+  installed and on `PATH` — there's no in-process PDF renderer wired up
+  yet).
+- Linux system tray (the tray module is implemented for macOS/Windows
+  only; see `crates/whspr-app/src/tray.rs`'s module doc for why).
+- Signed/notarized macOS releases — the release workflow supports it, but
+  ships **unsigned** until signing secrets are configured (see
+  `docs/RELEASING.md`).
+- Windows CI (`.github/workflows/windows.yml`) and both Windows release
+  jobs are authored but **dormant** — they can't run until GitHub Actions
+  billing is restored on this repo (see `docs/RELEASING.md`).
+- Speaker diarization on aarch64-windows: `sherpa-rs` ships no prebuilt
+  native library there, so `SherpaDiarizer::new` returns an honest
+  "unavailable" error on that target instead of degrading silently.
+- Moving `[api_keys]` / `huggingface.token` out of plaintext config into
+  the OS keystore (criterion P-06).
 
 ## Architecture
 
