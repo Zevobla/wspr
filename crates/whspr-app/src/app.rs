@@ -308,8 +308,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     None => Task::none(),
                 }
             } else {
-                // Start capturing from the selected input device.
-                match whspr_audio::start_capture_on_device(state.selected_device.as_deref()) {
+                // Start capturing from the selected input device, with the
+                // same gain/noise-suppression settings as the hotkey path.
+                let options = crate::worker::capture_options(
+                    &state.config,
+                    state.selected_device.clone(),
+                    Vec::new(),
+                );
+                match whspr_audio::start_capture_with(options) {
                     Ok(handle) => {
                         RECORDER.with(|r| *r.borrow_mut() = Some(handle));
                         state.is_recording = true;

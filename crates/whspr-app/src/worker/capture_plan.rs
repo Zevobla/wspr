@@ -48,7 +48,7 @@ pub(super) fn resolve_device(configured: Option<&str>, available: &[String]) -> 
 /// `[capture].noise_suppression` straight from `config`, plus `preroll` (16 kHz
 /// mono samples an idle monitor kept from just before the hotkey press;
 /// empty when there is none).
-pub(super) fn capture_options(
+pub(crate) fn capture_options(
     config: &Config,
     device: Option<String>,
     preroll: Vec<f32>,

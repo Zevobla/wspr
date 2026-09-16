@@ -40,6 +40,7 @@ mod processor;
 mod session;
 
 pub(crate) use backends::{build_asr_backend, build_refiner};
+pub(crate) use capture_plan::capture_options;
 use session::Session;
 
 /// Events the worker reports back to the iced app.
