@@ -144,3 +144,30 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
     }
     Task::none()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unplugging_the_configured_device_updates_the_list_and_warns() {
+        let mut config = whspr_config::Config::default();
+        config.device.input_device = Some("USB Mic".to_string());
+        let mut state = State::new(config);
+        state.input_devices = vec!["Built-in Microphone".to_string(), "USB Mic".to_string()];
+
+        let _ = update(
+            &mut state,
+            Message::InputDevicesChanged(whspr_audio::DeviceChange {
+                added: vec![],
+                removed: vec!["USB Mic".to_string()],
+            }),
+        );
+
+        assert_eq!(state.input_devices, vec!["Built-in Microphone".to_string()]);
+        assert_eq!(
+            state.notice,
+            Some(crate::devices::fallback_notice("USB Mic"))
+        );
+    }
+}
