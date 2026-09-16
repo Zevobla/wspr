@@ -20,6 +20,7 @@ mod note_desk;
 mod note_export;
 mod screen;
 mod screenshot;
+mod secret_store;
 mod sound;
 mod speakers;
 mod state;
