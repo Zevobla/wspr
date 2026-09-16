@@ -57,7 +57,7 @@ pub fn run() -> iced::Result {
 fn boot() -> (State, Task<Message>) {
     let config = whspr_config::load();
     let mut state = State::new(config);
-    state.input_devices = crate::devices::list_input_device_names();
+    state.input_devices = whspr_audio::input_device_names();
     // Restore the previously chosen input device if one was persisted,
     // otherwise fall back to the host's default input device.
     state.selected_device = state
@@ -65,7 +65,7 @@ fn boot() -> (State, Task<Message>) {
         .device
         .input_device
         .clone()
-        .or_else(crate::devices::default_input_device_name);
+        .or_else(whspr_audio::default_input_device_name);
     state.history = crate::history::history_file_path()
         .map(|path| crate::history::read_history_file(&path))
         .unwrap_or_default();
