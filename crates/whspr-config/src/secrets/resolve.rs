@@ -35,3 +35,76 @@ impl Config {
         Ok(self.huggingface.token.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::secrets::MemoryKeystore;
+    use crate::Config;
+
+    use super::*;
+
+    #[test]
+    fn resolve_api_key_prefers_keystore_over_plaintext() {
+        let mut cfg = Config::default();
+        cfg.api_keys.insert("openai".into(), "plaintext-key".into());
+        let ks = MemoryKeystore::default();
+        ks.set(&SecretName::api_key("openai"), "keystore-key")
+            .unwrap();
+
+        assert_eq!(
+            cfg.resolve_api_key("openai", &ks).unwrap(),
+            Some("keystore-key".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_to_plaintext_when_keystore_empty() {
+        let mut cfg = Config::default();
+        cfg.api_keys.insert("openai".into(), "plaintext-key".into());
+        let ks = MemoryKeystore::default();
+
+        assert_eq!(
+            cfg.resolve_api_key("openai", &ks).unwrap(),
+            Some("plaintext-key".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_is_none_when_neither_source_has_it() {
+        let cfg = Config::default();
+        let ks = MemoryKeystore::default();
+        assert_eq!(cfg.resolve_api_key("openai", &ks).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_hf_token_prefers_keystore_over_plaintext() {
+        let mut cfg = Config::default();
+        cfg.huggingface.token = Some("plaintext-token".into());
+        let ks = MemoryKeystore::default();
+        ks.set(SecretName::HF_TOKEN, "keystore-token").unwrap();
+
+        assert_eq!(
+            cfg.resolve_hf_token(&ks).unwrap(),
+            Some("keystore-token".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_hf_token_falls_back_to_plaintext_when_keystore_empty() {
+        let mut cfg = Config::default();
+        cfg.huggingface.token = Some("plaintext-token".into());
+        let ks = MemoryKeystore::default();
+
+        assert_eq!(
+            cfg.resolve_hf_token(&ks).unwrap(),
+            Some("plaintext-token".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_hf_token_is_none_when_neither_source_has_it() {
+        let cfg = Config::default();
+        let ks = MemoryKeystore::default();
+        assert_eq!(cfg.resolve_hf_token(&ks).unwrap(), None);
+    }
+}
