@@ -11,3 +11,15 @@ pub(crate) fn fallback_notice(name: &str) -> String {
         "\u{201c}{name}\u{201d} is not connected \u{2014} recording from the default microphone instead."
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_notice_names_the_missing_device() {
+        let notice = fallback_notice("USB Mic");
+        assert!(notice.contains("USB Mic"));
+        assert!(notice.contains("default microphone"));
+    }
+}
