@@ -89,26 +89,29 @@ pub(super) fn is_missing_whisper_model(config: &Config) -> bool {
 /// regardless of which backend produced the raw text. Mirrors whspr-cli's
 /// `build_refiner` (`crates/whspr-cli/src/main.rs`). Model IDs/paths come
 /// from `config.refine_settings` rather than being hardcoded, so switching
-/// models never requires a rebuild.
+/// models never requires a rebuild. `[capture].shorten` (J-11) turns on both
+/// the rule-based shorten pass and the LLM backends' "be concise" prompt,
+/// exactly as the CLI does.
 pub(crate) fn build_refiner(
     config: &Config,
     keystore: &dyn Keystore,
 ) -> Result<Box<dyn TextRefiner>, String> {
+    let shorten = config.capture.shorten;
     let inner: Box<dyn TextRefiner> = match config.refine {
         RefineChoice::Noop => Box::new(NoopRefiner),
         RefineChoice::OpenAi => {
             let api_key = required_api_key(config, keystore, "openai", "OpenAI")?;
-            Box::new(OpenAiRefiner::new(
-                api_key,
-                config.refine_settings.openai_model.clone(),
-            ))
+            Box::new(
+                OpenAiRefiner::new(api_key, config.refine_settings.openai_model.clone())
+                    .with_shorten(shorten),
+            )
         }
         RefineChoice::Anthropic => {
             let api_key = required_api_key(config, keystore, "anthropic", "Anthropic")?;
-            Box::new(AnthropicRefiner::new(
-                api_key,
-                config.refine_settings.anthropic_model.clone(),
-            ))
+            Box::new(
+                AnthropicRefiner::new(api_key, config.refine_settings.anthropic_model.clone())
+                    .with_shorten(shorten),
+            )
         }
         RefineChoice::LlamaLocal => {
             let model_path = config.refine_settings.llama_model_path.clone().ok_or_else(|| {
@@ -116,11 +119,11 @@ pub(crate) fn build_refiner(
                  config file, or pick a different refine backend in Settings"
                     .to_string()
             })?;
-            Box::new(LlamaLocal::new(model_path))
+            Box::new(LlamaLocal::new(model_path).with_shorten(shorten))
         }
         RefineChoice::AppleFoundation => {
             if whspr_refine::apple_foundation_available() {
-                Box::new(whspr_refine::AppleFoundation::new())
+                Box::new(whspr_refine::AppleFoundation::new().with_shorten(shorten))
             } else {
                 return Err(
                     "Apple Foundation Models is unavailable — it needs macOS 26 with \
@@ -132,10 +135,9 @@ pub(crate) fn build_refiner(
         }
     };
 
-    Ok(Box::new(NormalizingRefiner::new(
-        inner,
-        config.normalize.clone(),
-    )))
+    Ok(Box::new(
+        NormalizingRefiner::new(inner, config.normalize.clone()).with_shorten(shorten),
+    ))
 }
 
 #[cfg(test)]
@@ -229,6 +231,30 @@ mod tests {
         // whspr-refine's normalize/mod.rs), so this also proves the wrapping
         // happened rather than returning the bare NoopRefiner.
         assert_eq!(refiner.id(), "noop");
+    }
+
+    #[tokio::test]
+    async fn capture_shorten_turns_on_the_shorten_pass() {
+        let mut config = Config {
+            refine: RefineChoice::Noop,
+            ..Default::default()
+        };
+        let ctx = whspr_core::RefineContext::default();
+        let plain = build_refiner(&config, &MemoryKeystore::default()).unwrap();
+        assert_eq!(
+            plain.refine("it's sort of working", &ctx).await.unwrap(),
+            "it's sort of working"
+        );
+
+        config.capture.shorten = true;
+        let shortened = build_refiner(&config, &MemoryKeystore::default()).unwrap();
+        assert_eq!(
+            shortened
+                .refine("it's sort of working", &ctx)
+                .await
+                .unwrap(),
+            "it's working"
+        );
     }
 
     #[test]
