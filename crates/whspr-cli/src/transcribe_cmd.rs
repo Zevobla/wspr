@@ -4,18 +4,35 @@
 //! project's 600-line-per-file guideline, same reasoning as
 //! `diarize_cmd.rs`/`stats_cmd.rs`.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde_json::json;
 use whspr_asr::{DeepgramAsr, OpenAiAsr, WhisperLocal};
-use whspr_config::{api_key_for, AsrChoice, RefineChoice};
+use whspr_config::{AsrChoice, Keystore, RefineChoice};
 use whspr_core::testkit::{MockAsr, NoopRefiner};
 use whspr_core::{AsrBackend, Pipeline, RefineContext, TextRefiner};
 use whspr_refine::{
     effective_instructions, AnthropicRefiner, LlamaLocal, NormalizingRefiner, OpenAiRefiner,
 };
+
+/// A cloud backend's API key: the keystore first (where the desktop app
+/// keeps keys saved in Settings), then the plaintext `[api_keys]` table.
+fn required_api_key(
+    config: &whspr_config::Config,
+    keystore: &dyn Keystore,
+    backend_id: &str,
+    display_name: &str,
+) -> anyhow::Result<String> {
+    config
+        .resolve_api_key(backend_id, keystore)?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+            "{display_name} API key not configured (save it in the whspr app's Settings, or set \
+             [api_keys].{backend_id} in config)"
+        )
+        })
+}
 
 /// Builds an ASR backend from command-line flags, defaulting to a real
 /// `WhisperLocal` backend when `--asr` is not explicitly passed.
@@ -33,6 +50,7 @@ use whspr_refine::{
 /// depends on a whisper model being present.
 fn build_asr_backend(
     config: &whspr_config::Config,
+    keystore: &dyn Keystore,
     asr_id: Option<&str>,
     asr_base_url: Option<&str>,
     asr_api_key: Option<&str>,
@@ -63,11 +81,7 @@ fn build_asr_backend(
         AsrChoice::OpenAi => {
             let api_key = match asr_api_key {
                 Some(key) => key.to_string(),
-                None => api_key_for(config, "openai").ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "OpenAI API key not configured (set [api_keys].openai in config)"
-                    )
-                })?,
+                None => required_api_key(config, keystore, "openai", "OpenAI")?,
             };
             let backend: Box<dyn AsrBackend> = match asr_base_url {
                 Some(url) => Box::new(OpenAiAsr::with_base_url(api_key, url)),
@@ -78,11 +92,7 @@ fn build_asr_backend(
         AsrChoice::Deepgram => {
             let api_key = match asr_api_key {
                 Some(key) => key.to_string(),
-                None => api_key_for(config, "deepgram").ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Deepgram API key not configured (set [api_keys].deepgram in config)"
-                    )
-                })?,
+                None => required_api_key(config, keystore, "deepgram", "Deepgram")?,
             };
             let backend: Box<dyn AsrBackend> = match asr_base_url {
                 Some(url) => Box::new(DeepgramAsr::with_base_url(api_key, url)),
@@ -120,6 +130,7 @@ fn build_asr_backend(
 /// shorten pass) -- see each one's own `with_shorten` doc comment.
 fn build_refiner(
     config: &whspr_config::Config,
+    keystore: &dyn Keystore,
     refine_id: Option<&str>,
     shorten: bool,
 ) -> anyhow::Result<Box<dyn TextRefiner>> {
@@ -132,20 +143,14 @@ fn build_refiner(
     let inner: Box<dyn TextRefiner> = match choice {
         RefineChoice::Noop => Box::new(NoopRefiner),
         RefineChoice::OpenAi => {
-            let api_key = api_key_for(config, "openai").ok_or_else(|| {
-                anyhow::anyhow!("OpenAI API key not configured (set [api_keys].openai in config)")
-            })?;
+            let api_key = required_api_key(config, keystore, "openai", "OpenAI")?;
             Box::new(
                 OpenAiRefiner::new(api_key, config.refine_settings.openai_model.clone())
                     .with_shorten(shorten),
             )
         }
         RefineChoice::Anthropic => {
-            let api_key = api_key_for(config, "anthropic").ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Anthropic API key not configured (set [api_keys].anthropic in config)"
-                )
-            })?;
+            let api_key = required_api_key(config, keystore, "anthropic", "Anthropic")?;
             Box::new(
                 AnthropicRefiner::new(api_key, config.refine_settings.anthropic_model.clone())
                     .with_shorten(shorten),
@@ -197,50 +202,46 @@ fn words_per_minute(word_count: usize, duration_secs: f32) -> f64 {
     }
 }
 
-/// Saves a transcription result to `history.jsonl` inside `data_dir`.
-async fn save_to_history(
+/// Saves a transcription result to the history journal inside `data_dir`
+/// (encrypted when `[privacy].history_encryption` is on -- see
+/// `crate::history_io::append_entry`).
+fn save_to_history(
+    config: &whspr_config::Config,
+    keystore: &dyn Keystore,
     data_dir: &Path,
-    text: &str,
-    asr_id: &str,
-    refine_id: &str,
-    wpm: f64,
-    duration_secs: f64,
+    record: HistoryRecord<'_>,
 ) -> anyhow::Result<()> {
-    std::fs::create_dir_all(data_dir)?;
-
-    let history_path = data_dir.join("history.jsonl");
-    let word_count = text.split_whitespace().count();
-
     // Use SystemTime since chrono is not in workspace deps
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-
     let entry = json!({
-        "text": text,
+        "text": record.text,
         "timestamp": now,
-        "asr": asr_id,
-        "refine": refine_id,
+        "asr": record.asr_id,
+        "refine": record.refine_id,
         "source": "cli",
-        "wpm": wpm,
-        "word_count": word_count,
-        "duration_secs": duration_secs,
+        "wpm": record.wpm,
+        "word_count": record.text.split_whitespace().count(),
+        "duration_secs": record.duration_secs,
     });
+    crate::history_io::append_entry(data_dir, &entry, config, keystore)
+}
 
-    let line = format!("{}\n", entry);
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(history_path)?
-        .write_all(line.as_bytes())?;
-
-    Ok(())
+/// One transcription result, as stored in the history journal.
+struct HistoryRecord<'a> {
+    text: &'a str,
+    asr_id: &'a str,
+    refine_id: &'a str,
+    wpm: f64,
+    duration_secs: f64,
 }
 
 /// Runs the `transcribe` subcommand end to end.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     config: &whspr_config::Config,
+    keystore: &dyn Keystore,
     file: PathBuf,
     asr: Option<String>,
     refine: Option<String>,
@@ -277,12 +278,13 @@ pub async fn run(
     eprintln!("Building pipeline...");
     let asr_backend = build_asr_backend(
         config,
+        keystore,
         asr.as_deref(),
         asr_base_url.as_deref(),
         asr_api_key.as_deref(),
         asr_mock_text.as_deref(),
     )?;
-    let refiner = build_refiner(config, refine.as_deref(), shorten)?;
+    let refiner = build_refiner(config, keystore, refine.as_deref(), shorten)?;
 
     let asr_id = asr_backend.id();
     let refine_id = refiner.id();
@@ -306,16 +308,14 @@ pub async fn run(
     if !no_store {
         match crate::resolve_data_dir(data_dir.as_deref()) {
             Ok(dir) => {
-                if let Err(e) = save_to_history(
-                    &dir,
-                    &output,
+                let record = HistoryRecord {
+                    text: &output,
                     asr_id,
                     refine_id,
                     wpm,
-                    audio_duration_secs as f64,
-                )
-                .await
-                {
+                    duration_secs: audio_duration_secs as f64,
+                };
+                if let Err(e) = save_to_history(config, keystore, &dir, record) {
                     eprintln!("Warning: failed to save to history: {}", e);
                 }
             }
@@ -352,6 +352,7 @@ pub async fn run(
 #[allow(clippy::too_many_arguments)]
 pub async fn run_batch(
     config: &whspr_config::Config,
+    keystore: &dyn Keystore,
     dir: PathBuf,
     asr: Option<String>,
     refine: Option<String>,
@@ -368,12 +369,13 @@ pub async fn run_batch(
 
     let asr_backend = build_asr_backend(
         config,
+        keystore,
         asr.as_deref(),
         asr_base_url.as_deref(),
         asr_api_key.as_deref(),
         None,
     )?;
-    let refiner = build_refiner(config, refine.as_deref(), config.capture.shorten)?;
+    let refiner = build_refiner(config, keystore, refine.as_deref(), config.capture.shorten)?;
 
     let asr_id = asr_backend.id();
     let refine_id = refiner.id();
@@ -423,15 +425,21 @@ pub async fn run_batch(
                                 if let Ok(history_dir) =
                                     crate::resolve_data_dir(data_dir.as_deref())
                                 {
-                                    let _ = save_to_history(
-                                        &history_dir,
-                                        &output,
+                                    let record = HistoryRecord {
+                                        text: &output,
                                         asr_id,
                                         refine_id,
                                         wpm,
-                                        audio_duration_secs as f64,
-                                    )
-                                    .await;
+                                        duration_secs: audio_duration_secs as f64,
+                                    };
+                                    if let Err(e) =
+                                        save_to_history(config, keystore, &history_dir, record)
+                                    {
+                                        eprintln!(
+                                            "Warning: failed to save {} to history: {e}",
+                                            path.display()
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -464,7 +472,33 @@ pub async fn run_batch(
 
 #[cfg(test)]
 mod tests {
+    use whspr_config::{MemoryKeystore, SecretName};
+
     use super::*;
+
+    #[test]
+    fn required_api_key_prefers_the_keystore() {
+        let mut config = whspr_config::Config::default();
+        config.api_keys.insert("openai".into(), "plaintext".into());
+        let keystore = MemoryKeystore::default();
+        keystore
+            .set(&SecretName::api_key("openai"), "from-keychain")
+            .unwrap();
+        assert_eq!(
+            required_api_key(&config, &keystore, "openai", "OpenAI").unwrap(),
+            "from-keychain"
+        );
+    }
+
+    #[test]
+    fn required_api_key_names_both_places_when_missing() {
+        let config = whspr_config::Config::default();
+        let error = required_api_key(&config, &MemoryKeystore::default(), "deepgram", "Deepgram")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Deepgram API key not configured"));
+        assert!(error.contains("[api_keys].deepgram"));
+    }
 
     #[test]
     fn words_per_minute_uses_audio_duration_not_wall_clock() {
@@ -493,7 +527,7 @@ mod tests {
     fn build_refiner_noop_choice_is_wrapped_in_normalizing_refiner() {
         let config = whspr_config::Config::default();
 
-        let refiner = build_refiner(&config, None, false)
+        let refiner = build_refiner(&config, &MemoryKeystore::default(), None, false)
             .expect("default (noop) refiner should always build");
         // NormalizingRefiner::id() delegates to the inner refiner's id, so
         // this also proves the wrapping happened rather than returning the
@@ -509,7 +543,7 @@ mod tests {
             .insert("openai".to_string(), "test-key".to_string());
         config.refine_settings.openai_model = "gpt-4o".to_string();
 
-        let refiner = build_refiner(&config, Some("openai"), false)
+        let refiner = build_refiner(&config, &MemoryKeystore::default(), Some("openai"), false)
             .expect("configured api key should be enough");
         assert_eq!(refiner.id(), "openai");
     }
@@ -520,7 +554,12 @@ mod tests {
 
         // `Box<dyn TextRefiner>` isn't `Debug`, so `expect_err` isn't
         // available -- match directly instead.
-        match build_refiner(&config, Some("llama-local"), false) {
+        match build_refiner(
+            &config,
+            &MemoryKeystore::default(),
+            Some("llama-local"),
+            false,
+        ) {
             Ok(_) => panic!("no [refine_settings].llama_model_path should fail, not build one"),
             Err(error) => assert!(error.to_string().contains("llama_model_path")),
         }
@@ -531,16 +570,21 @@ mod tests {
         let mut config = whspr_config::Config::default();
         config.refine_settings.llama_model_path = Some(PathBuf::from("/explicit/model.gguf"));
 
-        let refiner = build_refiner(&config, Some("llama-local"), false)
-            .expect("an explicit llama_model_path should be enough to build");
+        let refiner = build_refiner(
+            &config,
+            &MemoryKeystore::default(),
+            Some("llama-local"),
+            false,
+        )
+        .expect("an explicit llama_model_path should be enough to build");
         assert_eq!(refiner.id(), "llama-local");
     }
 
     #[tokio::test]
     async fn build_refiner_shorten_true_shortens_noop_output() {
         let config = whspr_config::Config::default();
-        let refiner =
-            build_refiner(&config, Some("noop"), true).expect("noop refiner should always build");
+        let refiner = build_refiner(&config, &MemoryKeystore::default(), Some("noop"), true)
+            .expect("noop refiner should always build");
 
         let result = refiner
             .refine("it's sort of working", &RefineContext::default())

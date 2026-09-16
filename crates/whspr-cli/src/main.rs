@@ -27,6 +27,7 @@
 //!   --yes                           `uninstall`: actually perform the removal (a dry run otherwise)
 
 mod diarize_cmd;
+mod history_io;
 mod stats_cmd;
 mod subtitles;
 mod transcribe_cmd;
@@ -36,6 +37,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use whspr_config::load as load_config;
+use whspr_config::{Keystore, MemoryKeystore, OsKeystore};
 use whspr_core::AudioBuffer;
 
 #[derive(Parser)]
@@ -290,6 +292,20 @@ fn resolve_data_dir(override_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
         .ok_or_else(|| anyhow::anyhow!("cannot determine platform data dir"))
 }
 
+/// Where this run reads and writes secrets (API keys, the history key).
+///
+/// Normally that is the OS keychain, where the desktop app moves saved keys
+/// out of `config.toml`. An explicit `--config-dir` means a self-contained
+/// config (the test suite, a portable setup): secrets then come only from
+/// that directory's plaintext `[api_keys]`, and nothing reads, writes or
+/// deletes a real keychain entry.
+fn cli_keystore(config_dir: Option<&Path>) -> Box<dyn Keystore> {
+    match config_dir {
+        Some(_) => Box::new(MemoryKeystore::non_persistent()),
+        None => Box::new(OsKeystore::new()),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -297,6 +313,7 @@ async fn main() -> anyhow::Result<()> {
         Some(dir) => whspr_config::load_from(Some(dir)),
         None => load_config(),
     };
+    let keystore = cli_keystore(cli.config_dir.as_deref());
 
     match cli.command {
         Some(Command::Transcribe {
@@ -315,6 +332,7 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             transcribe_cmd::run(
                 &config,
+                keystore.as_ref(),
                 file,
                 asr,
                 refine,
@@ -344,6 +362,7 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             transcribe_cmd::run_batch(
                 &config,
+                keystore.as_ref(),
                 dir,
                 asr,
                 refine,
@@ -374,7 +393,7 @@ async fn main() -> anyhow::Result<()> {
             by_backend,
             data_dir,
         }) => {
-            stats_cmd::run(data_dir, csv, clear, by_backend).await?;
+            stats_cmd::run(keystore.as_ref(), data_dir, csv, clear, by_backend).await?;
         }
 
         Some(Command::Uninstall { yes, data_dir }) => {
@@ -389,4 +408,16 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_explicit_config_dir_never_uses_the_os_keychain() {
+        let keystore = cli_keystore(Some(Path::new("/tmp/whspr-portable")));
+        assert!(!keystore.is_persistent());
+        assert_eq!(keystore.get("api-key:openai").unwrap(), None);
+    }
 }

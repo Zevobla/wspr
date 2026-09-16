@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use whspr_config::Keystore;
 
 /// One line of `history.jsonl`, as written by `main::save_to_history`.
 /// Every field is `#[serde(default)]` so a line from an older/partial
@@ -41,20 +42,22 @@ fn csv_field(value: &str) -> String {
     }
 }
 
-/// Reads and parses every non-blank line of `history_path`. A missing file
-/// (e.g. no utterances stored yet) is not an error - it just means no
-/// entries.
-fn load_entries(history_path: &Path) -> anyhow::Result<Vec<HistoryEntry>> {
-    if !history_path.exists() {
-        return Ok(Vec::new());
-    }
-    let contents = std::fs::read_to_string(history_path)?;
-    contents
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
+/// Reads and parses every readable line of `history_path` (plaintext or
+/// encrypted -- see `crate::history_io::read_lines`). A missing file (no
+/// utterances stored yet) is not an error. Returns the entries and how many
+/// encrypted lines could not be decrypted; an unparsable *decoded* line
+/// still fails the command, as before.
+fn load_entries(
+    history_path: &Path,
+    keystore: &dyn Keystore,
+) -> anyhow::Result<(Vec<HistoryEntry>, usize)> {
+    let lines = crate::history_io::read_lines(history_path, keystore)?;
+    let entries = lines
+        .json
+        .iter()
         .map(|line| serde_json::from_str(line).map_err(anyhow::Error::from))
-        .collect()
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok((entries, lines.unreadable))
 }
 
 /// T-09: wipes the stored history file so `whspr stats` starts fresh.
@@ -132,19 +135,26 @@ fn print_by_backend(entries: &[HistoryEntry], csv: bool) {
 /// or wipes the history entirely (`--clear`, which takes priority over
 /// the other two since there'd be nothing left to print anyway).
 pub async fn run(
+    keystore: &dyn Keystore,
     data_dir: Option<PathBuf>,
     csv: bool,
     clear: bool,
     by_backend: bool,
 ) -> anyhow::Result<()> {
     let data_dir = crate::resolve_data_dir(data_dir.as_deref())?;
-    let history_path = data_dir.join("history.jsonl");
+    let history_path = data_dir.join(crate::history_io::HISTORY_FILE);
 
     if clear {
         return clear_history(&history_path);
     }
 
-    let entries = load_entries(&history_path)?;
+    let (entries, unreadable) = load_entries(&history_path, keystore)?;
+    if unreadable > 0 {
+        eprintln!(
+            "Warning: skipped {unreadable} encrypted history line(s) that could not be decrypted \
+             (no history key in this keystore, or the line was altered)."
+        );
+    }
 
     if by_backend {
         print_by_backend(&entries, csv);
@@ -182,8 +192,11 @@ mod tests {
 
     #[test]
     fn load_entries_of_missing_file_is_empty() {
-        let entries = load_entries(Path::new("/nonexistent/whspr-stats-test/history.jsonl"))
-            .expect("a missing history file should not be an error");
+        let (entries, _) = load_entries(
+            Path::new("/nonexistent/whspr-stats-test/history.jsonl"),
+            &whspr_config::MemoryKeystore::default(),
+        )
+        .expect("a missing history file should not be an error");
         assert!(entries.is_empty());
     }
 
@@ -199,7 +212,9 @@ mod tests {
         )
         .unwrap();
 
-        let entries = load_entries(&path).unwrap();
+        let (entries, unreadable) =
+            load_entries(&path, &whspr_config::MemoryKeystore::default()).unwrap();
+        assert_eq!(unreadable, 0);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].text, "hello");
         assert_eq!(entries[1].wpm, 100.0);
