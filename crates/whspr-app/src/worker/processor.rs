@@ -104,4 +104,28 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn spawned_processor_reports_each_chunk_in_order() {
+        use iced::futures::StreamExt;
+
+        let pipeline = Pipeline::new(Box::new(MockAsr::default()), Box::new(NoopRefiner));
+        let (output, mut events) = mpsc::channel(4);
+        let chunks = spawn(pipeline, output);
+
+        let mut short = chunk();
+        short.audio = AudioBuffer::new(vec![0.1; 8000], 16000);
+        chunks.send(short).unwrap();
+        chunks.send(chunk()).unwrap();
+
+        let durations: Vec<f32> = events
+            .by_ref()
+            .take(2)
+            .map(|event| match event {
+                WorkerEvent::Completed { duration_secs, .. } => duration_secs,
+                other => panic!("expected Completed, got {other:?}"),
+            })
+            .collect()
+            .await;
+        assert_eq!(durations, vec![0.5, 1.0]);
+    }
 }
