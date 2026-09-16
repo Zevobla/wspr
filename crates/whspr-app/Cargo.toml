@@ -38,6 +38,12 @@ whspr-hf = { path = "../whspr-hf" }
 # the root workspace's [workspace.dependencies] -- declared directly here by
 # path, the same way whspr-diarize/whspr-hf are (the GUI is its only consumer).
 whspr-import = { path = "../whspr-import" }
+# In-process Typst compiler for the Note desk's PDF export (`note_export.rs`):
+# compiles the app's own generated `.typ` source straight to PDF bytes, no
+# system `typst` binary required. Not in the root workspace's
+# [workspace.dependencies] -- declared directly here, the same way
+# whspr-diarize/whspr-hf/whspr-import are (the GUI is its only consumer).
+whspr-typst = { path = "../whspr-typst" }
 tokio.workspace = true
 tracing.workspace = true
 # Tolerant parsing of the (schema-less-to-us) JSONL history file.

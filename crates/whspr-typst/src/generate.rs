@@ -84,7 +84,11 @@ pub fn export_typ_to_path(main_typ: &str, path: &Path) -> whspr_core::Result<()>
 }
 
 /// Escape a Rust string into a double-quoted Typst string literal.
-fn typst_string(s: &str) -> String {
+///
+/// Public so other whspr crates building their own bespoke Typst documents
+/// (e.g. `whspr-app`'s Note desk export) don't need to re-implement the same
+/// escaping rules.
+pub fn typst_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {
@@ -105,7 +109,10 @@ fn typst_string(s: &str) -> String {
 /// text is safe inside a `[..]` content body. Ordinary prose contains none of
 /// these, so this is the identity for the common case and the sentence is
 /// preserved verbatim.
-fn escape_markup(s: &str) -> String {
+///
+/// Public for the same reason as [`typst_string`]: it's the one place this
+/// escaping rule should live.
+pub fn escape_markup(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         if matches!(
