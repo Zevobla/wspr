@@ -101,3 +101,25 @@ fn label_text<'a>(label: &'static str) -> iced::widget::Text<'a> {
         .size(type_scale::LABEL_LARGE.size)
         .font(type_scale::LABEL_LARGE.font())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_api_key_row_is_a_managed_secret() {
+        for (id, _) in API_KEY_FIELDS {
+            assert!(
+                crate::secret_store::MANAGED_SECRETS.contains(&SecretSlot::ApiKey(id)),
+                "{id} is not in MANAGED_SECRETS"
+            );
+        }
+    }
+
+    #[test]
+    fn captions_name_the_store_without_showing_the_key() {
+        assert!(location_caption(SecretLocation::Keystore).contains(keystore_label()));
+        assert!(location_caption(SecretLocation::ConfigFile).contains("config.toml"));
+        assert_eq!(location_caption(SecretLocation::Missing), "Not set");
+    }
+}
