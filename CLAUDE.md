@@ -132,9 +132,13 @@ trait Diarizer: Send + Sync {
 ### The pipeline
 
 `Pipeline::new(Box<dyn AsrBackend>, Box<dyn TextRefiner>)`, optionally
-`.with_sink(Box<dyn TextSink>)` and `.with_state_callback(...)`.
-`pipeline.run(audio, &ctx).await` drives transcribe -> refine -> (optional)
-inject, reporting `PipelineState` transitions through the callback.
+`.with_sink(Box<dyn TextSink>)`, `.with_state_callback(...)`, and
+`.with_language(...)`. `pipeline.run(audio, &ctx).await` (or
+`run_with_transcript` for the timing-annotated `Transcript`) drives
+transcribe -> refine -> (optional) inject, reporting `PipelineState`
+transitions through the callback. Diarization is a separate, independent
+path (`Diarizer` + `whspr-diarize` + `SpeakerDb`) that `Pipeline` never
+constructs or touches.
 
 ## Branch/merge protocol
 
