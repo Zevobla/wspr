@@ -65,7 +65,11 @@ impl Keystore for OsKeystore {
 /// `true` only on the platforms whose compiled-in `keyring` backend is a
 /// real, reboot-surviving credential store (see [`OsKeystore`]'s doc).
 fn os_keystore_is_persistent() -> bool {
-    cfg!(any(target_os = "macos", target_os = "ios", target_os = "windows"))
+    cfg!(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    ))
 }
 
 #[cfg(test)]
@@ -75,7 +79,11 @@ mod tests {
     /// Pure platform check -- never touches the real keychain.
     #[test]
     fn os_keystore_persistence_matches_the_platform_backend() {
-        let expected = cfg!(any(target_os = "macos", target_os = "ios", target_os = "windows"));
+        let expected = cfg!(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        ));
         assert_eq!(OsKeystore::new().is_persistent(), expected);
     }
 }

@@ -116,7 +116,8 @@ mod tests {
 
     fn config_with_two_keys_and_a_token() -> Config {
         let mut cfg = Config::default();
-        cfg.api_keys.insert("anthropic".into(), "sk-anthropic".into());
+        cfg.api_keys
+            .insert("anthropic".into(), "sk-anthropic".into());
         cfg.api_keys.insert("openai".into(), "sk-openai".into());
         cfg.huggingface.token = Some("hf-abc".into());
         cfg

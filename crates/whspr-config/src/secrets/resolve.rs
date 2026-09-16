@@ -70,7 +70,8 @@ mod tests {
         let mut cfg = Config::default();
         cfg.api_keys.insert("openai".into(), "plaintext-key".into());
         assert_eq!(
-            cfg.resolve_api_key("openai", &unreadable_keystore()).unwrap(),
+            cfg.resolve_api_key("openai", &unreadable_keystore())
+                .unwrap(),
             Some("plaintext-key".to_string())
         );
     }
@@ -78,7 +79,9 @@ mod tests {
     #[test]
     fn resolve_api_key_surfaces_the_keystore_error_when_plaintext_is_empty() {
         let cfg = Config::default();
-        assert!(cfg.resolve_api_key("openai", &unreadable_keystore()).is_err());
+        assert!(cfg
+            .resolve_api_key("openai", &unreadable_keystore())
+            .is_err());
     }
 
     #[test]
