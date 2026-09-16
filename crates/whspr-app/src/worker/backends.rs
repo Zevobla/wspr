@@ -276,4 +276,27 @@ mod tests {
             .expect("an explicit llama_model_path should be enough to build");
         assert_eq!(refiner.id(), "llama-local");
     }
+
+    #[test]
+    fn a_key_held_only_in_the_keystore_builds_the_cloud_backends() {
+        let config = Config {
+            asr: AsrChoice::OpenAi,
+            refine: RefineChoice::Anthropic,
+            ..Default::default()
+        };
+        let keystore = MemoryKeystore::default();
+        keystore
+            .set(&whspr_config::SecretName::api_key("openai"), "sk-openai")
+            .unwrap();
+        keystore
+            .set(&whspr_config::SecretName::api_key("anthropic"), "sk-ant")
+            .unwrap();
+
+        let asr = build_asr_backend(&config, &keystore)
+            .unwrap_or_else(|error| panic!("keystore key should build OpenAI ASR: {error}"));
+        assert_eq!(asr.id(), "openai");
+        let refiner = build_refiner(&config, &keystore)
+            .unwrap_or_else(|error| panic!("keystore key should build the refiner: {error}"));
+        assert_eq!(refiner.id(), "anthropic");
+    }
 }
