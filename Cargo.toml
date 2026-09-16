@@ -60,6 +60,15 @@ arboard = "3.6"
 iced = "0.14"
 tray-icon = "0.24"
 
+# macOS-only: frontmost-application lookup (NSWorkspace) for J-04
+# style-by-window -- populates `RefineContext.app_name` so the refiner knows
+# which app a dictation is going into. Both crates are already in Cargo.lock
+# via iced -> winit, so this adds no new dependency tree. Opted into
+# whspr-app only under a `cfg(target_os = "macos")` target dependency (same
+# leaf-crate pattern as `metal` below); non-mac builds never link it.
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+
 # HuggingFace model client (whspr-hf). All four pinned to rustls-friendly,
 # default-features-off configs so nothing drags openssl/native-tls into the
 # tree -- the Nix build stays free of new C system libraries.
