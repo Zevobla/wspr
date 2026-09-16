@@ -222,7 +222,11 @@ mod tests {
         };
         let cases = [
             (None, None, MonitorAction::Keep),
-            (None, Some(usb_mic.clone()), MonitorAction::Start(usb_mic.clone())),
+            (
+                None,
+                Some(usb_mic.clone()),
+                MonitorAction::Start(usb_mic.clone()),
+            ),
             (Some(&usb_mic), None, MonitorAction::Stop),
             (Some(&usb_mic), Some(usb_mic.clone()), MonitorAction::Keep),
             (
@@ -232,7 +236,11 @@ mod tests {
             ),
         ];
         for (running, desired, expected) in cases {
-            assert_eq!(monitor_action(running, desired.clone()), expected, "{running:?} -> {desired:?}");
+            assert_eq!(
+                monitor_action(running, desired.clone()),
+                expected,
+                "{running:?} -> {desired:?}"
+            );
         }
     }
 }
