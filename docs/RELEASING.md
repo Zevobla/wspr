@@ -119,7 +119,7 @@ BundleDir=<path to dist/whspr>` — see `release.yml` for the exact
 invocation and `packaging/windows/whspr.wxs`'s header comment for the
 per-user install design.
 
-## Self-contained bundle (vendored dylibs)
+## Self-contained bundle (vendored dylibs) [macOS]
 
 The `whspr-app` binary links native dynamic libraries that are **not** present
 on a clean end-user Mac:
