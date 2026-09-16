@@ -6,7 +6,7 @@ use iced::Task;
 
 use crate::state::{Message, State};
 use crate::tray_state::{begin_tray_done_linger, tray_done_active};
-use crate::worker::WorkerEvent;
+use crate::worker::{Delivery, WorkerEvent, CLIPBOARD_NOTICE};
 
 /// Applies one worker event to `state`, returning any follow-up task.
 pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
@@ -44,20 +44,9 @@ pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
             text,
             duration_secs,
             embedding,
+            delivery,
         } => {
-            // Inject the dictated text into whatever app has focus.
-            // This runs here in `update()` -- iced's MAIN thread, where
-            // the winit/AppKit event loop lives -- rather than in the
-            // background pipeline worker, because on macOS enigo's
-            // synthetic input hard-traps when called off the main
-            // thread while an NSApplication is running. A failure
-            // degrades to an error line instead of crashing.
-            match whspr_inject::EnigoTextSink.type_text(&text) {
-                Ok(()) => state.last_error = None,
-                Err(error) => {
-                    state.last_error = Some(format!("Text injection failed: {error}"));
-                }
-            }
+            let delivered = deliver(state, &text, delivery);
             // Also surface it on-screen in the Hub's transcription field.
             state.transcribed_text = Some(text.clone());
             state.transcribe_status = Some("Dictated".to_string());
@@ -71,6 +60,7 @@ pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
             // The pipeline has no "just finished" state to glance at
             // (see `crate::tray`), so it's timed app-side here.
             begin_tray_done_linger(state);
+            return delivered;
         }
         WorkerEvent::Failed(error) => {
             state.last_error = Some(error);
@@ -86,6 +76,33 @@ pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
         }
     }
     Task::none()
+}
+
+/// Delivers a finished dictation as the worker decided (see
+/// `crate::worker::Delivery`), returning the clipboard write when that is
+/// where it goes.
+fn deliver(state: &mut State, text: &str, delivery: Delivery) -> Task<Message> {
+    match delivery {
+        // Type into whatever app has focus. This runs here in `update()` --
+        // iced's MAIN thread, where the winit/AppKit event loop lives --
+        // rather than in the background worker, because on macOS enigo's
+        // synthetic input hard-traps when called off the main thread while
+        // an NSApplication is running. A failure degrades to an error line
+        // instead of crashing.
+        Delivery::Inject => {
+            match whspr_inject::EnigoTextSink.type_text(text) {
+                Ok(()) => state.last_error = None,
+                Err(error) => {
+                    state.last_error = Some(format!("Text injection failed: {error}"));
+                }
+            }
+            Task::none()
+        }
+        Delivery::Clipboard => {
+            state.notice = Some(CLIPBOARD_NOTICE.to_string());
+            iced::clipboard::write(text.to_string())
+        }
+    }
 }
 
 #[cfg(test)]
