@@ -17,6 +17,7 @@
 //!   - single/double Russian letters that double as units or a
 //!     conjunction: "а" (also "but"/"and"), "м"/"мм" (also meter/
 //!     millimeter abbreviations), "мс" (also a millisecond abbreviation)
+//!
 //! Every one of those moved to the opt-in `shorten` pass (see its module
 //! doc), which drops the ambiguous ones only when sentence position marks
 //! them as a parenthetical aside rather than real content -- exactly the
