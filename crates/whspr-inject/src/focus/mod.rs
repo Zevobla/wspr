@@ -109,4 +109,13 @@ mod tests {
             );
         }
     }
+
+    /// A read-only query of whatever has focus while the tests run: without
+    /// Accessibility permission (the usual case for a test binary) it is `None`,
+    /// with it any answer is fine -- only a panic or crash in the FFI path
+    /// would be a bug.
+    #[test]
+    fn focused_field_is_editable_does_not_panic() {
+        let _ = focused_field_is_editable();
+    }
 }
