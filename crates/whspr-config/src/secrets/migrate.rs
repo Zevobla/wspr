@@ -61,7 +61,8 @@ mod tests {
     fn migrate_moves_api_keys_and_hf_token_into_the_keystore() {
         let mut cfg = Config::default();
         cfg.api_keys.insert("openai".into(), "sk-openai".into());
-        cfg.api_keys.insert("anthropic".into(), "sk-anthropic".into());
+        cfg.api_keys
+            .insert("anthropic".into(), "sk-anthropic".into());
         cfg.huggingface.token = Some("hf-abc".into());
         let ks = MemoryKeystore::default();
 
