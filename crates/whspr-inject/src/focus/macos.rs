@@ -90,3 +90,16 @@ fn rust_string(string: &Owned) -> Option<String> {
     let text = unsafe { CStr::from_ptr(buffer.as_ptr()) };
     text.to_str().ok().map(str::to_owned)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cf_strings_round_trip_ascii_and_non_ascii_text() {
+        for text in ["AXTextField", "", "Überfeld \u{2713} 日本語"] {
+            let string = cf_string(text).expect("CFStringCreateWithBytes succeeds");
+            assert_eq!(rust_string(&string).as_deref(), Some(text));
+        }
+    }
+}
