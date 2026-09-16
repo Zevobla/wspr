@@ -3,6 +3,7 @@
 // "windows" subsystem so the Hub launches clean. Inert on macOS/Linux.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod active_window;
 mod app;
 mod config_ui;
 mod hf;
