@@ -202,12 +202,18 @@ async fn run(mut output: mpsc::Sender<WorkerEvent>) {
     let mut session = Session::new(config, output, chunks);
     session.sync_preroll().await;
 
+    let mut auto_send_tick = tokio::time::interval(auto_send::AUTO_SEND_TICK);
+    auto_send_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
         tokio::select! {
             action = actions.recv() => match action {
                 Some(action) => session.on_action(action).await,
                 None => break,
             },
+            _ = auto_send_tick.tick(), if session.auto_send_active() => {
+                session.on_tick().await;
+            }
             Some(config) = config_rx.recv() => {
                 session.apply_config(newest_config(config, &mut config_rx)).await;
             }
