@@ -170,3 +170,69 @@ pub fn clear_secret(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn persistent() -> MemoryKeystore {
+        MemoryKeystore::default()
+    }
+
+    #[test]
+    fn a_persistent_keystore_takes_the_secret_and_scrubs_plaintext() {
+        let mut config = Config::default();
+        config
+            .api_keys
+            .insert("openai".into(), "old-plaintext".into());
+        let keystore = persistent();
+        let slot = SecretSlot::ApiKey("openai");
+
+        let location = store_secret(&mut config, &keystore, slot, "sk-new").unwrap();
+
+        assert_eq!(location, SecretLocation::Keystore);
+        assert!(config.api_keys.get("openai").is_none());
+        assert_eq!(
+            config
+                .resolve_api_key("openai", &keystore)
+                .unwrap()
+                .as_deref(),
+            Some("sk-new")
+        );
+        assert_eq!(
+            locate_secret(&config, &keystore, slot),
+            SecretLocation::Keystore
+        );
+    }
+
+    #[test]
+    fn a_non_persistent_keystore_keeps_the_secret_in_config() {
+        let mut config = Config::default();
+        let keystore = MemoryKeystore::non_persistent();
+
+        let location = store_secret(&mut config, &keystore, SecretSlot::HfToken, "hf_abc").unwrap();
+
+        assert_eq!(location, SecretLocation::ConfigFile);
+        assert_eq!(config.huggingface.token.as_deref(), Some("hf_abc"));
+        assert_eq!(keystore.get(SecretName::HF_TOKEN).unwrap(), None);
+        assert_eq!(
+            locate_secret(&config, &keystore, SecretSlot::HfToken),
+            SecretLocation::ConfigFile
+        );
+    }
+
+    #[test]
+    fn clearing_removes_the_secret_from_both_stores() {
+        let mut config = Config::default();
+        config.huggingface.token = Some("hf_plain".into());
+        let keystore = persistent();
+        keystore.set(SecretName::HF_TOKEN, "hf_stored").unwrap();
+
+        clear_secret(&mut config, &keystore, SecretSlot::HfToken).unwrap();
+
+        assert_eq!(
+            locate_secret(&config, &keystore, SecretSlot::HfToken),
+            SecretLocation::Missing
+        );
+    }
+}
