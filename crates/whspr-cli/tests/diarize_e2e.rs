@@ -6,7 +6,7 @@
 use assert_cmd::Command;
 
 mod common;
-use common::create_test_wav;
+use common::{create_test_wav, isolated_config_dir};
 
 #[test]
 fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
@@ -15,6 +15,7 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let config_dir = isolated_config_dir();
 
     let output = Command::cargo_bin("whspr")
         .unwrap()
@@ -31,6 +32,8 @@ fn diarize_with_mock_backend_prints_speaker_labeled_turns() {
             "--json",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr diarize");
@@ -79,6 +82,7 @@ fn diarize_persists_speaker_matches_across_runs() {
 
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
     let speakers_path = data_dir.path().join("speakers.json");
+    let config_dir = isolated_config_dir();
 
     // First run (SPEAKER_MODEL_DIR cleared -- see the mock-backend test
     // above for why -- both runs need the deterministic MockDiarizer).
@@ -92,6 +96,8 @@ fn diarize_persists_speaker_matches_across_runs() {
             "--json",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr diarize (run 1)");
@@ -125,6 +131,8 @@ fn diarize_persists_speaker_matches_across_runs() {
             "--json",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr diarize (run 2)");
@@ -170,6 +178,7 @@ fn diarize_with_nonexistent_model_dir_fails_with_clear_error() {
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let config_dir = isolated_config_dir();
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -180,6 +189,8 @@ fn diarize_with_nonexistent_model_dir_fails_with_clear_error() {
             "/nonexistent/path",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .failure();
@@ -192,6 +203,7 @@ fn diarize_falls_back_to_speaker_model_dir_env_var() {
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let config_dir = isolated_config_dir();
 
     // No --model-dir flag and no config file, but SPEAKER_MODEL_DIR is set
     // to a bogus path: this should still attempt a real SherpaDiarizer
@@ -206,6 +218,8 @@ fn diarize_falls_back_to_speaker_model_dir_env_var() {
             fixture_path.to_str().unwrap(),
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr diarize");
@@ -228,6 +242,7 @@ fn diarize_with_unknown_embedding_choice_fails_with_clear_error() {
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
+    let config_dir = isolated_config_dir();
 
     // --embedding is only consulted once --model-dir opts into a real
     // backend (mirrors --asr's "explicit opt-in" philosophy), so this
@@ -245,6 +260,8 @@ fn diarize_with_unknown_embedding_choice_fails_with_clear_error() {
             "not-a-real-embedding-choice",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr diarize");
