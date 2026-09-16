@@ -83,6 +83,13 @@ pub struct State {
     /// banner (see `crate::hub`'s status banner) instead of `last_error`'s red
     /// worker-error banner.
     pub needs_model: bool,
+    /// A calm, non-error status line -- e.g. "your microphone is not
+    /// connected, using the default one" or "no text field focused, copied to
+    /// clipboard". Shown in the status banner until the user dismisses it
+    /// (`Message::DismissNotice`) or a newer notice replaces it; kept apart
+    /// from `last_error` so an informational message never reads as a
+    /// failure.
+    pub notice: Option<String>,
     /// The persisted speaker-enrollment database (see
     /// `whspr_config::SpeakerDb`): every distinct speaker discovered across
     /// past diarization scans. Loaded at boot, written back to
@@ -224,6 +231,7 @@ impl State {
             pipeline_state: whspr_core::PipelineState::Idle,
             last_error: None,
             needs_model: false,
+            notice: None,
             speaker_db: whspr_config::SpeakerDb::default(),
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,
@@ -271,6 +279,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Dictate);
         assert_eq!(state.pipeline_state, whspr_core::PipelineState::Idle);
         assert!(state.last_error.is_none());
+        assert!(state.notice.is_none());
         assert!(state.speaker_rename_drafts.is_empty());
         assert!(state.diarize_status.is_none());
         assert!(state.tray.is_none());
