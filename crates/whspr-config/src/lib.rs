@@ -20,6 +20,7 @@ mod autostart;
 mod capture;
 mod device;
 mod hex;
+pub mod history_codec;
 mod huggingface;
 mod injection;
 mod language;
