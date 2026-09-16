@@ -9262,6 +9262,7 @@ dependencies = [
  "whspr-import",
  "whspr-inject",
  "whspr-refine",
+ "whspr-typst",
 ]
 
 [[package]]
