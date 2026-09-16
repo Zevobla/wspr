@@ -83,12 +83,26 @@ speak, get clean text injected into whatever app has focus.
   something it actually verified; unverified criteria land in an explicit
   "not yet automated" bucket instead of being guessed at.
 
-### The four core traits (all in `whspr-core`)
+### The five core traits (all in `whspr-core`)
 
 ```rust
 #[async_trait]
 trait AsrBackend: Send + Sync {
     async fn transcribe(&self, audio: &AudioBuffer, opts: &AsrOptions) -> Result<Transcript>;
+
+    /// Default delegates to `transcribe` and ignores `progress`; only
+    /// backends that can actually report progress (e.g. local whisper)
+    /// need override it.
+    async fn transcribe_with_progress(
+        &self,
+        audio: &AudioBuffer,
+        opts: &AsrOptions,
+        progress: tokio::sync::mpsc::UnboundedSender<u8>,
+    ) -> Result<Transcript> {
+        let _ = progress;
+        self.transcribe(audio, opts).await
+    }
+
     fn id(&self) -> &'static str;
 }
 
@@ -104,6 +118,14 @@ trait HotkeyListener: Send + Sync {
 
 trait TextSink: Send + Sync {
     fn insert(&self, text: &str) -> Result<()>;
+}
+
+/// Not async: diarization backends are CPU-bound native inference calls
+/// (sherpa-onnx FFI), not I/O-bound network calls. Callers that need this
+/// off the async runtime's thread wrap a call in `spawn_blocking` themselves.
+trait Diarizer: Send + Sync {
+    fn diarize(&self, audio: &AudioBuffer) -> Result<Vec<SpeakerTurn>>;
+    fn id(&self) -> &'static str;
 }
 ```
 
