@@ -18,3 +18,39 @@ pub fn apply_gain(samples: &mut [f32], gain: f32) {
         *s = (*s * gain).clamp(-1.0, 1.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_gain_of_one_is_a_no_op_for_in_range_samples() {
+        let mut samples = vec![-0.5, 0.0, 0.25, 0.9];
+        let original = samples.clone();
+        apply_gain(&mut samples, 1.0);
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn apply_gain_scales_samples() {
+        let mut samples = vec![0.1, -0.2, 0.3];
+        apply_gain(&mut samples, 2.0);
+        assert!((samples[0] - 0.2).abs() < 1e-6);
+        assert!((samples[1] - (-0.4)).abs() < 1e-6);
+        assert!((samples[2] - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn apply_gain_clamps_to_valid_range() {
+        let mut samples = vec![0.9, -0.9];
+        apply_gain(&mut samples, 3.0);
+        assert_eq!(samples, vec![1.0, -1.0]);
+    }
+
+    #[test]
+    fn apply_gain_on_empty_slice_does_not_panic() {
+        let mut samples: Vec<f32> = Vec::new();
+        apply_gain(&mut samples, 2.0);
+        assert!(samples.is_empty());
+    }
+}
