@@ -27,9 +27,10 @@ pub struct DeviceSettings {
     /// virtual mics). Default true — enables use with screenshare and
     /// streaming tools.
     pub virtual_source: bool,
-    /// Whether the tray icon remains static and doesn't flicker on recording
-    /// state changes. Default true — reduces visual noise for always-visible
-    /// tray icons.
+    /// Whether the tray icon stays on its idle look instead of switching to
+    /// the recording/done visuals. Default false — the tray is the only
+    /// always-visible sign that the microphone is live, so it shows it unless
+    /// the user asks for a quieter icon.
     pub tray_static: bool,
 }
 
@@ -41,7 +42,7 @@ impl Default for DeviceSettings {
             active_window: true,
             bluetooth_source: true,
             virtual_source: true,
-            tray_static: true,
+            tray_static: false,
         }
     }
 }
@@ -62,7 +63,7 @@ mod tests {
                 active_window: true,
                 bluetooth_source: true,
                 virtual_source: true,
-                tray_static: true,
+                tray_static: false,
             }
         );
     }
@@ -92,7 +93,7 @@ mod tests {
         writeln!(file, "active-window = false").expect("failed to write active-window");
         writeln!(file, "bluetooth-source = false").expect("failed to write bluetooth-source");
         writeln!(file, "virtual-source = false").expect("failed to write virtual-source");
-        writeln!(file, "tray-static = false").expect("failed to write tray-static");
+        writeln!(file, "tray-static = true").expect("failed to write tray-static");
         drop(file);
 
         let cfg = load_from(Some(temp_dir.path()));
@@ -100,7 +101,8 @@ mod tests {
         assert!(!cfg.device.active_window);
         assert!(!cfg.device.bluetooth_source);
         assert!(!cfg.device.virtual_source);
-        assert!(!cfg.device.tray_static);
+        // Default is false, so the file must be able to turn it on.
+        assert!(cfg.device.tray_static);
     }
 
     #[test]
