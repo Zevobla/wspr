@@ -55,3 +55,63 @@ fn decode_hex(hex: &str) -> whspr_core::Result<[u8; 32]> {
     }
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::secrets::MemoryKeystore;
+
+    use super::*;
+
+    #[test]
+    fn history_key_is_32_bytes() {
+        let ks = MemoryKeystore::default();
+        let key = history_key(&ks).unwrap();
+        assert_eq!(key.len(), 32);
+    }
+
+    #[test]
+    fn history_key_is_stable_across_calls_on_the_same_keystore() {
+        let ks = MemoryKeystore::default();
+        let first = history_key(&ks).unwrap();
+        let second = history_key(&ks).unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn history_key_differs_across_independent_keystores() {
+        // Astronomically unlikely to collide for two random 256-bit keys;
+        // this guards against a hardcoded/all-zero key regression, not
+        // against a genuine (near-impossible) collision.
+        let a = history_key(&MemoryKeystore::default()).unwrap();
+        let b = history_key(&MemoryKeystore::default()).unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn history_key_round_trips_through_the_keystore_as_hex() {
+        let ks = MemoryKeystore::default();
+        let key = history_key(&ks).unwrap();
+
+        let stored = ks.get(SecretName::HISTORY_KEY).unwrap().unwrap();
+        assert_eq!(stored.len(), 64);
+        assert!(stored.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(decode_hex(&stored).unwrap(), key);
+    }
+
+    #[test]
+    fn decode_hex_rejects_the_wrong_length() {
+        assert!(decode_hex("abcd").is_err());
+    }
+
+    #[test]
+    fn decode_hex_rejects_non_hex_characters() {
+        let not_hex = "z".repeat(64);
+        assert!(decode_hex(&not_hex).is_err());
+    }
+
+    #[test]
+    fn encode_then_decode_hex_round_trips() {
+        let bytes = [7u8; 32];
+        assert_eq!(decode_hex(&encode_hex(&bytes)).unwrap(), bytes);
+    }
+}
