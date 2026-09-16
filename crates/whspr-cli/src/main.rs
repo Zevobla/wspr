@@ -9,7 +9,7 @@
 //!                                  persisted speaker database
 //!   whspr stats [--csv] [--by-backend] [--clear]
 //!                                  Print (or clear) per-utterance stats from the history journal
-//!   whspr uninstall [--yes]        Remove the autostart entry and config/data directories
+//!   whspr uninstall [--yes]        Remove the autostart entry, keychain entries and config/data directories
 //!   whspr --version                Print version and exit
 //!
 //! Flags:
@@ -397,7 +397,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Command::Uninstall { yes, data_dir }) => {
-            uninstall_cmd::run(data_dir, yes).await?;
+            uninstall_cmd::run(&config, keystore.as_ref(), data_dir, yes).await?;
         }
 
         None => {

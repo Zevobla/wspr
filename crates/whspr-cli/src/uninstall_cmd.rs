@@ -1,9 +1,17 @@
 //! The `whspr uninstall` subcommand (AH-08): removes the autostart entry
-//! (if any) and the app's config/data directories. Split out of `main.rs`
+//! (if any), whspr's keychain entries, and the app's config/data
+//! directories. Split out of `main.rs`
 //! to keep that file under this project's 600-line-per-file guideline,
 //! same reasoning as `diarize_cmd.rs`/`stats_cmd.rs`.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+
+use whspr_config::{Config, Keystore, SecretName};
+
+/// Cloud backends the desktop app offers an API-key field for; their keys
+/// may sit in the keychain even when `[api_keys]` no longer names them.
+const KNOWN_KEY_BACKENDS: &[&str] = &["openai", "anthropic", "deepgram"];
 
 /// Removes a directory tree, tolerating "it doesn't exist" as a normal
 /// outcome rather than an error - same reasoning as
@@ -14,6 +22,36 @@ fn remove_dir_if_exists(path: &Path) -> anyhow::Result<bool> {
         Ok(()) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Every keystore entry whspr may have created: an API key for each known
+/// cloud backend and each backend named in `[api_keys]`, the HuggingFace
+/// token, and the history-encryption key.
+fn whspr_secret_names(config: &Config) -> Vec<String> {
+    let backends: BTreeSet<&str> = KNOWN_KEY_BACKENDS
+        .iter()
+        .copied()
+        .chain(config.api_keys.keys().map(String::as_str))
+        .collect();
+    let mut names: Vec<String> = backends.into_iter().map(SecretName::api_key).collect();
+    names.push(SecretName::HF_TOKEN.to_string());
+    names.push(SecretName::HISTORY_KEY.to_string());
+    names
+}
+
+/// Deletes whspr's keystore entries, reporting (not aborting on) a failure.
+/// Deleting an entry that was never there is not a failure.
+fn remove_secrets(config: &Config, keystore: &dyn Keystore) {
+    let mut failures = 0;
+    for name in whspr_secret_names(config) {
+        if let Err(e) = keystore.delete(&name) {
+            failures += 1;
+            println!("Warning: could not remove keychain entry {name}: {e}");
+        }
+    }
+    if failures == 0 {
+        println!("Removed whspr's keychain entries (if any existed).");
     }
 }
 
@@ -43,10 +81,16 @@ fn resolve_dirs(override_dir: Option<&Path>) -> anyhow::Result<(PathBuf, PathBuf
 /// Without `--yes` this only prints what it *would* remove: destructive,
 /// irreversible deletion needs an explicit opt-in rather than running by
 /// default the moment someone types the subcommand name.
-pub async fn run(data_dir: Option<PathBuf>, yes: bool) -> anyhow::Result<()> {
+pub async fn run(
+    config: &Config,
+    keystore: &dyn Keystore,
+    data_dir: Option<PathBuf>,
+    yes: bool,
+) -> anyhow::Result<()> {
     if !yes {
         println!(
-            "This would remove whspr's autostart entry and its config/data \
+            "This would remove whspr's autostart entry, its keychain entries (saved \
+             API keys, HuggingFace token, history key) and its config/data \
              directories. Re-run with --yes to actually do it."
         );
         return Ok(());
@@ -54,13 +98,15 @@ pub async fn run(data_dir: Option<PathBuf>, yes: bool) -> anyhow::Result<()> {
 
     // `data_dir` (hidden, test-only --data-dir) being set means this is
     // the e2e suite exercising the removal logic in isolation, not a real
-    // uninstall - skip the actual OS-level autostart removal so tests
-    // never touch the real current user's LaunchAgents/autostart entry.
+    // uninstall - skip the actual OS-level autostart and keychain removal
+    // so tests never touch the real current user's LaunchAgents/autostart
+    // entry or login keychain.
     if data_dir.is_none() {
         match whspr_config::remove_autostart() {
             Ok(()) => println!("Removed autostart entry (if one existed)."),
             Err(e) => println!("Warning: could not remove autostart entry: {e}"),
         }
+        remove_secrets(config, keystore);
     }
 
     let (config_dir, data_dir_path) = resolve_dirs(data_dir.as_deref())?;
@@ -98,7 +144,42 @@ pub async fn run(data_dir: Option<PathBuf>, yes: bool) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use whspr_config::MemoryKeystore;
+
     use super::*;
+
+    #[test]
+    fn secret_names_cover_known_and_configured_backends_once() {
+        let mut config = Config::default();
+        config.api_keys.insert("openai".into(), "k".into());
+        config.api_keys.insert("custom".into(), "k".into());
+        let names = whspr_secret_names(&config);
+        assert_eq!(
+            names,
+            vec![
+                SecretName::api_key("anthropic"),
+                SecretName::api_key("custom"),
+                SecretName::api_key("deepgram"),
+                SecretName::api_key("openai"),
+                SecretName::HF_TOKEN.to_string(),
+                SecretName::HISTORY_KEY.to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn remove_secrets_clears_every_whspr_entry() {
+        let keystore = MemoryKeystore::default();
+        for name in whspr_secret_names(&Config::default()) {
+            keystore.set(&name, "value").unwrap();
+        }
+        keystore.set("not-whspr", "kept").unwrap();
+        remove_secrets(&Config::default(), &keystore);
+        for name in whspr_secret_names(&Config::default()) {
+            assert_eq!(keystore.get(&name).unwrap(), None, "{name} survived");
+        }
+        assert_eq!(keystore.get("not-whspr").unwrap().as_deref(), Some("kept"));
+    }
 
     #[test]
     fn remove_dir_if_exists_removes_a_present_directory() {
