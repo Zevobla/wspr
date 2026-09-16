@@ -9237,7 +9237,6 @@ dependencies = [
 name = "whspr-app"
 version = "0.1.0"
 dependencies = [
- "cpal 0.18.2",
  "dark-light",
  "directories",
  "file-rotate",
