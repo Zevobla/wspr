@@ -263,4 +263,38 @@ mod tests {
             SecretLocation::Missing
         );
     }
+
+    #[test]
+    fn startup_migration_moves_plaintext_only_into_a_persistent_keystore() {
+        let mut config = Config::default();
+        config.api_keys.insert("deepgram".into(), "dg-key".into());
+        config.huggingface.token = Some("hf_abc".into());
+
+        let mut untouched = config.clone();
+        assert_eq!(
+            migrate_plaintext_secrets(&mut untouched, &MemoryKeystore::non_persistent()),
+            StartupMigration::Skipped
+        );
+        assert_eq!(
+            untouched.api_keys.get("deepgram").map(String::as_str),
+            Some("dg-key")
+        );
+
+        let keystore = persistent();
+        let moved = migrate_plaintext_secrets(&mut config, &keystore);
+        assert_eq!(
+            moved,
+            StartupMigration::Moved(vec![
+                SecretName::api_key("deepgram"),
+                SecretName::HF_TOKEN.to_string()
+            ])
+        );
+        assert!(config.api_keys.is_empty());
+        assert!(config.huggingface.token.is_none());
+
+        assert_eq!(
+            migrate_plaintext_secrets(&mut config, &keystore),
+            StartupMigration::NothingToMove
+        );
+    }
 }
