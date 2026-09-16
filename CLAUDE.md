@@ -155,11 +155,13 @@ constructs or touches.
   need more than the workspace default). If you genuinely need a new
   workspace dependency or system library that isn't already there, **do not
   add it yourself** — note it in your final report to the oracle instead.
-- Heavy backend deps (whisper-rs, llama-cpp-2, iced, cpal, global-hotkey,
-  enigo, arboard) are declared in `[workspace.dependencies]` but deliberately
-  *not* pulled into any crate yet, so `cargo build --workspace` stays fast
-  and doesn't need system C libs that aren't installed. Opt them into your
-  own crate's `[dependencies]` when you actually implement against them.
+- Heavy backend deps (whisper-rs, llama-cpp-2, sherpa-rs, mlua, iced, cpal,
+  global-hotkey, enigo, arboard) are declared in `[workspace.dependencies]`
+  and opted into only by the crate that actually implements against them
+  (whspr-asr, whspr-refine, whspr-diarize, whspr-app, whspr-audio,
+  whspr-inject). Don't pull one into a crate that doesn't need it: they are
+  why `cargo build --workspace` needs cmake/libclang and therefore the nix
+  dev shell.
 
 ## Commit hygiene
 
