@@ -1,7 +1,10 @@
-//! Audio capture, decoding, and resampling. `hound`/`rubato`/`cpal` are
-//! genuine `[dependencies]` of this crate. Live microphone capture lives
-//! in the `capture` submodule; device enumeration/selection in `device`;
-//! pre-trigger sample retention in `preroll`.
+//! Audio capture, decode, resample, and light post-processing. Real,
+//! tested implementations throughout — `hound`/`rubato`/`cpal` are
+//! genuine `[dependencies]` of this crate, split across submodules:
+//! `capture` (live mic capture, `CaptureOptions`), `device` (enumeration/
+//! selection/hotplug polling), `dsp` (gain/noise suppression),
+//! `preroll`/`preroll_monitor` (pre-trigger sample retention, at rest and
+//! live).
 
 mod capture;
 mod device;
@@ -53,6 +56,11 @@ fn wav_read_err(e: impl std::fmt::Display) -> WhsprError {
 /// `decode_wav`: it never hands a downstream ASR backend a surprise empty
 /// clip, and a buffer shorter than one window is also returned unchanged
 /// (there's nothing safe to window-classify).
+///
+/// `whspr-config`'s `[capture] vad_threshold` maps directly to this
+/// function's `threshold` argument — the CLI/app read the config value and
+/// pass it straight through; this crate doesn't depend on `whspr-config`
+/// itself, so it can't read it directly.
 pub fn trim_silence(audio: &AudioBuffer, threshold: f32, min_keep: usize) -> AudioBuffer {
     let window_len = ((audio.sample_rate as usize) / 50).max(1); // ~20ms
     let samples = &audio.samples;
