@@ -44,6 +44,7 @@ mod paragraph;
 mod percents;
 mod phones;
 mod punctuation;
+mod shorten;
 mod times;
 mod urls;
 
@@ -60,11 +61,26 @@ use whspr_core::{RefineContext, Result, TextRefiner};
 pub struct NormalizingRefiner {
     inner: Box<dyn TextRefiner>,
     settings: NormalizeSettings,
+    /// Whether the J-11 shortening pass (`shorten` module) runs. Off by
+    /// default; not a `NormalizeSettings` field since its config toggle
+    /// lives in `[capture]`, not `[normalize]` -- see `with_shorten`.
+    shorten: bool,
 }
 
 impl NormalizingRefiner {
     pub fn new(inner: Box<dyn TextRefiner>, settings: NormalizeSettings) -> Self {
-        Self { inner, settings }
+        Self {
+            inner,
+            settings,
+            shorten: false,
+        }
+    }
+
+    /// Enables the shorten pass; whspr-cli wires this from
+    /// `[capture].shorten` / `--shorten`.
+    pub fn with_shorten(mut self, shorten: bool) -> Self {
+        self.shorten = shorten;
+        self
     }
 }
 
@@ -72,7 +88,7 @@ impl NormalizingRefiner {
 impl TextRefiner for NormalizingRefiner {
     async fn refine(&self, raw: &str, ctx: &RefineContext) -> Result<String> {
         let refined = self.inner.refine(raw, ctx).await?;
-        Ok(apply(&refined, &self.settings))
+        Ok(apply(&refined, &self.settings, self.shorten))
     }
 
     fn id(&self) -> &'static str {
@@ -98,7 +114,7 @@ impl TextRefiner for NormalizingRefiner {
 /// phone-number pass could mistake a bare "2 + 3" for a space-separated
 /// digit run), then emails before URLs (so an address is assembled before
 /// its bare domain could be), and the duplicate-word collapse last.
-pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
+pub fn apply(text: &str, settings: &NormalizeSettings, shorten_enabled: bool) -> String {
     let mut text = macros::expand_macros(text, &settings.macros);
     // Dictionary term substitution (H-01) is the same "trigger phrase ->
     // replacement" shape as macros, so it reuses that exact matching
@@ -111,6 +127,11 @@ pub fn apply(text: &str, settings: &NormalizeSettings) -> String {
     // "как бы", ...) so they don't survive into the output even with the noop
     // refiner (rule-based, unlike the LLM prompt's English-only filler pass).
     text = fillers::strip_fillers(&text);
+    // J-11: optional deeper shortening -- see `shorten`'s module doc for
+    // the pass-order rationale (must run before `paragraph_break` below).
+    if shorten_enabled {
+        text = shorten::shorten(&text);
+    }
     if settings.dates {
         text = dates::normalize_dates(&text);
     }
