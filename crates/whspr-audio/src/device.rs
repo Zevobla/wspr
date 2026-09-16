@@ -48,7 +48,7 @@ fn find_matching_device_name(available: &[String], requested: &str) -> Option<us
 pub(crate) fn resolve_input_device(host: &cpal::Host, name: &str) -> Result<cpal::Device> {
     let devices: Vec<cpal::Device> = host
         .input_devices()
-        .map_err(|e| crate::mic_access_error("enumerate input devices", e))?
+        .map_err(|e| crate::capture::mic_access_error("enumerate input devices", e))?
         .collect();
     let names: Vec<String> = devices.iter().map(|d| d.to_string()).collect();
 
@@ -61,7 +61,163 @@ pub(crate) fn resolve_input_device(host: &cpal::Host, name: &str) -> Result<cpal
 
     tracing::warn!("input device {name:?} not found; falling back to the default input device");
     host.default_input_device()
-        .ok_or_else(crate::no_input_device_error)
+        .ok_or_else(crate::capture::no_input_device_error)
+}
+
+/// Case-insensitive substring markers for a Bluetooth input source
+/// (headset/earbuds mic).
+const BLUETOOTH_MARKERS: &[&str] = &["bluetooth", "airpods"];
+
+/// Markers checked as a whole word rather than a plain substring (see
+/// `contains_word`) - short enough ("bt") to otherwise false-positive
+/// inside an unrelated device name (e.g. "Subtotal Device" contains the
+/// substring "bt").
+const BLUETOOTH_WORD_MARKERS: &[&str] = &["bt"];
+
+/// Case-insensitive substring markers for a virtual/loopback input
+/// source, not a physical microphone. Covers common virtual-audio
+/// driver/tool names plus the generic terms "virtual" and "aggregate"
+/// (macOS's Audio MIDI Setup "Aggregate Device" combines/loops back other
+/// devices rather than being a mic itself).
+const VIRTUAL_MARKERS: &[&str] = &[
+    "virtual",
+    "blackhole",
+    "loopback",
+    "soundflower",
+    "vb-cable",
+    "aggregate",
+];
+
+/// Whether `haystack_lower` (already lowercased) contains `word_lower` as
+/// a standalone, whole "word" - tokenizing on any non-alphanumeric
+/// character - rather than as a substring of a longer token.
+fn contains_word(haystack_lower: &str, word_lower: &str) -> bool {
+    haystack_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|token| token == word_lower)
+}
+
+/// Whether `name` (an input device name, as from `input_device_names`)
+/// looks like a Bluetooth source (a headset/earbuds mic), by a handful of
+/// documented, case-insensitive name markers: "Bluetooth", "AirPods", and
+/// the standalone word "BT".
+///
+/// This is a heuristic over the OS-reported device name - cpal exposes no
+/// cross-platform "is this device Bluetooth" query - so it can both miss
+/// a real Bluetooth device with an unusual name and (rarely) false-positive
+/// on a device that merely happens to have one of these markers in its
+/// name.
+pub fn is_bluetooth_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    BLUETOOTH_MARKERS.iter().any(|m| lower.contains(m))
+        || BLUETOOTH_WORD_MARKERS
+            .iter()
+            .any(|w| contains_word(&lower, w))
+}
+
+/// Whether `name` looks like a virtual/loopback audio source rather than
+/// a physical microphone, by the same kind of documented name-marker
+/// heuristic as `is_bluetooth_name`: common virtual-audio driver/tool
+/// names ("BlackHole", "Soundflower", "VB-Cable"), "Loopback", and the
+/// generic terms "virtual"/"aggregate". Same caveats as `is_bluetooth_name`
+/// apply - this is a name heuristic, not a device-capability query.
+pub fn is_virtual_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    VIRTUAL_MARKERS.iter().any(|m| lower.contains(m))
+}
+
+/// Filters `names` (as from `input_device_names`) down to the devices
+/// allowed by the given policy - mirrors `whspr-config`'s `[device]
+/// bluetooth_source`/`virtual_source` toggles (this crate doesn't depend
+/// on `whspr-config`, so the caller reads those and passes them through).
+/// A name matching neither heuristic (an ordinary physical/wired mic)
+/// always passes through, regardless of either flag.
+pub fn filter_input_devices(
+    names: Vec<String>,
+    allow_bluetooth: bool,
+    allow_virtual: bool,
+) -> Vec<String> {
+    names
+        .into_iter()
+        .filter(|name| {
+            (allow_bluetooth || !is_bluetooth_name(name))
+                && (allow_virtual || !is_virtual_name(name))
+        })
+        .collect()
+}
+
+/// Which input device names appeared or disappeared between two
+/// `DeviceWatcher` polls.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DeviceChange {
+    /// Names present in the latest poll but not the previous one.
+    pub added: Vec<String>,
+    /// Names present in the previous poll but not the latest one.
+    pub removed: Vec<String>,
+}
+
+/// Pure diff between two device-name snapshots - the part of
+/// `DeviceWatcher::poll` that's directly unit-testable with fixed name
+/// lists, independent of real device enumeration or timing.
+fn diff_device_names(before: &[String], after: &[String]) -> DeviceChange {
+    DeviceChange {
+        added: after
+            .iter()
+            .filter(|n| !before.contains(n))
+            .cloned()
+            .collect(),
+        removed: before
+            .iter()
+            .filter(|n| !after.contains(n))
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Polls `input_device_names` on an interval and reports the diff since
+/// the last poll - hotplug detection (`whspr-config`'s `[device]
+/// device_hotplug`) without relying on OS-specific hotplug callbacks,
+/// which cpal doesn't expose cross-platform. This is deliberately
+/// polling, not a push notification.
+pub struct DeviceWatcher {
+    poll_interval: std::time::Duration,
+    last_poll: std::time::Instant,
+    known: Vec<String>,
+}
+
+impl DeviceWatcher {
+    /// Creates a watcher seeded with the current device list, so the
+    /// first `poll` reports only genuine changes rather than every
+    /// currently-connected device as "added".
+    pub fn new(poll_interval: std::time::Duration) -> Self {
+        DeviceWatcher {
+            poll_interval,
+            last_poll: std::time::Instant::now(),
+            known: input_device_names(),
+        }
+    }
+
+    /// If at least `poll_interval` has elapsed since the last recompute,
+    /// re-enumerates input devices and returns the diff against the
+    /// previous poll (`None` if nothing changed). Before that interval
+    /// has elapsed, returns `None` immediately without re-enumerating -
+    /// cheap enough to call on every tick of a UI/event loop.
+    pub fn poll(&mut self) -> Option<DeviceChange> {
+        if self.last_poll.elapsed() < self.poll_interval {
+            return None;
+        }
+        self.last_poll = std::time::Instant::now();
+
+        let current = input_device_names();
+        let change = diff_device_names(&self.known, &current);
+        self.known = current;
+
+        if change.added.is_empty() && change.removed.is_empty() {
+            None
+        } else {
+            Some(change)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -116,5 +272,102 @@ mod tests {
         // matching the wrong device would be worse than falling back to
         // the default.
         assert_eq!(find_matching_device_name(&names, "USB"), None);
+    }
+
+    #[test]
+    fn is_bluetooth_name_matches_known_markers() {
+        assert!(is_bluetooth_name("AirPods Pro"));
+        assert!(is_bluetooth_name("Bluetooth Headset"));
+        assert!(is_bluetooth_name("bluetooth headset")); // case-insensitive
+        assert!(is_bluetooth_name("Jabra BT Speaker")); // whole-word "BT"
+    }
+
+    #[test]
+    fn is_bluetooth_name_does_not_match_ordinary_devices() {
+        assert!(!is_bluetooth_name("Built-in Microphone"));
+        assert!(!is_bluetooth_name("USB Headset"));
+        // "bt" appears as a plain substring here, but not as a whole word.
+        assert!(!is_bluetooth_name("Subtotal Device"));
+    }
+
+    #[test]
+    fn is_virtual_name_matches_known_markers() {
+        assert!(is_virtual_name("BlackHole 2ch"));
+        assert!(is_virtual_name("Soundflower (2ch)"));
+        assert!(is_virtual_name("VB-Cable"));
+        assert!(is_virtual_name("Loopback Audio"));
+        assert!(is_virtual_name("Virtual Input"));
+        assert!(is_virtual_name("Aggregate Device"));
+    }
+
+    #[test]
+    fn is_virtual_name_does_not_match_ordinary_devices() {
+        assert!(!is_virtual_name("Built-in Microphone"));
+        assert!(!is_virtual_name("USB Headset"));
+    }
+
+    #[test]
+    fn filter_input_devices_allows_everything_when_both_flags_true() {
+        let names = vec![
+            "Built-in Microphone".to_string(),
+            "AirPods Pro".to_string(),
+            "BlackHole 2ch".to_string(),
+        ];
+        let filtered = filter_input_devices(names.clone(), true, true);
+        assert_eq!(filtered, names);
+    }
+
+    #[test]
+    fn filter_input_devices_drops_bluetooth_when_disallowed() {
+        let names = vec!["Built-in Microphone".to_string(), "AirPods Pro".to_string()];
+        let filtered = filter_input_devices(names, false, true);
+        assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
+    }
+
+    #[test]
+    fn filter_input_devices_drops_virtual_when_disallowed() {
+        let names = vec![
+            "Built-in Microphone".to_string(),
+            "BlackHole 2ch".to_string(),
+        ];
+        let filtered = filter_input_devices(names, true, false);
+        assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
+    }
+
+    #[test]
+    fn filter_input_devices_drops_both_when_both_disallowed() {
+        let names = vec![
+            "Built-in Microphone".to_string(),
+            "AirPods Pro".to_string(),
+            "BlackHole 2ch".to_string(),
+        ];
+        let filtered = filter_input_devices(names, false, false);
+        assert_eq!(filtered, vec!["Built-in Microphone".to_string()]);
+    }
+
+    #[test]
+    fn diff_device_names_reports_added_and_removed() {
+        let before = vec!["Built-in Microphone".to_string(), "USB Headset".to_string()];
+        let after = vec!["Built-in Microphone".to_string(), "AirPods Pro".to_string()];
+
+        let change = diff_device_names(&before, &after);
+        assert_eq!(change.added, vec!["AirPods Pro".to_string()]);
+        assert_eq!(change.removed, vec!["USB Headset".to_string()]);
+    }
+
+    #[test]
+    fn diff_device_names_is_empty_when_unchanged() {
+        let names = vec!["Built-in Microphone".to_string()];
+        let change = diff_device_names(&names, &names);
+        assert!(change.added.is_empty());
+        assert!(change.removed.is_empty());
+    }
+
+    #[test]
+    fn device_watcher_poll_returns_none_before_interval_elapses() {
+        let mut watcher = DeviceWatcher::new(std::time::Duration::from_secs(3600));
+        // Freshly constructed, well within the poll interval - must not
+        // re-enumerate or report a change yet.
+        assert_eq!(watcher.poll(), None);
     }
 }

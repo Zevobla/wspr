@@ -113,6 +113,27 @@ impl PrerollBuffer {
         self.samples.drain(..).collect()
     }
 
+    /// Returns a copy of the buffer's current contents, in chronological
+    /// order (oldest first), without draining it.
+    ///
+    /// Unlike `drain_preroll`, this leaves the buffer intact, so repeated
+    /// calls observe the same (or, as more samples arrive, a superset of
+    /// the same) contents rather than resetting it to empty. Used by
+    /// `PrerollMonitor::snapshot` to peek a live ring without disturbing
+    /// it.
+    ///
+    /// # Example
+    /// ```
+    /// use whspr_audio::PrerollBuffer;
+    /// let mut buf = PrerollBuffer::new(10);
+    /// buf.push_slice(&[0.1, 0.2, 0.3]);
+    /// assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3]);
+    /// assert_eq!(buf.len(), 3, "contents() does not drain the buffer");
+    /// ```
+    pub fn contents(&self) -> Vec<f32> {
+        self.samples.iter().copied().collect()
+    }
+
     /// Returns the number of samples currently in the buffer.
     pub fn len(&self) -> usize {
         self.samples.len()
@@ -239,6 +260,21 @@ mod tests {
         assert_eq!(buf.len(), 3);
         let drained = buf.drain_preroll();
         assert_eq!(drained, vec![2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_preroll_contents_is_non_destructive() {
+        let mut buf = PrerollBuffer::new(10);
+        buf.push_slice(&[0.1, 0.2, 0.3]);
+
+        assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3]);
+        // Calling contents() again must see the same data - unlike
+        // drain_preroll, it doesn't reset the buffer.
+        assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3]);
+        assert_eq!(buf.len(), 3, "contents() must not drain the buffer");
+
+        buf.push(0.4);
+        assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3, 0.4]);
     }
 
     #[test]
