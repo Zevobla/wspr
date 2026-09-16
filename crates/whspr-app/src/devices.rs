@@ -72,6 +72,40 @@ pub(crate) fn apply_device_change(connected: &[String], change: &DeviceChange) -
     devices
 }
 
+/// How a hotplug change affects `State::notice` for the `configured` input
+/// device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NoticeUpdate {
+    /// Leave the notice as it is.
+    Keep,
+    /// The configured device just disconnected: show this fallback notice.
+    Show(String),
+    /// The configured device came back while its fallback notice is still
+    /// showing: clear it.
+    Clear,
+}
+
+/// Decides [`NoticeUpdate`] for a hotplug `change`, given the notice
+/// currently showing (`current`). Only the fallback notice for the
+/// configured device is ever cleared -- an unrelated notice stays up.
+pub(crate) fn hotplug_notice(
+    configured: Option<&str>,
+    change: &DeviceChange,
+    current: Option<&str>,
+) -> NoticeUpdate {
+    let Some(name) = configured else {
+        return NoticeUpdate::Keep;
+    };
+    if change.removed.iter().any(|removed| removed == name) {
+        return NoticeUpdate::Show(fallback_notice(name));
+    }
+    let returned = change.added.iter().any(|added| added == name);
+    if returned && current == Some(fallback_notice(name).as_str()) {
+        return NoticeUpdate::Clear;
+    }
+    NoticeUpdate::Keep
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
