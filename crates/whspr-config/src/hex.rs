@@ -34,3 +34,30 @@ fn nibble(digit: u8) -> Option<u8> {
         .to_digit(16)
         .and_then(|value| u8::try_from(value).ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_then_decode_round_trips() {
+        let bytes: Vec<u8> = (0..=255).collect();
+        let hex = encode_hex(&bytes);
+        assert_eq!(hex.len(), 512);
+        assert_eq!(decode_hex(&hex), Some(bytes));
+    }
+
+    #[test]
+    fn encoding_is_lowercase() {
+        assert_eq!(encode_hex(&[0xAB, 0x01]), "ab01");
+        assert_eq!(decode_hex("AB01"), Some(vec![0xab, 0x01]));
+    }
+
+    #[test]
+    fn malformed_hex_is_rejected_without_panicking() {
+        assert_eq!(decode_hex("abc"), None, "odd length");
+        assert_eq!(decode_hex("zz"), None, "non-hex digit");
+        assert_eq!(decode_hex("+f"), None, "sign");
+        assert_eq!(decode_hex("\u{e9}"), None, "multi-byte character");
+    }
+}
