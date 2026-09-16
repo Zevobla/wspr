@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 use whspr_config::{Config, Keystore, MemoryKeystore, OsKeystore, SecretName};
 
+use crate::state::State;
+
 /// A shared keystore handle: `OsKeystore` in the running app, a
 /// `MemoryKeystore` in tests. Wrapped so `State` can derive `Debug` without
 /// a way to print what is stored.
@@ -215,6 +217,35 @@ pub fn migrate_plaintext_secrets(config: &mut Config, keystore: &dyn Keystore) -
         Ok(report) => StartupMigration::Moved(report.moved),
         Err(error) => StartupMigration::Failed(error.to_string()),
     }
+}
+
+/// Saves `value` as `slot` for the running app (see [`store_secret`]) and
+/// refreshes its cached location. The caller persists `state.config` on
+/// success -- a keystore save also dropped the plaintext copy.
+pub fn save_secret(state: &mut State, slot: SecretSlot, value: &str) -> Result<(), String> {
+    let location = store_secret(&mut state.config, state.keystore.keystore(), slot, value)?;
+    state.secret_locations.insert(slot, location);
+    Ok(())
+}
+
+/// Removes `slot` for the running app (see [`clear_secret`]) and refreshes
+/// its cached location. The caller persists `state.config` afterwards.
+pub fn remove_secret(state: &mut State, slot: SecretSlot) -> Result<(), String> {
+    let result = clear_secret(&mut state.config, state.keystore.keystore(), slot);
+    let location = locate_secret(&state.config, state.keystore.keystore(), slot);
+    state.secret_locations.insert(slot, location);
+    result
+}
+
+/// The saved HuggingFace token for a download or search request, keystore
+/// first (see `Config::resolve_hf_token`); `None` when there is none or it
+/// cannot be read.
+pub fn hf_token(state: &State) -> Option<String> {
+    state
+        .config
+        .resolve_hf_token(state.keystore.keystore())
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]
