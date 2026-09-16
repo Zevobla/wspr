@@ -288,4 +288,22 @@ mod tests {
         );
         assert_eq!(state.history_note, None);
     }
+
+    #[test]
+    fn a_non_persistent_keystore_keeps_encryption_off_and_says_why() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = history_file(&dir, "{\"text\":\"dictated\"}\n");
+        let mut state = state_with(whspr_config::MemoryKeystore::non_persistent());
+
+        assert!(!set_history_encryption_at(&mut state, true, Some(&path)));
+
+        assert!(!state.config.privacy.history_encryption);
+        assert!(state.history_key.is_none());
+        let note = state.history_note.expect("the refusal is explained");
+        assert!(note.starts_with("History stays unencrypted"), "{note}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"text\":\"dictated\"}\n"
+        );
+    }
 }
