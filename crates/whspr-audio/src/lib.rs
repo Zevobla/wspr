@@ -8,7 +8,9 @@ mod device;
 mod dsp;
 mod preroll;
 
-pub use capture::{start_capture, start_capture_on_device, CaptureHandle, CaptureOptions};
+pub use capture::{
+    start_capture, start_capture_on_device, start_capture_with, CaptureHandle, CaptureOptions,
+};
 pub use device::{default_input_device_name, input_device_names};
 pub use dsp::{apply_gain, suppress_noise};
 pub use preroll::{PrerollBuffer, DEFAULT_PREROLL_MS};

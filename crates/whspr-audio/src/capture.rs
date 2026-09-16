@@ -1,6 +1,10 @@
 //! Live microphone capture: opening an input stream, buffering samples
 //! from it, and turning the result into a canonical 16kHz mono
 //! `AudioBuffer` on `stop()`.
+//!
+//! `start_capture`/`start_capture_on_device` are thin, zero-/one-argument
+//! convenience wrappers around `start_capture_with`, which takes a full
+//! `CaptureOptions` (device selection, gain, noise suppression, preroll).
 
 use std::sync::{Arc, Mutex};
 
@@ -52,17 +56,33 @@ impl Default for CaptureOptions {
 
 /// Handle for an in-progress microphone capture session.
 ///
-/// Holds the cpal stream, shared sample buffer, and device sample rate.
+/// Holds the cpal stream, shared sample buffer, and device sample rate,
+/// plus the `CaptureOptions` fields that `stop()` needs to apply its
+/// post-processing pipeline.
 pub struct CaptureHandle {
     stream: cpal::Stream,
     buffer: Arc<Mutex<Vec<f32>>>,
     sample_rate: u32,
+    preroll: Vec<f32>,
+    input_gain: f32,
+    noise_suppression: bool,
 }
 
 impl CaptureHandle {
-    /// Stops capture and returns the recorded audio as a 16kHz mono buffer.
+    /// Stops capture and returns the recorded audio as a 16kHz mono
+    /// buffer, after running the full post-processing pipeline, applied
+    /// in this exact order:
     ///
-    /// The returned buffer is resampled to the canonical 16kHz shape.
+    /// 1. Resample the raw captured audio to 16kHz mono (the canonical
+    ///    shape — unconditional, as it always has been).
+    /// 2. Prepend `preroll` (already 16kHz mono) to the front of the
+    ///    resampled samples, if any was configured.
+    /// 3. Apply `input_gain` (see `apply_gain`).
+    /// 4. If `noise_suppression` is on, run `suppress_noise`.
+    ///
+    /// With `CaptureOptions::default()` (what `start_capture`/
+    /// `start_capture_on_device` use), steps 2-4 are all no-ops, so the
+    /// output is unchanged from before this pipeline existed.
     pub fn stop(self) -> Result<AudioBuffer> {
         drop(self.stream);
 
@@ -73,11 +93,28 @@ impl CaptureHandle {
             .map_err(|e| WhsprError::Audio(format!("failed to lock capture buffer: {}", e)))?
             .clone();
 
-        // Wrap in an AudioBuffer at the device's native sample rate
-        let buffer = AudioBuffer::new(samples, self.sample_rate);
+        // Wrap in an AudioBuffer at the device's native sample rate, then
+        // resample to 16kHz mono (the canonical shape) - step 1.
+        let native = AudioBuffer::new(samples, self.sample_rate);
+        let resampled = crate::resample_to_16k_mono(&native)?;
+        let mut samples = resampled.samples;
 
-        // Resample to 16kHz mono (the canonical shape)
-        crate::resample_to_16k_mono(&buffer)
+        // Step 2: prepend preroll.
+        if !self.preroll.is_empty() {
+            let mut combined = self.preroll;
+            combined.extend_from_slice(&samples);
+            samples = combined;
+        }
+
+        // Step 3: gain.
+        crate::apply_gain(&mut samples, self.input_gain);
+
+        // Step 4: noise suppression.
+        if self.noise_suppression {
+            crate::suppress_noise(&mut samples, 16000);
+        }
+
+        Ok(AudioBuffer::new(samples, 16000))
     }
 
     /// RMS input level (~0.0..1.0) over the most recent ~100ms, for a meter.
@@ -126,12 +163,13 @@ pub(crate) fn mic_access_error(action: &str, cause: impl std::fmt::Display) -> W
 /// Starts recording from the default input device. Equivalent to
 /// `start_capture_on_device(None)`, kept as its own zero-argument entry
 /// point so existing callers don't need to change just because device
-/// selection (C-05) exists now.
+/// selection (C-05) exists now. Equivalent to
+/// `start_capture_with(CaptureOptions::default())`.
 ///
 /// Returns a `CaptureHandle` that can be stopped to retrieve the recorded audio
 /// as a 16kHz mono buffer.
 pub fn start_capture() -> Result<CaptureHandle> {
-    start_capture_on_device(None)
+    start_capture_with(CaptureOptions::default())
 }
 
 /// Starts recording from `device` by name if given (falling back to the
@@ -139,10 +177,22 @@ pub fn start_capture() -> Result<CaptureHandle> {
 /// `resolve_input_device`), or the default input device directly if
 /// `device` is `None`. C-05: lets a caller honor a user's chosen input
 /// device (e.g. the Hub's device picker) instead of always opening
-/// whatever the OS considers "default".
+/// whatever the OS considers "default". Equivalent to
+/// `start_capture_with(CaptureOptions { device: device.map(str::to_string), ..Default::default() })`.
 pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
+    start_capture_with(CaptureOptions {
+        device: device.map(|d| d.to_string()),
+        ..CaptureOptions::default()
+    })
+}
+
+/// Starts recording using `opts` — the option-ful entry point that
+/// `start_capture`/`start_capture_on_device` are thin wrappers around.
+/// See `CaptureOptions` for what each field controls and `CaptureHandle::stop`
+/// for the exact order they're applied in.
+pub fn start_capture_with(opts: CaptureOptions) -> Result<CaptureHandle> {
     let host = cpal::default_host();
-    let device = match device {
+    let device = match opts.device.as_deref() {
         Some(name) => device::resolve_input_device(&host, name)?,
         None => host
             .default_input_device()
@@ -227,6 +277,9 @@ pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
         stream,
         buffer,
         sample_rate,
+        preroll: opts.preroll,
+        input_gain: opts.input_gain,
+        noise_suppression: opts.noise_suppression,
     })
 }
 
