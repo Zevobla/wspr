@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use whspr_config::{Config, Keystore, MemoryKeystore, OsKeystore, SecretName};
+use whspr_config::{Config, Keystore, OsKeystore, SecretName};
 
 use crate::state::State;
 
@@ -38,7 +38,7 @@ impl SecretStore {
     /// reboot-surviving keystore. Backs `State::new` in tests.
     #[cfg(test)]
     pub fn plaintext_only() -> Self {
-        Self::new(Arc::new(MemoryKeystore::non_persistent()))
+        Self::new(Arc::new(whspr_config::MemoryKeystore::non_persistent()))
     }
 
     /// The underlying keystore.
@@ -252,6 +252,7 @@ pub fn hf_token(state: &State) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use whspr_config::MemoryKeystore;
 
     fn persistent() -> MemoryKeystore {
         MemoryKeystore::default()
