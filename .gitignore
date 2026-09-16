@@ -36,3 +36,6 @@ debug
 
 # --- Design comps / references (read from Downloads, never tracked) ---
 *.dc.html
+
+# --- per-architecture / release bundle outputs (scripts/bundle-*.sh, never committed) ---
+/dist-*/
