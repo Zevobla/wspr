@@ -92,17 +92,32 @@ macOS build is ever needed, there is no script for it in this repo today.
 
 ## Build a bundle locally
 
+**macOS:**
+
 ```sh
 ./scripts/bundle-macos.sh                 # version from Cargo.toml
 ./scripts/bundle-macos.sh --version 0.1.0 # or pass one explicitly
 ```
 
 Outputs land in `dist/` (git-ignored): `whspr.app`, `whspr-<v>-macos.dmg`,
-`whspr-<v>-macos.zip`. Nothing generated (the `.icns`, PNGs, `.app`, `.dmg`,
+`whspr-<v>-macos.zip`. `--binary <path>` reuses a prebuilt binary instead of
+running `nix build`. Nothing generated (the `.icns`, PNGs, `.app`, `.dmg`,
 `.zip`) is ever committed — the icon's only committed form is the vector
 `crates/whspr-app/assets/icon.svg`, rasterized at bundle time.
 
-`--binary <path>` reuses a prebuilt binary instead of running `nix build`.
+**Windows** (run on Windows; no Nix):
+
+```powershell
+./scripts/bundle-windows.ps1 -Version 0.1.0                                 # x64 (default)
+./scripts/bundle-windows.ps1 -Version 0.1.0 -Target aarch64-pc-windows-msvc # arm64
+```
+
+Stages `whspr-app.exe` (plus the four DLLs on x64 only) into `dist/whspr/`
+and zips `dist/whspr-<version>-<arch>.zip`. The MSI is a separate step —
+`wix build packaging/windows/whspr.wxs -arch <x64|arm64> -d Version=<v> -d
+BundleDir=<path to dist/whspr>` — see `release.yml` for the exact
+invocation and `packaging/windows/whspr.wxs`'s header comment for the
+per-user install design.
 
 ## Self-contained bundle (vendored dylibs)
 
