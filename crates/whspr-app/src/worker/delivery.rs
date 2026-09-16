@@ -28,6 +28,21 @@ pub(super) fn delivery_for(detection_enabled: bool, field_editable: Option<bool>
     }
 }
 
+/// Resolves [`Delivery`] for a dictation that just finished, querying the
+/// focused element only when detection is enabled. The Accessibility query
+/// is cross-process, so it runs on a blocking thread.
+pub(super) async fn resolve_delivery(detection_enabled: bool) -> Delivery {
+    let field_editable = if detection_enabled {
+        tokio::task::spawn_blocking(whspr_inject::focused_field_is_editable)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    delivery_for(detection_enabled, field_editable)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
