@@ -19,6 +19,145 @@ pub fn apply_gain(samples: &mut [f32], gain: f32) {
     }
 }
 
+/// High-pass cutoff frequency, in Hz, used by `suppress_noise`'s first
+/// stage. ~80 Hz sits below the fundamental of essentially all speech
+/// while still removing DC offset, mic-handling rumble, and HVAC hum.
+const HIGH_PASS_CUTOFF_HZ: f32 = 80.0;
+
+/// Width, in milliseconds, of the window `suppress_noise` scans for the
+/// quietest stretch of audio, whose RMS becomes the estimated noise floor.
+const NOISE_FLOOR_WINDOW_MS: u32 = 100;
+
+/// Width, in milliseconds, of the frames the noise gate evaluates and
+/// attenuates independently. Short enough that the attack/release ramp
+/// between adjacent frames (see `noise_gate_in_place`) stays imperceptible.
+const GATE_FRAME_MS: u32 = 10;
+
+/// A frame is gated (treated as noise) when its RMS is at or below the
+/// estimated noise floor times this multiplier. `2.0` gives a couple of dB
+/// of headroom above the floor so genuine low-level noise gets caught
+/// without also catching quiet speech.
+const GATE_THRESHOLD_MULT: f32 = 2.0;
+
+/// How far a gated frame's samples are scaled down by — not to zero, so a
+/// gated stretch reads as "quieter" rather than an abrupt, ear-catching
+/// mute.
+const GATE_ATTENUATION: f32 = 0.15;
+
+/// An honest, minimal noise-reduction chain, run in place on `samples`
+/// (interpreted as mono `f32` at `sample_rate` Hz):
+///
+/// 1. **High-pass** — a one-pole IIR high-pass filter (~80 Hz cutoff,
+///    `HIGH_PASS_CUTOFF_HZ`) removes DC offset and very-low-frequency
+///    rumble that sits below the range of human speech.
+/// 2. **Noise gate** — the RMS of the quietest contiguous 100ms window in
+///    the (high-passed) signal is taken as the noise floor. The signal is
+///    then processed in ~10ms frames; any frame whose RMS is at or below
+///    `floor * GATE_THRESHOLD_MULT` is attenuated toward (not to) silence
+///    by `GATE_ATTENUATION`, with the per-sample gain linearly ramped
+///    from the previous frame's gain to the new frame's target across
+///    each frame — a short attack/release so a speech onset right after a
+///    quiet stretch isn't clipped by a hard on/off transition.
+///
+/// What this is **not**: there's no spectral subtraction (no FFT
+/// involved at all), no noise-profile learning across calls, and no ML
+/// model. It's two well-understood, cheap DSP stages applied once — good
+/// for steady background hiss/hum/rumble ahead of or around speech, not
+/// for suppressing e.g. a second talker or transient noises.
+///
+/// A silent or empty `samples`, or `sample_rate == 0`, is left/returns
+/// unchanged rather than dividing by zero.
+pub fn suppress_noise(samples: &mut [f32], sample_rate: u32) {
+    if samples.is_empty() || sample_rate == 0 {
+        return;
+    }
+    high_pass_in_place(samples, sample_rate, HIGH_PASS_CUTOFF_HZ);
+    noise_gate_in_place(samples, sample_rate);
+}
+
+/// One-pole IIR high-pass filter, applied in place. Standard textbook
+/// form: `y[i] = alpha * (y[i-1] + x[i] - x[i-1])`, with `alpha` derived
+/// from the cutoff frequency and sample rate.
+fn high_pass_in_place(samples: &mut [f32], sample_rate: u32, cutoff_hz: f32) {
+    let dt = 1.0 / sample_rate as f32;
+    let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff_hz);
+    let alpha = rc / (rc + dt);
+
+    let mut prev_x = samples[0];
+    let mut prev_y = samples[0];
+    for sample in samples.iter_mut() {
+        let x = *sample;
+        let y = alpha * (prev_y + x - prev_x);
+        *sample = y;
+        prev_x = x;
+        prev_y = y;
+    }
+}
+
+/// RMS energy of `samples`; `0.0` for an empty slice.
+fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+}
+
+/// Scans non-overlapping `NOISE_FLOOR_WINDOW_MS` windows across `samples`
+/// and returns the lowest RMS among them — the estimated noise floor. For
+/// a `samples` shorter than one window, falls back to that whole slice's
+/// RMS (there's nothing longer to compare it against).
+fn estimate_noise_floor(samples: &[f32], sample_rate: u32) -> f32 {
+    let window_len = ((sample_rate as u64 * NOISE_FLOOR_WINDOW_MS as u64) / 1000).max(1) as usize;
+    if samples.len() <= window_len {
+        return rms(samples);
+    }
+
+    let mut min_rms = f32::MAX;
+    let mut start = 0;
+    while start + window_len <= samples.len() {
+        let window_rms = rms(&samples[start..start + window_len]);
+        min_rms = min_rms.min(window_rms);
+        start += window_len;
+    }
+    min_rms
+}
+
+/// Attenuates frames of `samples` below the estimated noise floor,
+/// ramping the applied gain linearly across each frame so the transition
+/// in/out of a gated stretch is gradual rather than a hard on/off click.
+fn noise_gate_in_place(samples: &mut [f32], sample_rate: u32) {
+    let floor = estimate_noise_floor(samples, sample_rate);
+    let threshold = floor * GATE_THRESHOLD_MULT;
+    let frame_len = ((sample_rate as u64 * GATE_FRAME_MS as u64) / 1000).max(1) as usize;
+
+    let mut current_gain = 1.0f32;
+    let mut start = 0;
+    while start < samples.len() {
+        let end = (start + frame_len).min(samples.len());
+        let frame = &mut samples[start..end];
+        let frame_rms = rms(frame);
+        let target_gain = if frame_rms <= threshold {
+            GATE_ATTENUATION
+        } else {
+            1.0
+        };
+
+        let frame_len_actual = frame.len();
+        for (i, s) in frame.iter_mut().enumerate() {
+            let t = if frame_len_actual > 1 {
+                i as f32 / (frame_len_actual - 1) as f32
+            } else {
+                1.0
+            };
+            let gain = current_gain + (target_gain - current_gain) * t;
+            *s *= gain;
+        }
+
+        current_gain = target_gain;
+        start = end;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
