@@ -173,3 +173,30 @@ fn preroll_settings_changed(old: &Config, new: &Config) -> bool {
     old.privacy.mic_privacy != new.privacy.mic_privacy
         || old.device.input_device != new.device.input_device
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unrelated_setting_changes_leave_the_preroll_monitor_alone() {
+        let old = Config::default();
+        let mut new = old.clone();
+        new.capture.input_gain = 2.0;
+        new.capture.noise_suppression = true;
+        assert!(!preroll_settings_changed(&old, &new));
+    }
+
+    #[test]
+    fn mic_privacy_or_device_changes_reconcile_the_preroll_monitor() {
+        let old = Config::default();
+
+        let mut privacy_off = old.clone();
+        privacy_off.privacy.mic_privacy = false;
+        assert!(preroll_settings_changed(&old, &privacy_off));
+
+        let mut other_device = old.clone();
+        other_device.device.input_device = Some("USB Mic".to_string());
+        assert!(preroll_settings_changed(&old, &other_device));
+    }
+}
