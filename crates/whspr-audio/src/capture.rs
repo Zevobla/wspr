@@ -234,6 +234,18 @@ pub fn start_capture_on_device(device: Option<&str>) -> Result<CaptureHandle> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn capture_options_default_matches_legacy_start_capture_behavior() {
+        let opts = CaptureOptions::default();
+        assert_eq!(opts.device, None);
+        assert_eq!(opts.input_gain, 1.0, "1.0 gain must be a no-op");
+        assert!(
+            !opts.noise_suppression,
+            "noise suppression off by default, matching whspr-config's default"
+        );
+        assert!(opts.preroll.is_empty());
+    }
+
     // C-13: a mic-failure error must name a concrete recovery step, not
     // just say "capture failed". These test the two error-message builders
     // directly rather than the live-capture entry point itself, which
