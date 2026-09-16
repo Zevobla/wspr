@@ -140,8 +140,7 @@ below is aspirational unless it's explicitly marked "planned."
 
 ## Architecture
 
-The intended runtime pipeline is four stages, each behind its own crate and
-trait:
+The runtime pipeline is four stages, each behind its own crate and trait:
 
 ```
 capture (whspr-audio)  →  ASR (whspr-asr)  →  refine / LLM (whspr-refine)  →  inject (whspr-inject)
@@ -149,26 +148,34 @@ capture (whspr-audio)  →  ASR (whspr-asr)  →  refine / LLM (whspr-refine)  �
    real                     real backends        real backends                real
 ```
 
-`whspr-core::Pipeline` owns this flow today for the ASR → refine → inject
-part; capture, ASR, refine, and inject are all real, tested
-implementations, wired together by the caller (e.g. `whspr-cli`, or
-`whspr-app`'s worker): `transcribe()` → `refine()` → optionally
-`sink.insert()`, reporting `PipelineState` transitions (`Idle` /
-`Recording` / `Transcribing` / `Refining` / `Injecting` / `Error`) as it
-goes.
+`whspr-core::Pipeline` owns this flow today end to end: `transcribe()` →
+`refine()` → optionally `sink.insert()`, reporting `PipelineState`
+transitions (`Idle` / `Recording` / `Transcribing` / `Refining` /
+`Injecting` / `Error`) as it goes. `whspr-cli` and `whspr-app`'s worker
+both wire real capture/ASR/refine/inject implementations into it. A fifth,
+independent trait (`Diarizer`) and crate (`whspr-diarize`) power the
+separate speaker-fingerprinting feature described below — `Pipeline` never
+touches either.
 
-The workspace is 8 crates:
+The workspace is 15 crates:
 
 | Crate | Role | Status |
 |---|---|---|
-| `whspr-core` | Domain types, the 4 traits, `Pipeline` orchestrator | Real, tested |
-| `whspr-asr` | ASR backends (`WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`) | Real, tested |
-| `whspr-refine` | Refine backends (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`) | Real, tested |
-| `whspr-audio` | Capture / WAV decode / resample to 16kHz mono | Real, tested |
-| `whspr-inject` | Global hotkey listener + text injection | Real, tested |
-| `whspr-config` | `Config`, `AsrChoice`, `RefineChoice`, `load()` | Real, minimal (defaults only) |
-| `whspr-app` | Desktop GUI (Hub + Flow Bar, planned on `iced`) | Placeholder binary |
-| `whspr-cli` | CLI binary (`whspr`) | Real, mock-backed end-to-end |
+| `whspr-core` | Domain types, the 5 traits (`AsrBackend`, `TextRefiner`, `HotkeyListener`, `TextSink`, `Diarizer`), `Pipeline` orchestrator | Real, tested |
+| `whspr-asr` | ASR backends: `WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`, `AppleSpeech` | Real, tested |
+| `whspr-refine` | Refine backends: `NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`, `AppleFoundation` + `NormalizingRefiner` rule-based decorator | Real, tested |
+| `whspr-audio` | Capture / WAV decode / resample to 16kHz mono / silence trim / preroll buffer | Real, tested (preroll not wired into live capture yet) |
+| `whspr-inject` | Global hotkey listener + text injection (clipboard-paste-first, typing fallback) | Real, tested |
+| `whspr-diarize` | Speaker-turn segmentation + embedding extraction (sherpa-onnx) | Real, tested; no prebuilt native lib on aarch64-windows |
+| `whspr-config` | `Config` + every settings section, TOML file load/save | Real, tested |
+| `whspr-hf` | In-app HuggingFace model browse/download client | Real, tested |
+| `whspr-import` | yt-dlp/ffmpeg media import (captions + audio) | Real, tested |
+| `whspr-typst` | Typst notes → SVG/PDF rendering library | Real, tested; no caller yet (see Planned) |
+| `whspr-app` | Desktop GUI (`iced`): Hub, tray, background worker | Real, ~14k lines |
+| `whspr-cli` | CLI binary (`whspr`): transcribe / transcribe-batch / diarize / stats / uninstall | Real, tested end-to-end |
+| `whspr-setup` | Windows installer GUI (`iced`) + embedded payload | Real, tested; not yet wired into release CI (see `docs/RELEASING.md`) |
+| `whspr-bench` | ASR backend benchmarking CLI | Real |
+| `whspr-check` | Automated acceptance checker (`cargo run -p whspr-check`) | Real |
 
 ## Swapping models / backends (local ↔ cloud)
 
