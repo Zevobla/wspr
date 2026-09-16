@@ -7,6 +7,7 @@ pub mod architecture;
 pub mod build;
 pub mod cli;
 pub mod config;
+pub mod copyleft;
 pub mod docs;
 pub mod git_growth;
 pub mod license;
@@ -49,6 +50,7 @@ pub fn run_all(root: &Path) -> Vec<CheckResult> {
     results.push(license::check_no_secrets_in_history(root));
     results.push(license::check_dependency_license_inventory(root));
     results.push(license::check_no_copyleft_dependencies(root));
+    results.push(copyleft::check_no_copyleft_crate_names(root));
 
     results.push(docs::check_readme_architecture(root));
     results.push(docs::check_readme_settings_table(root));

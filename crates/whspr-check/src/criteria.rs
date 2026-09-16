@@ -163,6 +163,11 @@ pub const CATALOG: &[Criterion] = &[
         title: "No copyleft dependency licenses under our permissive license",
     },
     Criterion {
+        id: "Z-09",
+        group: "Z",
+        title: "No GPL-family crate names in the resolved dependency tree",
+    },
+    Criterion {
         id: "Z-12",
         group: "Z",
         title: "Model weights are gitignored and absent from the tracked tree",
