@@ -7,6 +7,8 @@
 
 mod keystore;
 mod keystore_os;
+mod names;
 
 pub use keystore::{Keystore, MemoryKeystore};
 pub use keystore_os::OsKeystore;
+pub use names::SecretName;
