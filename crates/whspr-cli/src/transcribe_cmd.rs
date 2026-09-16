@@ -256,6 +256,13 @@ pub async fn run(
 
     eprintln!("Loading audio...");
     let audio = crate::load_audio(&file).await?;
+    // E-04: [capture].vad_threshold on top of decode_wav's own fixed-default
+    // trim, reusing the same min_keep floor that default uses.
+    let audio = whspr_audio::trim_silence(
+        &audio,
+        config.capture.vad_threshold,
+        whspr_audio::DEFAULT_MIN_KEEP_SAMPLES,
+    );
     let audio_duration_secs = audio.duration_secs();
 
     eprintln!("Building pipeline...");
@@ -375,6 +382,11 @@ pub async fn run_batch(
             eprintln!("Processing {}...", path.display());
             match crate::load_audio(&path).await {
                 Ok(audio) => {
+                    let audio = whspr_audio::trim_silence(
+                        &audio,
+                        config.capture.vad_threshold,
+                        whspr_audio::DEFAULT_MIN_KEEP_SAMPLES,
+                    );
                     let audio_duration_secs = audio.duration_secs();
                     let ctx = RefineContext {
                         instructions: Some(effective_instructions(
