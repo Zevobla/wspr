@@ -9,6 +9,7 @@ use iced::Task;
 
 use crate::app::persist_config;
 use crate::config_ui;
+use crate::devices::NoticeUpdate;
 use crate::state::{Message, State};
 
 /// Handles a Settings-tab control message: mutates the matching
@@ -87,6 +88,16 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::VirtualSourceToggled(enabled) => {
             state.config.device.virtual_source = enabled;
             persist_config(state);
+        }
+        Message::InputDevicesChanged(change) => {
+            state.input_devices =
+                crate::devices::apply_device_change(&state.input_devices, &change);
+            let configured = state.config.device.input_device.as_deref();
+            match crate::devices::hotplug_notice(configured, &change, state.notice.as_deref()) {
+                NoticeUpdate::Show(notice) => state.notice = Some(notice),
+                NoticeUpdate::Clear => state.notice = None,
+                NoticeUpdate::Keep => {}
+            }
         }
         Message::TrayStaticToggled(enabled) => {
             state.config.device.tray_static = enabled;

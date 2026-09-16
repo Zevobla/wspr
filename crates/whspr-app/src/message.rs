@@ -36,6 +36,9 @@ pub enum Message {
     SoundFeedbackToggled(bool),
     /// The user picked a different input device in the Hub.
     DeviceSelected(String),
+    /// The hotplug watcher saw input devices connect or disconnect (only
+    /// while `[device].device_hotplug` is on -- see `crate::devices`).
+    InputDevicesChanged(whspr_audio::DeviceChange),
     /// The user asked to rebind the push-to-talk hotkey by pressing a new
     /// combo. The next captured combo is persisted to `config.hotkey` and
     /// registered on the next launch (see `crate::hotkey_capture`).

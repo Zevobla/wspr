@@ -27,8 +27,10 @@ pub struct State {
     /// language, embedding model, toggles, and the input device -- survives
     /// a restart.
     pub config: Config,
-    /// Names of the audio input devices found at boot (see
-    /// `whspr_audio::input_device_names`).
+    /// Names of the connected audio input devices: enumerated at boot (see
+    /// `whspr_audio::input_device_names`), then kept current by the hotplug
+    /// watcher (`Message::InputDevicesChanged`) while `[device].device_hotplug`
+    /// is on.
     pub input_devices: Vec<String>,
     /// The currently selected input device name, if any. At boot this is
     /// restored from `config.device.input_device` when one was persisted,
