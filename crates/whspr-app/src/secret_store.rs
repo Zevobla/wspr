@@ -50,3 +50,52 @@ impl std::fmt::Debug for SecretStore {
             .finish_non_exhaustive()
     }
 }
+
+/// A secret the user manages from the Hub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SecretSlot {
+    /// A cloud backend's API key, by backend id (`"openai"`, ...).
+    ApiKey(&'static str),
+    /// The HuggingFace access token.
+    HfToken,
+}
+
+impl SecretSlot {
+    /// This secret's keystore entry name (see `whspr_config::SecretName`).
+    fn keystore_name(self) -> String {
+        match self {
+            SecretSlot::ApiKey(backend_id) => SecretName::api_key(backend_id),
+            SecretSlot::HfToken => SecretName::HF_TOKEN.to_string(),
+        }
+    }
+
+    /// This secret's plaintext copy in `config`, if it has one.
+    fn plaintext(self, config: &Config) -> Option<&String> {
+        match self {
+            SecretSlot::ApiKey(backend_id) => config.api_keys.get(backend_id),
+            SecretSlot::HfToken => config.huggingface.token.as_ref(),
+        }
+    }
+
+    /// Drops this secret's plaintext copy from `config`.
+    fn clear_plaintext(self, config: &mut Config) {
+        match self {
+            SecretSlot::ApiKey(backend_id) => {
+                config.api_keys.remove(backend_id);
+            }
+            SecretSlot::HfToken => config.huggingface.token = None,
+        }
+    }
+
+    /// Writes `value` as this secret's plaintext copy in `config`.
+    fn set_plaintext(self, config: &mut Config, value: &str) {
+        match self {
+            SecretSlot::ApiKey(backend_id) => {
+                config
+                    .api_keys
+                    .insert(backend_id.to_string(), value.to_string());
+            }
+            SecretSlot::HfToken => config.huggingface.token = Some(value.to_string()),
+        }
+    }
+}
