@@ -44,6 +44,12 @@ below is aspirational unless it's explicitly marked "planned."
   file is the only way to change a *setting*. (A few backends separately
   fall back to a specific env var when their own config field is unset —
   `WHISPER_MODEL_PATH`, `SPEAKER_MODEL_DIR` — see Settings below.)
+  Secrets are the exception to plaintext: on macOS and Windows the app
+  moves saved API keys and the HuggingFace token into the OS keychain
+  (Keychain / Credential Manager), and both the app and the CLI read them
+  from there first (criterion P-06). On Linux the only compiled-in
+  keychain backend forgets entries on reboot, so secrets stay in
+  `config.toml` there.
 - `whspr-asr`: `WhisperLocal`, `OpenAiAsr`, `DeepgramAsr`, and (macOS only)
   `AppleSpeech` (the OS's on-device `SFSpeechRecognizer`) are real, tested
   `AsrBackend` implementations.
@@ -56,16 +62,20 @@ below is aspirational unless it's explicitly marked "planned."
   macro/dictionary substitution table (including a sandboxed LuaJIT
   scripting layer for `lua:`-prefixed macros), dedup, and paragraph breaks
   on top.
-- `whspr-audio`: mic capture (device enumeration/selection), WAV decoding,
-  resampling to 16kHz mono, and RMS-energy-based leading/trailing silence
-  trimming are real and exercised by the real pipeline. A `PrerollBuffer`
-  ring buffer (pre-trigger sample retention, E-10) is implemented and
-  unit-tested, but not yet wired into the live hotkey-capture path — see
-  Planned.
+- `whspr-audio`: mic capture on the selected device (multi-channel input
+  downmixed to mono), WAV decoding, resampling to 16kHz mono, input gain,
+  a light noise-reduction chain (80 Hz high-pass plus a noise gate that
+  only engages when the clip has real silence), RMS-energy silence
+  trimming, a preroll monitor that keeps the last moments before the
+  hotkey (E-10), Bluetooth/virtual device filters, and polling-based
+  device hotplug detection. All real and exercised by the live hotkey
+  path.
 - `whspr-inject`: the global hotkey listener and text injection
   (clipboard-paste-first, with a synthetic-typing fallback, debounce, and
   clipboard save/restore) are real `HotkeyListener`/`TextSink`
-  implementations.
+  implementations. On macOS it also asks the Accessibility API whether
+  the focused element is editable, so text isn't pasted into a button or
+  list.
 - `whspr-diarize` + speaker fingerprinting: a real, tested, bring-your-own-
   model diarization backend — see "Original feature: speaker
   fingerprinting" below.
@@ -108,18 +118,12 @@ below is aspirational unless it's explicitly marked "planned."
 
 **Planned / not yet implemented**
 
-- A cluster of Settings toggles are persisted in `config.toml` and
-  editable in the Hub, but nothing reads them yet — toggling them changes
-  nothing about capture/device/privacy behavior today: `[capture]`
-  `auto_send`, `input_field_detection`, `input_gain`, `noise_suppression`,
-  `shorten`, `vad_threshold`; `[device]` `bluetooth_source`,
-  `device_hotplug`, `tray_static`, `virtual_source`, `active_window`;
-  `[privacy]` `history_encryption`, `mic_privacy`. See the Status column
-  in Settings below for the full, verified list.
-- `whspr-audio`'s `PrerollBuffer` (pre-trigger sample retention, E-10) is
-  implemented and unit-tested but not called from the live hotkey-capture
-  path, so the very first instant of speech can still be clipped in
-  practice.
+- Focused-field detection and active-window context on Windows and
+  Linux: both are macOS-only today and fall back to the normal behavior
+  (paste, no app context) elsewhere.
+- History encryption and keychain-held secrets on Linux: the compiled-in
+  keychain backend there doesn't survive a reboot, so both stay off
+  rather than risk losing keys or making history unreadable.
 - A rendered Typst preview in the Note desk: `whspr-typst` can compile an
   SVG preview, but the desk's preview pane is native `iced` widgets and has
   no image surface to show it yet.
@@ -134,8 +138,6 @@ below is aspirational unless it's explicitly marked "planned."
 - Speaker diarization on aarch64-windows: `sherpa-rs` ships no prebuilt
   native library there, so `SherpaDiarizer::new` returns an honest
   "unavailable" error on that target instead of degrading silently.
-- Moving `[api_keys]` / `huggingface.token` out of plaintext config into
-  the OS keystore (criterion P-06).
 
 ## Architecture
 
@@ -271,10 +273,10 @@ var only when their own config field is unset: `WHISPER_MODEL_PATH`
 "Offline by default" below).
 
 The **Status** column is load-bearing: "wired" means changing the value
-(in the Hub or the config file) visibly changes behavior; "persisted; no
-effect yet" means the value round-trips through the Settings UI and the
-config file, but nothing in the pipeline reads it yet — verified by
-grepping every non-config, non-Settings-screen read site.
+(in the Hub or the config file) visibly changes behavior, verified by
+finding the non-config, non-Settings-screen code that reads it. "wired
+(macOS)" or "wired (macOS/Windows)" means it only has an effect on those
+platforms.
 
 ### Top-level
 
@@ -284,7 +286,7 @@ grepping every non-config, non-Settings-screen read site.
 | `refine` | `noop` | wired | Default refiner (`noop`\|`open-ai`\|`anthropic`\|`llama-local`\|`apple-foundation`); overridden per-run by `--refine`. |
 | `language` | `None` | wired | BCP47 language hint for ASR; overridden per-run by `--language`. |
 | `hotkey` | `None` (platform default) | wired | Push-to-talk hotkey combo label (e.g. `"Ctrl+Shift+D"`). |
-| `api_keys` | `{}` | wired | `[api_keys]` table: cloud backend id -> API key, stored in plaintext. |
+| `api_keys` | `{}` | wired | `[api_keys]` table: cloud backend id -> API key. Plaintext fallback only: on macOS/Windows the app migrates entries into the OS keychain and blanks them here. |
 
 ### `[whisper]`
 
@@ -326,12 +328,12 @@ grepping every non-config, non-Settings-screen read site.
 
 | Key | Default | Status | Meaning |
 |---|---|---|---|
-| `device.input_device` | `None` | wired (partially) | Selected input device name (`None` = host default). Used by the Dictate screen's manual record button; the global-hotkey capture path in `worker.rs` still always opens the OS default device. |
-| `device.device_hotplug` | `true` | persisted; no effect yet | Intended to rescan devices on plug/unplug. |
-| `device.active_window` | `true` | persisted; no effect yet | Intended to record the focused app's name for per-app context. |
-| `device.bluetooth_source` | `true` | persisted; no effect yet | Intended to allow Bluetooth input sources. |
-| `device.virtual_source` | `true` | persisted; no effect yet | Intended to allow virtual/loopback input sources. |
-| `device.tray_static` | `true` | persisted; no effect yet | Intended to keep the tray icon static instead of animating. |
+| `device.input_device` | `None` | wired | Selected input device name (`None` = host default), used by both the hotkey and the Record button. If it disappears, capture falls back to the default mic and the Hub shows a notice. |
+| `device.device_hotplug` | `true` | wired | Polls the input-device list every 2 s to refresh Settings and catch a disconnected device. |
+| `device.active_window` | `true` | wired (macOS) | Passes the frontmost app's name to the refiner as context. |
+| `device.bluetooth_source` | `true` | wired | Lists Bluetooth inputs (AirPods, headsets) in the device picker. |
+| `device.virtual_source` | `true` | wired | Lists virtual/loopback inputs (BlackHole, Loopback, aggregate devices) in the device picker. |
+| `device.tray_static` | `false` | wired | Keeps the tray on its idle icon instead of showing recording/done states. |
 
 ### `[autostart]`
 
@@ -355,8 +357,8 @@ grepping every non-config, non-Settings-screen read site.
 
 | Key | Default | Status | Meaning |
 |---|---|---|---|
-| `privacy.mic_privacy` | `true` | persisted; no effect yet | Intended to release the mic outside active capture. |
-| `privacy.history_encryption` | `false` | persisted; no effect yet | Intended to encrypt stored history at rest. |
+| `privacy.mic_privacy` | `true` | wired | On: the mic is open only while the hotkey is held. Off: an idle preroll stream keeps the moment before the press, so the first word isn't clipped. |
+| `privacy.history_encryption` | `false` | wired (macOS/Windows) | Encrypts `history.jsonl` lines with ChaCha20-Poly1305, key in the OS keychain; toggling converts the existing file. The CLI reads and writes the same format. |
 | `privacy.cookies_browser` | `None` | wired | Browser whose cookies media import may borrow for gated videos. |
 
 ### `[capture]`
@@ -364,19 +366,19 @@ grepping every non-config, non-Settings-screen read site.
 | Key | Default | Status | Meaning |
 |---|---|---|---|
 | `capture.refine_timeout_ms` | `30000` | wired | Timeout for the refine step. |
-| `capture.auto_send` | `false` | persisted; no effect yet | Intended to auto-inject when recording pauses. |
-| `capture.input_field_detection` | `true` | persisted; no effect yet | Intended to detect read-only targets before injecting. |
-| `capture.noise_suppression` | `false` | persisted; no effect yet | Intended noise-suppression preprocessing. |
-| `capture.input_gain` | `1.0` | persisted; no effect yet | Intended input gain multiplier. |
-| `capture.vad_threshold` | `0.01` | persisted; no effect yet | Intended VAD sensitivity — the real silence trim (`whspr_audio::trim_silence_default`) uses its own fixed constant, not this field. |
+| `capture.auto_send` | `false` | wired | During a long hold, a 1.5 s pause in speech inserts what was said so far and keeps recording. |
+| `capture.input_field_detection` | `true` | wired (macOS) | If the focused element is clearly not editable, the text goes to the clipboard with a notice instead of being pasted. Needs Accessibility permission. |
+| `capture.noise_suppression` | `false` | wired | 80 Hz high-pass plus a noise gate on the captured clip (no ML, no spectral subtraction). |
+| `capture.input_gain` | `1.0` | wired | Linear gain on the captured clip, clamped to full scale. |
+| `capture.vad_threshold` | `0.01` | wired | RMS level for trimming leading/trailing silence (app and CLI) and for `auto_send`'s pause detection. |
 | `capture.translate` | `false` | wired | Translate transcribed text via the ASR backend. |
-| `capture.shorten` | `false` | persisted; no effect yet | Intended transcript shortening/summarization. |
+| `capture.shorten` | `false` | wired | Drops parenthetical fillers ("ну,", "like,", "sort of") and stutters, and asks LLM refiners to be concise; `--shorten` overrides it in the CLI. Hesitations like "um"/"эээ" are removed regardless. |
 
 ### `[huggingface]`
 
 | Key | Default | Status | Meaning |
 |---|---|---|---|
-| `huggingface.token` | `None` | wired | OAuth access token for HuggingFace downloads. |
+| `huggingface.token` | `None` | wired | OAuth access token for HuggingFace downloads. Plaintext fallback only: moved into the OS keychain on macOS/Windows. |
 | `huggingface.models_dir` | `None` | wired | Directory downloaded model files are placed in. |
 | `huggingface.model_dirs` | `[]` | wired | Extra directories scanned for already-installed model files. |
 | `huggingface.oauth_client_id` | `None` | wired | OAuth app client id for HuggingFace sign-in. |
@@ -390,9 +392,8 @@ grepping every non-config, non-Settings-screen read site.
 | `refine_settings.llama_model_path` | `None` | wired | GGUF model path for `LlamaLocal`. |
 | `refine_settings.instructions` | `None` | wired | Extra cleanup instructions layered onto the refiners' shared defaults. |
 
-**Planned:** moving `api_keys` / `huggingface.token` into the OS keystore
-(criterion P-06); wiring the "persisted; no effect yet" toggles above into
-real capture/device/privacy behavior.
+Every setting above is now read somewhere; the few marked with a platform
+work only there (see Planned).
 
 ## Original feature: speaker fingerprinting
 
