@@ -1,7 +1,7 @@
 //! The "Privacy" section: microphone-privacy and history-encryption toggles
 //! (AG-01, AG-03, M-17), plus the media-import sign-in browser picker.
 
-use iced::widget::{button, column, row, text};
+use iced::widget::{button, column, row, text, Space};
 use iced::{Alignment, Element};
 
 use crate::hub::common::{field, section, toggle_row};
@@ -25,6 +25,7 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
                 state.config.privacy.history_encryption,
                 Message::HistoryEncryptionToggled,
             ),
+            history_note(state, scheme),
             field(
                 scheme,
                 "Media-import sign-in \u{2014} borrow a signed-in browser for \
@@ -35,6 +36,19 @@ pub(super) fn view<'a>(state: &'a State, scheme: &'static color::Scheme) -> Elem
         .spacing(spacing::MD)
         .into(),
     )
+}
+
+/// Why history encryption could not be switched or used (see
+/// `State::history_note`), under its toggle; nothing when all is well.
+fn history_note<'a>(state: &'a State, scheme: &'static color::Scheme) -> Element<'a, Message> {
+    match &state.history_note {
+        Some(note) => text(note)
+            .size(type_scale::BODY_MEDIUM.size)
+            .font(type_scale::BODY_MEDIUM.font())
+            .color(scheme.on_surface_variant)
+            .into(),
+        None => Space::new().into(),
+    }
 }
 
 /// A chip row: "No sign-in" plus each **installed** browser (detected by
