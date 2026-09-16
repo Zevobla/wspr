@@ -108,3 +108,50 @@ where
         )
         .map_err(|e| crate::capture::mic_access_error(&format!("build {what} input stream"), e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn downmix_interleaved_mono_is_a_passthrough() {
+        let data = vec![0.1, 0.2, 0.3];
+        let mut out = Vec::new();
+        downmix_interleaved(&data, 1, &mut out);
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn downmix_interleaved_stereo_averages_channels() {
+        // [L0, R0, L1, R1] -> [(L0+R0)/2, (L1+R1)/2]
+        let data = vec![1.0, 0.0, 0.5, 0.5];
+        let mut out = Vec::new();
+        downmix_interleaved(&data, 2, &mut out);
+        assert_eq!(out, vec![0.5, 0.5]);
+    }
+
+    #[test]
+    fn downmix_interleaved_three_channels_averages_all_three() {
+        let data = vec![1.0, 0.5, 0.0]; // one frame, 3 channels
+        let mut out = Vec::new();
+        downmix_interleaved(&data, 3, &mut out);
+        assert_eq!(out, vec![0.5]);
+    }
+
+    #[test]
+    fn downmix_interleaved_drops_trailing_partial_frame() {
+        // Two full stereo frames plus one stray extra sample.
+        let data = vec![1.0, 0.0, 0.5, 0.5, 0.9];
+        let mut out = Vec::new();
+        downmix_interleaved(&data, 2, &mut out);
+        assert_eq!(out, vec![0.5, 0.5]);
+    }
+
+    #[test]
+    fn downmix_interleaved_of_empty_slice_is_empty() {
+        let data: Vec<f32> = Vec::new();
+        let mut out = Vec::new();
+        downmix_interleaved(&data, 2, &mut out);
+        assert!(out.is_empty());
+    }
+}
