@@ -419,4 +419,44 @@ mod tests {
         assert!(!raw.contains("private dictation"));
         assert_eq!(read_history_file(&path, Some(&key)).entries, vec![entry]);
     }
+
+    #[test]
+    fn record_completed_at_encrypts_while_encryption_is_on() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+        state.config.privacy.history_encryption = true;
+        state.history_key = Some(crate::history_encryption::HistoryKey::for_test([4; 32]));
+
+        record_completed_at(
+            &mut state,
+            "kept secret".to_string(),
+            None,
+            None,
+            Some(&path),
+        );
+
+        let raw = std::fs::read_to_string(&path).expect("history file should exist");
+        assert!(!raw.contains("kept secret"));
+        assert_eq!(read_history_file(&path, Some(&[4; 32])).entries.len(), 1);
+    }
+
+    #[test]
+    fn record_completed_at_keeps_entries_off_disk_without_the_key() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let mut state = crate::state::State::new(whspr_config::Config::default());
+        state.config.privacy.history_encryption = true;
+
+        record_completed_at(
+            &mut state,
+            "not in the clear".to_string(),
+            None,
+            None,
+            Some(&path),
+        );
+
+        assert_eq!(state.history.len(), 1);
+        assert!(!path.exists());
+    }
 }
