@@ -72,9 +72,7 @@ fn boot() -> (State, Task<Message>) {
         .input_device
         .clone()
         .or_else(whspr_audio::default_input_device_name);
-    state.history = crate::history::history_file_path()
-        .map(|path| crate::history::read_history_file(&path, None).entries)
-        .unwrap_or_default();
+    crate::history_encryption::load_history(&mut state);
     state.speaker_db = crate::speakers::speaker_db_path()
         .map(|path| whspr_config::SpeakerDb::load(&path))
         .unwrap_or_default();
