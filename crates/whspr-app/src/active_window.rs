@@ -81,4 +81,11 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn frontmost_app_name_does_not_panic() {
+        // Headless CI may or may not report a frontmost app; only that
+        // calling this is safe is asserted here, not the value.
+        let _ = frontmost_app_name();
+    }
 }
