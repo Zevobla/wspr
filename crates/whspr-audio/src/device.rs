@@ -146,6 +146,80 @@ pub fn filter_input_devices(
         .collect()
 }
 
+/// Which input device names appeared or disappeared between two
+/// `DeviceWatcher` polls.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DeviceChange {
+    /// Names present in the latest poll but not the previous one.
+    pub added: Vec<String>,
+    /// Names present in the previous poll but not the latest one.
+    pub removed: Vec<String>,
+}
+
+/// Pure diff between two device-name snapshots - the part of
+/// `DeviceWatcher::poll` that's directly unit-testable with fixed name
+/// lists, independent of real device enumeration or timing.
+fn diff_device_names(before: &[String], after: &[String]) -> DeviceChange {
+    DeviceChange {
+        added: after
+            .iter()
+            .filter(|n| !before.contains(n))
+            .cloned()
+            .collect(),
+        removed: before
+            .iter()
+            .filter(|n| !after.contains(n))
+            .cloned()
+            .collect(),
+    }
+}
+
+/// Polls `input_device_names` on an interval and reports the diff since
+/// the last poll - hotplug detection (`whspr-config`'s `[device]
+/// device_hotplug`) without relying on OS-specific hotplug callbacks,
+/// which cpal doesn't expose cross-platform. This is deliberately
+/// polling, not a push notification.
+pub struct DeviceWatcher {
+    poll_interval: std::time::Duration,
+    last_poll: std::time::Instant,
+    known: Vec<String>,
+}
+
+impl DeviceWatcher {
+    /// Creates a watcher seeded with the current device list, so the
+    /// first `poll` reports only genuine changes rather than every
+    /// currently-connected device as "added".
+    pub fn new(poll_interval: std::time::Duration) -> Self {
+        DeviceWatcher {
+            poll_interval,
+            last_poll: std::time::Instant::now(),
+            known: input_device_names(),
+        }
+    }
+
+    /// If at least `poll_interval` has elapsed since the last recompute,
+    /// re-enumerates input devices and returns the diff against the
+    /// previous poll (`None` if nothing changed). Before that interval
+    /// has elapsed, returns `None` immediately without re-enumerating -
+    /// cheap enough to call on every tick of a UI/event loop.
+    pub fn poll(&mut self) -> Option<DeviceChange> {
+        if self.last_poll.elapsed() < self.poll_interval {
+            return None;
+        }
+        self.last_poll = std::time::Instant::now();
+
+        let current = input_device_names();
+        let change = diff_device_names(&self.known, &current);
+        self.known = current;
+
+        if change.added.is_empty() && change.removed.is_empty() {
+            None
+        } else {
+            Some(change)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

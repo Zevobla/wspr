@@ -14,7 +14,7 @@ pub use capture::{
 };
 pub use device::{
     default_input_device_name, filter_input_devices, input_device_names, is_bluetooth_name,
-    is_virtual_name,
+    is_virtual_name, DeviceChange, DeviceWatcher,
 };
 pub use dsp::{apply_gain, suppress_noise};
 pub use preroll::{PrerollBuffer, DEFAULT_PREROLL_MS};
