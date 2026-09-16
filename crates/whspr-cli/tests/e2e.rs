@@ -7,7 +7,7 @@ use predicates::prelude::*;
 use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
 mod common;
-use common::{create_test_wav, create_test_wav_with_tone};
+use common::{create_test_wav, create_test_wav_with_tone, isolated_config_dir};
 
 #[test]
 fn version_flag_exits_zero() {
@@ -20,9 +20,17 @@ fn version_flag_exits_zero() {
 
 #[test]
 fn transcribe_nonexistent_file_fails_with_nonzero_exit() {
+    let config_dir = isolated_config_dir();
     Command::cargo_bin("whspr")
         .unwrap()
-        .args(["transcribe", "/nonexistent/file.wav"])
+        .args([
+            "transcribe",
+            "/nonexistent/file.wav",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure();
 }
@@ -32,19 +40,35 @@ fn transcribe_invalid_file_format_fails() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let invalid_file = temp_dir.path().join("not_a_wav.bin");
     std::fs::write(&invalid_file, b"not a WAV file").expect("failed to create invalid file");
+    let config_dir = isolated_config_dir();
 
     Command::cargo_bin("whspr")
         .unwrap()
-        .args(["transcribe", invalid_file.to_str().unwrap()])
+        .args([
+            "transcribe",
+            invalid_file.to_str().unwrap(),
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure();
 }
 
 #[test]
 fn transcribe_batch_nonexistent_directory_fails() {
+    let config_dir = isolated_config_dir();
     Command::cargo_bin("whspr")
         .unwrap()
-        .args(["transcribe-batch", "/nonexistent/directory"])
+        .args([
+            "transcribe-batch",
+            "/nonexistent/directory",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
+        ])
         .assert()
         .failure();
 }
@@ -54,6 +78,7 @@ fn transcribe_with_json_flag_parses() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     // --asr mock keeps this deterministic and offline (see build_asr_backend
     // in main.rs; the no-flag default now builds a real WhisperLocal
@@ -68,6 +93,10 @@ fn transcribe_with_json_flag_parses() {
             "mock",
             "--json",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success();
@@ -82,6 +111,7 @@ fn transcribe_with_asr_mock_prints_mock_transcript() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     // The CLI's no-flag default now builds a real WhisperLocal backend (see
     // build_asr_backend in main.rs), so `--asr mock` is this suite's
@@ -94,6 +124,10 @@ fn transcribe_with_asr_mock_prints_mock_transcript() {
             "--asr",
             "mock",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -105,6 +139,7 @@ fn transcribe_normalizes_numbers_on_the_real_path() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     // --asr-mock-text (hidden, test-only) drives a normalizable phrase
     // through --asr mock, proving build_refiner's NormalizingRefiner
@@ -120,6 +155,10 @@ fn transcribe_normalizes_numbers_on_the_real_path() {
             "--asr-mock-text",
             "bring twenty five copies",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -131,6 +170,7 @@ fn transcribe_json_output_has_expected_fields() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     let output = Command::cargo_bin("whspr")
         .unwrap()
@@ -141,6 +181,10 @@ fn transcribe_json_output_has_expected_fields() {
             "mock",
             "--json",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr");
@@ -172,6 +216,7 @@ fn transcribe_wpm_reflects_audio_duration_not_processing_time() {
     // plain silent fixture would get trimmed to an unpredictable length,
     // making the expected wpm impossible to pin down here).
     create_test_wav_with_tone(&fixture_path, 16000, 9.0).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     let output = Command::cargo_bin("whspr")
         .unwrap()
@@ -182,6 +227,10 @@ fn transcribe_wpm_reflects_audio_duration_not_processing_time() {
             "mock",
             "--json",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr");
@@ -202,6 +251,7 @@ fn transcribe_batch_succeeds_with_one_result_per_file() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     create_test_wav(&temp_dir.path().join("a.wav"), 16000, 0.1).expect("failed to create a.wav");
     create_test_wav(&temp_dir.path().join("b.wav"), 16000, 0.1).expect("failed to create b.wav");
+    let config_dir = isolated_config_dir();
 
     let output = Command::cargo_bin("whspr")
         .unwrap()
@@ -212,6 +262,10 @@ fn transcribe_batch_succeeds_with_one_result_per_file() {
             "mock",
             "--json",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("failed to run whspr");
@@ -249,6 +303,7 @@ fn transcribe_appends_history_entry_when_stored() {
     // data directory.
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
     let history_path = data_dir.path().join("history.jsonl");
+    let config_dir = isolated_config_dir();
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -259,6 +314,10 @@ fn transcribe_appends_history_entry_when_stored() {
             "mock",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success();
@@ -299,6 +358,7 @@ fn transcribe_no_store_skips_history_entry() {
 
     let data_dir = tempfile::tempdir().expect("failed to create data dir");
     let history_path = data_dir.path().join("history.jsonl");
+    let config_dir = isolated_config_dir();
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -310,6 +370,10 @@ fn transcribe_no_store_skips_history_entry() {
             "--no-store",
             "--data-dir",
             data_dir.path().to_str().unwrap(),
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success();
@@ -326,6 +390,8 @@ fn transcribe_format_srt_prints_timecoded_cues() {
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
+    let config_dir = isolated_config_dir();
+
     // MockAsr's canned Transcript never populates per-segment timing, so
     // this exercises `subtitles`'s degenerate single-cue fallback rather
     // than real segment-per-line output - see subtitles.rs's own unit
@@ -340,6 +406,10 @@ fn transcribe_format_srt_prints_timecoded_cues() {
             "--format",
             "srt",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -353,6 +423,8 @@ fn transcribe_format_vtt_prints_webvtt_header() {
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
+    let config_dir = isolated_config_dir();
+
     Command::cargo_bin("whspr")
         .unwrap()
         .args([
@@ -363,6 +435,10 @@ fn transcribe_format_vtt_prints_webvtt_header() {
             "--format",
             "vtt",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -376,6 +452,8 @@ fn transcribe_format_unknown_value_fails_with_clear_error() {
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
+    let config_dir = isolated_config_dir();
+
     Command::cargo_bin("whspr")
         .unwrap()
         .args([
@@ -386,6 +464,10 @@ fn transcribe_format_unknown_value_fails_with_clear_error() {
             "--format",
             "docx",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .failure()
@@ -398,6 +480,8 @@ fn transcribe_format_takes_precedence_over_json() {
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
 
+    let config_dir = isolated_config_dir();
+
     Command::cargo_bin("whspr")
         .unwrap()
         .args([
@@ -409,6 +493,10 @@ fn transcribe_format_takes_precedence_over_json() {
             "srt",
             "--json",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -437,6 +525,7 @@ async fn transcribe_with_asr_openai_succeeds_against_mock_server() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     // --asr-base-url and --asr-api-key are hidden, test-only overrides (see
     // build_asr_backend in main.rs) that let a real cloud backend be
@@ -454,6 +543,10 @@ async fn transcribe_with_asr_openai_succeeds_against_mock_server() {
             "--asr-api-key",
             "test-key",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -479,6 +572,7 @@ async fn transcribe_with_asr_deepgram_succeeds_against_mock_server() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let fixture_path = temp_dir.path().join("test.wav");
     create_test_wav(&fixture_path, 16000, 0.1).expect("failed to create test WAV");
+    let config_dir = isolated_config_dir();
 
     Command::cargo_bin("whspr")
         .unwrap()
@@ -492,6 +586,10 @@ async fn transcribe_with_asr_deepgram_succeeds_against_mock_server() {
             "--asr-api-key",
             "test-key",
             "--no-store",
+            "--refine",
+            "noop",
+            "--config-dir",
+            config_dir.path().to_str().unwrap(),
         ])
         .assert()
         .success()
