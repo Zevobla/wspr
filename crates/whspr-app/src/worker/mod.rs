@@ -43,6 +43,8 @@ mod session;
 
 pub(crate) use backends::{build_asr_backend, build_refiner};
 pub(crate) use capture_plan::capture_options;
+pub use delivery::Delivery;
+pub(crate) use delivery::CLIPBOARD_NOTICE;
 use session::Session;
 
 /// Events the worker reports back to the iced app.
@@ -65,6 +67,9 @@ pub enum WorkerEvent {
         text: String,
         duration_secs: f32,
         embedding: Option<Vec<f32>>,
+        /// Whether to type the text or, with no text field focused, copy it
+        /// to the clipboard (see `delivery`).
+        delivery: Delivery,
     },
     /// Hotkey listener startup, mic capture, or a pipeline run failed.
     Failed(String),

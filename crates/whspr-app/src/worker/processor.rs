@@ -9,6 +9,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use whspr_config::Config;
 use whspr_core::{AudioBuffer, Pipeline, RefineContext};
 
+use super::delivery::resolve_delivery;
 use super::WorkerEvent;
 
 /// One finished stretch of dictation, ready to transcribe.
@@ -65,6 +66,9 @@ async fn process(pipeline: &Pipeline, chunk: Chunk) -> WorkerEvent {
             text,
             duration_secs,
             embedding,
+            // Checked once the text is ready: what has focus *now* is where
+            // it would be typed.
+            delivery: resolve_delivery(config.capture.input_field_detection).await,
         },
         Err(error) => WorkerEvent::Failed(error.to_string()),
     }
@@ -77,8 +81,10 @@ mod tests {
 
     fn chunk() -> Chunk {
         let mut config = Config::default();
-        // Keep the test off any locally installed speaker model.
+        // Keep the test off any locally installed speaker model, and off the
+        // live Accessibility query.
         config.speaker.enabled = false;
+        config.capture.input_field_detection = false;
         Chunk {
             audio: AudioBuffer::new(vec![0.1; 16000], 16000),
             app_name: None,
@@ -95,10 +101,12 @@ mod tests {
                 text,
                 duration_secs,
                 embedding,
+                delivery,
             } => {
                 assert!(!text.is_empty());
                 assert_eq!(duration_secs, 1.0);
                 assert!(embedding.is_none());
+                assert_eq!(delivery, crate::worker::Delivery::Inject);
             }
             other => panic!("expected Completed, got {other:?}"),
         }
