@@ -35,7 +35,8 @@ impl SecretStore {
     /// A store that forgets everything and says so
     /// (`Keystore::is_persistent` is false), so every secret stays in
     /// `config.toml` -- how the app behaves on a platform without a
-    /// reboot-surviving keystore.
+    /// reboot-surviving keystore. Backs `State::new` in tests.
+    #[cfg(test)]
     pub fn plaintext_only() -> Self {
         Self::new(Arc::new(MemoryKeystore::non_persistent()))
     }
@@ -268,7 +269,7 @@ mod tests {
         let location = store_secret(&mut config, &keystore, slot, "sk-new").unwrap();
 
         assert_eq!(location, SecretLocation::Keystore);
-        assert!(config.api_keys.get("openai").is_none());
+        assert!(!config.api_keys.contains_key("openai"));
         assert_eq!(
             config
                 .resolve_api_key("openai", &keystore)

@@ -224,8 +224,9 @@ pub struct State {
 impl State {
     /// Builds the initial state from `config` with no OS keystore: secrets
     /// stay in `config.toml`, as on a platform whose keystore does not
-    /// survive a reboot (see `SecretStore::plaintext_only`). The app itself
-    /// boots through [`State::with_keystore`].
+    /// survive a reboot (see `SecretStore::plaintext_only`). Test-only: the
+    /// app itself boots through [`State::with_keystore`].
+    #[cfg(test)]
     pub fn new(config: Config) -> Self {
         Self::with_keystore(config, SecretStore::plaintext_only())
     }
