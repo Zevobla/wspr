@@ -100,4 +100,20 @@ mod tests {
         assert!(state.last_error.is_none());
     }
 
+    #[test]
+    fn ready_stores_the_channel_the_worker_reads_settings_from() {
+        let mut state = State::new(whspr_config::Config::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let _ = handle(&mut state, WorkerEvent::Ready(tx));
+
+        let mut config = whspr_config::Config::default();
+        config.capture.input_gain = 2.5;
+        state
+            .worker_config
+            .as_ref()
+            .expect("Ready should store the channel")
+            .send(config)
+            .expect("the receiver is still alive");
+        assert_eq!(rx.try_recv().unwrap().capture.input_gain, 2.5);
+    }
 }
