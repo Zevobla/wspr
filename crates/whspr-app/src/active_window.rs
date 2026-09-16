@@ -56,3 +56,16 @@ pub(crate) fn app_name_for(enabled: bool, detected: Option<String>) -> Option<St
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_name_for_enabled_with_detected_name_returns_it() {
+        assert_eq!(
+            app_name_for(true, Some("Visual Studio Code".to_string())),
+            Some("Visual Studio Code".to_string())
+        );
+    }
+}
