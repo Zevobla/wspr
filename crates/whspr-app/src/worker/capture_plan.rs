@@ -39,3 +39,40 @@ pub(super) fn resolve_device(configured: Option<&str>, available: &[String]) -> 
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|n| n.to_string()).collect()
+    }
+
+    #[test]
+    fn no_configured_device_opens_the_default() {
+        let resolved = resolve_device(None, &names(&["Built-in Microphone"]));
+        assert_eq!(resolved.device, None);
+        assert_eq!(resolved.missing, None);
+    }
+
+    #[test]
+    fn a_connected_configured_device_is_opened_by_name() {
+        let resolved = resolve_device(Some("USB Mic"), &names(&["Built-in Microphone", "USB Mic"]));
+        assert_eq!(resolved.device.as_deref(), Some("USB Mic"));
+        assert_eq!(resolved.missing, None);
+    }
+
+    #[test]
+    fn a_disconnected_configured_device_falls_back_and_is_reported() {
+        let resolved = resolve_device(Some("USB Mic"), &names(&["Built-in Microphone"]));
+        assert_eq!(resolved.device, None);
+        assert_eq!(resolved.missing.as_deref(), Some("USB Mic"));
+    }
+
+    #[test]
+    fn an_empty_device_list_keeps_the_configured_name() {
+        let resolved = resolve_device(Some("USB Mic"), &[]);
+        assert_eq!(resolved.device.as_deref(), Some("USB Mic"));
+        assert_eq!(resolved.missing, None);
+    }
+}
