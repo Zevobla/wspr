@@ -174,7 +174,9 @@ pub(crate) fn set_history_encryption_at(
     state.config.privacy.history_encryption = enabled;
     state.history_key = enabled.then_some(key);
     state.history_note = (unreadable > 0).then(|| {
-        format!("{unreadable} history entries could not be decrypted and were left as they were.")
+        format!(
+            "History entries left as they were because they could not be decrypted: {unreadable}."
+        )
     });
     true
 }
@@ -208,7 +210,7 @@ pub(crate) fn load_history_at(state: &mut State, path: Option<&Path>) {
     state.history = read.entries;
     if read.unreadable > 0 {
         state.notice = Some(format!(
-            "{} history entries could not be decrypted and were skipped.",
+            "History entries skipped because they could not be decrypted: {}.",
             read.unreadable
         ));
     }
@@ -368,7 +370,7 @@ mod tests {
         );
         assert_eq!(
             state.notice.as_deref(),
-            Some("1 history entries could not be decrypted and were skipped.")
+            Some("History entries skipped because they could not be decrypted: 1.")
         );
     }
 
