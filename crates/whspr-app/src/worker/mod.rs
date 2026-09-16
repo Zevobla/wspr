@@ -27,6 +27,7 @@ use whspr_core::{Pipeline, PipelineState, RefineContext};
 use whspr_inject::{DebouncedHotkeyListener, GlobalHotkeyListener};
 
 mod backends;
+mod capture_plan;
 mod hotkey_decision;
 
 pub(crate) use backends::{build_asr_backend, build_refiner};
