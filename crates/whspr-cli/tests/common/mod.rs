@@ -79,3 +79,10 @@ pub fn create_test_wav_with_tone(
     writer.finalize()?;
     Ok(())
 }
+
+/// The canned transcript text MockAsr::default() always returns
+/// (whspr_core::testkit::MockAsr). Used by `e2e.rs` and `subtitles_e2e.rs`;
+/// the diarize/stats/uninstall binaries also compile this module but never
+/// read it, hence the allow (same reason as `create_test_wav_with_tone`).
+#[allow(dead_code)]
+pub const MOCK_TRANSCRIPT: &str = "the quick brown fox jumps over the lazy dog";
