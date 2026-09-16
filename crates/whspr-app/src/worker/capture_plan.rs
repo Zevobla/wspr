@@ -95,4 +95,18 @@ mod tests {
         assert_eq!(resolved.device.as_deref(), Some("USB Mic"));
         assert_eq!(resolved.missing, None);
     }
+
+    #[test]
+    fn capture_options_mirror_the_capture_settings() {
+        let mut config = Config::default();
+        config.capture.input_gain = 1.75;
+        config.capture.noise_suppression = true;
+
+        let opts = capture_options(&config, Some("USB Mic".to_string()), vec![0.25; 4]);
+
+        assert_eq!(opts.device.as_deref(), Some("USB Mic"));
+        assert_eq!(opts.input_gain, 1.75);
+        assert!(opts.noise_suppression);
+        assert_eq!(opts.preroll, vec![0.25; 4]);
+    }
 }
