@@ -161,4 +161,23 @@ mod tests {
         assert!(detector.observe(QUIET, Duration::from_millis(AUTO_SEND_SILENCE_MS)));
         assert!(!detector.speech_seen());
     }
+
+    #[test]
+    fn only_a_speechless_tail_after_auto_sent_chunks_is_dropped() {
+        // (auto_send, chunks_sent, speech_seen) -> worth sending
+        let cases = [
+            ((false, 0, false), true),
+            ((false, 3, false), true),
+            ((true, 0, false), true),
+            ((true, 2, true), true),
+            ((true, 2, false), false),
+        ];
+        for ((auto_send, chunks_sent, speech_seen), expected) in cases {
+            assert_eq!(
+                remainder_worth_sending(auto_send, chunks_sent, speech_seen),
+                expected,
+                "auto_send={auto_send} chunks_sent={chunks_sent} speech_seen={speech_seen}"
+            );
+        }
+    }
 }
