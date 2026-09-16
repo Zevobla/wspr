@@ -101,6 +101,9 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::TrayStaticToggled(enabled) => {
             state.config.device.tray_static = enabled;
+            if let Some(tray) = &state.tray {
+                tray.set_state(state.pipeline_state, enabled);
+            }
             persist_config(state);
         }
         Message::NormalizeNumbersToggled(enabled) => {
