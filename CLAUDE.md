@@ -27,13 +27,15 @@ speak, get clean text injected into whatever app has focus.
   LuaJIT scripting layer for `lua:`-prefixed macros — dedup, paragraph
   breaks).
 - **whspr-audio** — capture/decode/resample: `decode_wav`,
-  `resample_to_16k_mono`, `start_capture`/`CaptureHandle`,
-  `trim_silence`/`trim_silence_default`, `PrerollBuffer`. All real, tested;
-  `PrerollBuffer` (pre-trigger sample retention) is implemented and
-  unit-tested but not yet called from the live capture path.
+  `resample_to_16k_mono`, `start_capture_with(CaptureOptions)` (device,
+  gain, noise suppression, preroll; one shared cpal stream builder that
+  downmixes to mono), `PrerollMonitor`, `trim_silence`, `apply_gain`/
+  `suppress_noise`, and `device::{filter_input_devices, DeviceWatcher}`.
+  Real, tested; the app's hotkey worker uses all of it.
 - **whspr-inject** — `GlobalHotkeyListener` + `EnigoTextSink`
   (clipboard-paste-first with a synthetic-typing fallback, debounce,
-  clipboard save/restore). Real, tested.
+  clipboard save/restore), plus `focused_field_is_editable()` (macOS
+  Accessibility API; `None` elsewhere). Real, tested.
 - **whspr-diarize** — `SherpaDiarizer`: sherpa-onnx-backed speaker-turn
   segmentation + embedding extraction (the `Diarizer` implementation).
   Real, tested; `sherpa-rs` ships no prebuilt native library on
@@ -45,6 +47,11 @@ speak, get clean text injected into whatever app has focus.
   `config.toml` from the platform config directory, overlaid on compiled-in
   defaults, and writes those defaults out on first run. The config file is
   the *only* override mechanism — no environment variables, by design.
+  Secrets go through `Keystore` (`OsKeystore` = macOS Keychain / Windows
+  Credential Manager; `MemoryKeystore` in tests — never touch the real
+  keychain from a test): `resolve_api_key`, `migrate_secrets_to_keystore`,
+  `history_key`, and `history_codec` for encrypted `history.jsonl` lines.
+  The CLI's hidden `--config-dir` also means "no OS keychain".
 - **whspr-hf** — in-app HuggingFace OAuth sign-in + model browse/download
   client, so the GUI's Models tab can populate `whisper.model_path`
   without hand-editing config. Depends only on `whspr-core`.
