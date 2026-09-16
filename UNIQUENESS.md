@@ -21,17 +21,23 @@ tracked submission implements this; it is uncontested in the acceptance matrix.
 The four pipeline stages are our own code behind trait seams in `whspr-core`,
 not a wrapper around a single upstream app:
 
-- **Capture / VAD** (`whspr-audio`): silence trimming, device enumeration and
-  selection, an energy+hangover VAD, and a preroll ring buffer (`PrerollBuffer`,
-  E-10) that retains pre-trigger samples so the first word is never clipped.
+- **Capture** (`whspr-audio`): device enumeration and selection, RMS-energy-
+  based leading/trailing silence trimming (`trim_silence`, applied
+  automatically by `decode_wav`), and a preroll ring buffer (`PrerollBuffer`,
+  E-10) that retains pre-trigger samples so a *future* live-capture caller can
+  prepend them and avoid clipping the first word. `PrerollBuffer` is
+  implemented and unit-tested but not yet wired into the live hotkey-capture
+  path (see `README.md`'s Planned list) — there is no hangover-state VAD
+  gating capture start/stop today, just the RMS trim above.
 - **ASR** (`whspr-asr`): pluggable `AsrBackend` — `WhisperLocal` (whisper-rs),
-  `OpenAiAsr`, `DeepgramAsr` — selected at runtime by config, plus a `MockAsr`
-  test double.
+  `OpenAiAsr`, `DeepgramAsr`, `AppleSpeech` (macOS on-device) — selected at
+  runtime by config, plus a `MockAsr` test double.
 - **Refinement** (`whspr-refine`): a `NormalizingRefiner` decorator chaining
   rule-based passes (numbers/dates/times, dedup, macros) around an LLM backend
-  (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`). Includes a
-  sandboxed **LuaJIT** scripting layer for macros — a `lua:`-prefixed macro runs
-  as a JIT-compiled script, which we have not seen in comparable tools.
+  (`NoopRefiner`, `OpenAiRefiner`, `AnthropicRefiner`, `LlamaLocal`,
+  `AppleFoundation`). Includes a sandboxed **LuaJIT** scripting layer for
+  macros — a `lua:`-prefixed macro runs as a JIT-compiled script, which we
+  have not seen in comparable tools.
 - **Injection** (`whspr-inject`): clipboard save/restore paste with a graceful
   fallback to synthetic typing, pre-paste pause, and hotkey debounce.
 
