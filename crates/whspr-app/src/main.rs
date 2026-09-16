@@ -30,6 +30,7 @@ mod transcribe_url;
 mod tray;
 mod tray_state;
 mod worker;
+mod worker_events;
 
 fn main() -> iced::Result {
     logging::init();
