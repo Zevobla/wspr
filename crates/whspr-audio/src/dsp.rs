@@ -224,4 +224,22 @@ mod tests {
         let mean: f32 = tail.iter().sum::<f32>() / tail.len() as f32;
         assert!(mean.abs() < 0.01, "DC offset not removed: mean={mean}");
     }
+
+    #[test]
+    fn suppress_noise_keeps_silence_quiet() {
+        let sample_rate = 16000u32;
+        // Low-level noise, not exact silence (RMS 0 would make the gate's
+        // threshold 0 too, trivially "passing" - a more realistic quiet
+        // room has some noise floor).
+        let mut samples: Vec<f32> = (0..sample_rate)
+            .map(|i| 0.001 * ((i as f32) * 0.7).sin())
+            .collect();
+        suppress_noise(&mut samples, sample_rate);
+
+        let output_rms = rms(&samples);
+        assert!(
+            output_rms < 0.005,
+            "near-silence should stay quiet: output RMS={output_rms}"
+        );
+    }
 }
