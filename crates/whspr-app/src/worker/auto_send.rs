@@ -139,4 +139,14 @@ mod tests {
             assert_eq!(fire_times(case.samples), case.fires_at, "{}", case.name);
         }
     }
+
+    #[test]
+    fn speech_seen_tracks_speech_since_the_last_send() {
+        let mut detector = AutoSendDetector::new(THRESHOLD);
+        assert!(!detector.speech_seen());
+        detector.observe(SPEECH, Duration::ZERO);
+        assert!(detector.speech_seen());
+        assert!(detector.observe(QUIET, Duration::from_millis(AUTO_SEND_SILENCE_MS)));
+        assert!(!detector.speech_seen());
+    }
 }
