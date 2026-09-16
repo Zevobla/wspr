@@ -225,3 +225,33 @@ fn newest_config(
     }
     config
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn newest_config_skips_to_the_last_queued_save() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        for gain in [1.25, 1.5, 1.75] {
+            let mut config = whspr_config::Config::default();
+            config.capture.input_gain = gain;
+            tx.send(config).unwrap();
+        }
+        let first = rx.try_recv().unwrap();
+
+        let newest = newest_config(first, &mut rx);
+
+        assert_eq!(newest.capture.input_gain, 1.75);
+        assert!(rx.try_recv().is_err(), "the queue is drained");
+    }
+
+    #[test]
+    fn newest_config_keeps_the_only_save() {
+        let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut config = whspr_config::Config::default();
+        config.capture.input_gain = 0.5;
+
+        assert_eq!(newest_config(config, &mut rx).capture.input_gain, 0.5);
+    }
+}
