@@ -67,8 +67,9 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             persist_config(state);
         }
         Message::HistoryEncryptionToggled(enabled) => {
-            state.config.privacy.history_encryption = enabled;
-            persist_config(state);
+            if crate::history_encryption::set_history_encryption(state, enabled) {
+                persist_config(state);
+            }
         }
         Message::CookieBrowserChanged(browser) => {
             state.config.privacy.cookies_browser = browser;
