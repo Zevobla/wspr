@@ -84,3 +84,16 @@ pub(crate) fn handle(state: &mut State, event: WorkerEvent) -> Task<Message> {
     }
     Task::none()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_worker_notice_lands_in_state_notice_not_last_error() {
+        let mut state = State::new(whspr_config::Config::default());
+        let _ = handle(&mut state, WorkerEvent::Notice("heads up".to_string()));
+        assert_eq!(state.notice.as_deref(), Some("heads up"));
+        assert!(state.last_error.is_none());
+    }
+}
