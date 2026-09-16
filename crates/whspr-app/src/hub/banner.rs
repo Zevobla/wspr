@@ -108,3 +108,43 @@ fn banner<'a>(
     .into()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state() -> State {
+        State::new(whspr_config::Config::default())
+    }
+
+    #[test]
+    fn nothing_to_report_shows_no_banner() {
+        assert!(visible_banners(&state()).is_empty());
+    }
+
+    #[test]
+    fn a_notice_shows_on_its_own() {
+        let mut state = state();
+        state.notice = Some("copied to clipboard".to_string());
+        assert_eq!(visible_banners(&state), vec![BannerKind::Notice]);
+    }
+
+    #[test]
+    fn an_error_is_listed_before_a_notice() {
+        let mut state = state();
+        state.last_error = Some("boom".to_string());
+        state.notice = Some("using the default microphone".to_string());
+        assert_eq!(
+            visible_banners(&state),
+            vec![BannerKind::Error, BannerKind::Notice]
+        );
+    }
+
+    #[test]
+    fn an_error_suppresses_the_onboarding_prompt() {
+        let mut state = state();
+        state.needs_model = true;
+        assert_eq!(visible_banners(&state), vec![BannerKind::Onboarding]);
+        state.last_error = Some("boom".to_string());
+        assert_eq!(visible_banners(&state), vec![BannerKind::Error]);
+    }
+}
