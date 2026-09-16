@@ -263,6 +263,21 @@ mod tests {
     }
 
     #[test]
+    fn test_preroll_contents_is_non_destructive() {
+        let mut buf = PrerollBuffer::new(10);
+        buf.push_slice(&[0.1, 0.2, 0.3]);
+
+        assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3]);
+        // Calling contents() again must see the same data - unlike
+        // drain_preroll, it doesn't reset the buffer.
+        assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3]);
+        assert_eq!(buf.len(), 3, "contents() must not drain the buffer");
+
+        buf.push(0.4);
+        assert_eq!(buf.contents(), vec![0.1, 0.2, 0.3, 0.4]);
+    }
+
+    #[test]
     fn test_preroll_chronological_order() {
         // Verify that drained samples are in chronological order (oldest first)
         let mut buf = PrerollBuffer::new(100);
