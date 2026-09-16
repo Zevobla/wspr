@@ -416,50 +416,64 @@ reason to build.
 ### Try it
 
 ```sh
-whspr diarize <FILE> [--model-dir <DIR>] [--embedding cam-plus-plus|eres2net] [--json]
+whspr diarize <FILE> [--model-dir <DIR>] [--embedding cam-plus-plus|eres2net] [--language <LANG>] [--json]
 ```
 
 - `<FILE>` — a WAV file (mono or multi-channel; it's decoded and downmixed/resampled to 16kHz mono like every other whspr audio input).
 - `--embedding` — which speaker-embedding model to load: `cam-plus-plus` (WeSpeaker CAM++, the default) or `eres2net` (3D-Speaker ERes2Net). Falls back to the config file's `[speaker].embedding-model` if omitted.
 - `--model-dir` — directory containing the sherpa-onnx model files (see "Offline by default" below). Falls back to `[speaker].model-dir` in the config file, then to the `SPEAKER_MODEL_DIR` environment variable.
+- `--language` — a BCP47 hint, accepted for consistency with `transcribe`; diarization's segmentation/embedding models are acoustic, not text-based, so this isn't consumed yet — it's plumbed through for a future word-level who-said-what alignment.
 - `--json` — print a JSON array of `{start_secs, end_secs, speaker, score}` instead of plain-text `[start-end] SpeakerN` lines.
 
 Every run matches its turns against `speakers.json` in the platform data
 directory (`~/Library/Application Support/whspr` on macOS,
-`~/.local/share/whspr` on Linux — confirmed by resolving whspr's actual
-`ProjectDirs` lookup) and rewrites it, so identity persists *across*
-invocations, not just within one scan. Run it against two different
-recordings of the same voice and the second run reuses the first run's
-speaker id instead of minting a new one. Verified end to end (offline
-mock backend — see below — two separate 1-second silent WAVs, same
-`--data-dir`):
+`~/.local/share/whspr` on Linux) and rewrites it, so identity persists
+*across* invocations, not just within one scan. With no model directory
+resolvable, `whspr diarize` refuses rather than guessing — this is what a
+real, unconfigured run looks like today:
 
 ```
 $ whspr diarize a.wav --json --data-dir /tmp/demo
-[{"end_secs":2.5,"score":0.949999988079071,"speaker":"Speaker 1","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"Speaker 2","start_secs":2.5}]
-$ whspr diarize b.wav --json --data-dir /tmp/demo
-[{"end_secs":2.5,"score":0.949999988079071,"speaker":"Speaker 1","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"Speaker 2","start_secs":2.5}]
-$ cat /tmp/demo/speakers.json   # both a.wav and b.wav recorded under each profile's "scans"
+Error: no speaker model available: speaker diarization needs a model directory. Pass --model-dir, set [speaker].model_dir in the config, or set the SPEAKER_MODEL_DIR environment variable, then try again.
 ```
 
-Both runs assign the same two speaker ids and `speakers.json` ends up with
-both files' paths recorded under each profile's `scans` list — the
-persisted match-or-enroll logic is real. (`--data-dir` is a hidden,
-test-only flag that redirects `speakers.json` into a sandbox directory
-like the one above; real usage omits it and lets `speakers.json` live in
-the platform data directory.)
+To exercise the persisted match-or-enroll database logic without
+downloading model files, the deterministic test suite (and this demo) use
+the explicit `WHSPR_DIARIZE_MOCK=1` opt-in — never implicit, and never
+silent (see "Offline by default" below). Run against two different files
+sharing a `--data-dir`, actually run today:
+
+```
+$ WHSPR_DIARIZE_MOCK=1 whspr diarize a.wav --json --data-dir /tmp/demo
+WARNING: WHSPR_DIARIZE_MOCK is set -- using a synthetic mock diarizer. Speaker turns are FABRICATED, not real. This is a test/development affordance; unset it for real diarization.
+[{"end_secs":2.5,"score":0.949999988079071,"speaker":"463b7575-d444-46b1-8090-e9ec674ced12","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"1b876984-1a48-41b3-8fba-44dfc84d6610","start_secs":2.5}]
+$ WHSPR_DIARIZE_MOCK=1 whspr diarize b.wav --json --data-dir /tmp/demo
+WARNING: WHSPR_DIARIZE_MOCK is set -- using a synthetic mock diarizer. Speaker turns are FABRICATED, not real. This is a test/development affordance; unset it for real diarization.
+[{"end_secs":2.5,"score":0.949999988079071,"speaker":"463b7575-d444-46b1-8090-e9ec674ced12","start_secs":0.0},{"end_secs":5.0,"score":0.9200000166893005,"speaker":"1b876984-1a48-41b3-8fba-44dfc84d6610","start_secs":2.5}]
+```
+
+Both runs assign the same two speaker ids (v4 UUIDs, minted at first
+enrollment — not sequential "Speaker N" labels) and `speakers.json` ends
+up with both files' paths recorded under each profile's `scans` list — the
+persisted match-or-enroll logic is real; only the *voices* in this demo
+are fabricated. This exact scenario (two files, one data dir, matching ids
+across runs) is also covered by an automated test:
+`diarize_persists_speaker_matches_across_runs` in
+`crates/whspr-cli/tests/diarize_e2e.rs`.
 
 ### Offline by default
 
-`whspr diarize` never touches the network. If no model directory is
-resolvable (from `--model-dir`, `[speaker].model-dir`, or the
-`SPEAKER_MODEL_DIR` environment variable), it falls back to a
-deterministic, model-free `MockDiarizer` that always returns the same two
-canned turns/embeddings regardless of the input audio — that's the
-backend the example above exercises. It proves the *database* logic
-(matching, enrollment, persistence) for real, but since `MockDiarizer`
-never actually listens to the audio, it isn't demonstrating real
-acoustic voice recognition.
+`whspr diarize` never touches the network, and it never fabricates results
+silently. With no model directory resolvable (from `--model-dir`,
+`[speaker].model-dir`, or the `SPEAKER_MODEL_DIR` environment variable), it
+refuses with an error (see above) instead of falling back to a fake
+backend. The GUI behaves the same way: Hub → Speakers shows a "needs a
+speaker model" prompt (`state.needs_speaker_model`, driven by
+`whspr-app/src/speakers.rs`'s `run_diarize_scan`) rather than enrolling
+fabricated speakers. The *only* way to get synthetic output, in the CLI or
+the tests, is the explicit `WHSPR_DIARIZE_MOCK=1` environment variable — it
+exists solely for the deterministic test suite and prints the loud
+FABRICATED warning shown above on every use; a real user never sets it.
 
 For real acoustic diarization, whspr is bring-your-own-model: it doesn't
 fetch or ship these checkpoints for you. Download `segmentation.onnx`
@@ -468,9 +482,11 @@ plus whichever embedding checkpoint(s) you want into one directory —
 upstream URLs and required filenames — then point `SPEAKER_MODEL_DIR` (or
 `--model-dir`) at it. Feed it a real multi-speaker recording (not a
 silent test fixture — the real segmentation model finds zero turns in
-silence, which is why the offline demo above deliberately uses the mock
-fallback) to see genuine speaker-turn segmentation and voice-based
-re-identification.
+silence, which is why the demo above deliberately uses the mock opt-in) to
+see genuine speaker-turn segmentation and voice-based re-identification.
+On aarch64-windows, `sherpa-rs` ships no prebuilt native library at all,
+so `SherpaDiarizer::new` returns an honest "unavailable" error on that
+target too, rather than silently degrading.
 
 ### Tests
 
