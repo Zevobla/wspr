@@ -90,6 +90,13 @@ pub struct State {
     /// from `last_error` so an informational message never reads as a
     /// failure.
     pub notice: Option<String>,
+    /// The running dictation worker's settings channel, once it reports
+    /// `WorkerEvent::Ready`. `crate::app::persist_config` pushes every saved
+    /// `Config` through it, so capture settings (device, gain, noise
+    /// suppression, mic privacy, auto-send, ...) apply to the next dictation
+    /// without a restart. `None` until the worker is up, or if it parked on
+    /// a startup failure.
+    pub worker_config: Option<tokio::sync::mpsc::UnboundedSender<Config>>,
     /// The persisted speaker-enrollment database (see
     /// `whspr_config::SpeakerDb`): every distinct speaker discovered across
     /// past diarization scans. Loaded at boot, written back to
@@ -232,6 +239,7 @@ impl State {
             last_error: None,
             needs_model: false,
             notice: None,
+            worker_config: None,
             speaker_db: whspr_config::SpeakerDb::default(),
             speaker_rename_drafts: std::collections::HashMap::new(),
             diarize_status: None,
