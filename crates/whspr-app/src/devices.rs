@@ -64,4 +64,43 @@ mod tests {
         assert!(notice.contains("USB Mic"));
         assert!(notice.contains("default microphone"));
     }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|n| n.to_string()).collect()
+    }
+
+    #[test]
+    fn picker_filters_bluetooth_and_virtual_sources_by_the_toggles() {
+        let connected = names(&["Built-in Microphone", "AirPods Pro", "BlackHole 2ch"]);
+
+        let all = device_picker(&connected, None, true, true);
+        assert_eq!(all.options, connected);
+        assert_eq!(all.note, None);
+
+        let physical_only = device_picker(&connected, None, false, false);
+        assert_eq!(physical_only.options, names(&["Built-in Microphone"]));
+        assert_eq!(physical_only.note, None);
+    }
+
+    #[test]
+    fn picker_keeps_a_filtered_out_selection_with_a_note() {
+        let connected = names(&["Built-in Microphone", "AirPods Pro"]);
+        let picker = device_picker(&connected, Some("AirPods Pro"), false, true);
+        assert_eq!(
+            picker.options,
+            names(&["Built-in Microphone", "AirPods Pro"])
+        );
+        assert!(picker
+            .note
+            .unwrap()
+            .contains("hidden by the source settings"));
+    }
+
+    #[test]
+    fn picker_keeps_a_disconnected_selection_with_the_fallback_notice() {
+        let connected = names(&["Built-in Microphone"]);
+        let picker = device_picker(&connected, Some("USB Mic"), true, true);
+        assert_eq!(picker.options, names(&["Built-in Microphone", "USB Mic"]));
+        assert_eq!(picker.note, Some(fallback_notice("USB Mic")));
+    }
 }
