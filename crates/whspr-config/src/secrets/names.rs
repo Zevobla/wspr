@@ -26,3 +26,26 @@ impl SecretName {
     /// is on (see [`super::history_key`]).
     pub const HISTORY_KEY: &'static str = "history-key";
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_key_names_by_backend_id() {
+        assert_eq!(SecretName::api_key("openai"), "api-key:openai");
+        assert_eq!(SecretName::api_key("anthropic"), "api-key:anthropic");
+    }
+
+    #[test]
+    fn fixed_names_are_stable() {
+        assert_eq!(SecretName::HF_TOKEN, "hf-token");
+        assert_eq!(SecretName::HISTORY_KEY, "history-key");
+    }
+
+    #[test]
+    fn api_key_names_never_collide_with_the_fixed_names() {
+        assert_ne!(SecretName::api_key("hf-token"), SecretName::HF_TOKEN);
+        assert_ne!(SecretName::api_key("history-key"), SecretName::HISTORY_KEY);
+    }
+}
