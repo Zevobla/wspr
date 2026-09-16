@@ -7,9 +7,11 @@
 
 mod keystore;
 mod keystore_os;
+mod migrate;
 mod names;
 mod resolve;
 
 pub use keystore::{Keystore, MemoryKeystore};
 pub use keystore_os::OsKeystore;
+pub use migrate::MigrationReport;
 pub use names::SecretName;
