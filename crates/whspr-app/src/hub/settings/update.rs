@@ -10,6 +10,7 @@ use iced::Task;
 use crate::app::persist_config;
 use crate::config_ui;
 use crate::devices::NoticeUpdate;
+use crate::secret_store::{remove_secret, save_secret, SecretSlot};
 use crate::state::{Message, State};
 
 /// Handles a Settings-tab control message: mutates the matching
@@ -130,8 +131,26 @@ pub(crate) fn update(state: &mut State, message: Message) -> Task<Message> {
             state.config.normalize.punctuation_toggle = enabled;
             persist_config(state);
         }
-        Message::ApiKeyChanged(id, value) => {
-            state.config.api_keys.insert(id.to_string(), value);
+        Message::ApiKeyDraftChanged(id, draft) => {
+            state.api_key_drafts.insert(id, draft);
+        }
+        Message::ApiKeySaved(id) => {
+            let draft = state.api_key_drafts.remove(id).unwrap_or_default();
+            let key = draft.trim();
+            if !key.is_empty() {
+                match save_secret(state, SecretSlot::ApiKey(id), key) {
+                    Ok(()) => persist_config(state),
+                    Err(error) => {
+                        state.last_error = Some(format!("API key not saved: {error}"));
+                        state.api_key_drafts.insert(id, draft);
+                    }
+                }
+            }
+        }
+        Message::ApiKeyRemoved(id) => {
+            if let Err(error) = remove_secret(state, SecretSlot::ApiKey(id)) {
+                state.last_error = Some(format!("API key not fully removed: {error}"));
+            }
             persist_config(state);
         }
         // UI-only state (no config write): the Settings sub-nav selection

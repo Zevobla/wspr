@@ -189,10 +189,16 @@ pub enum Message {
     ParagraphBreakToggled(bool),
     /// The user toggled "Auto-punctuate" in the Normalize section.
     PunctuationToggleToggled(bool),
-    /// The user edited one of the API keys section's `text_input` fields:
-    /// (backend id, e.g. "openai"/"anthropic"/"deepgram", new value).
-    /// Written straight into `config.api_keys` -- see `crate::app::update`.
-    ApiKeyChanged(&'static str, String),
+    /// The user typed in one of the API keys section's inputs: (backend id,
+    /// e.g. "openai"/"anthropic"/"deepgram", the unsaved draft). Held in
+    /// `State::api_key_drafts` until saved.
+    ApiKeyDraftChanged(&'static str, String),
+    /// The user saved a backend's drafted API key: it goes to the OS
+    /// keystore when that survives a reboot, else to `config.api_keys` (see
+    /// `crate::secret_store::store_secret`).
+    ApiKeySaved(&'static str),
+    /// The user removed a backend's saved API key from wherever it lives.
+    ApiKeyRemoved(&'static str),
     /// The user clicked "Sign in with HuggingFace" on the Models tab: starts
     /// the browser OAuth flow (see `crate::hf::run_login`).
     HfSignIn,
