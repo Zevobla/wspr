@@ -4,6 +4,9 @@
 //! trimmed, and whether an idle preroll monitor should be listening. Kept
 //! free of cpal so every branch is unit-testable without a microphone.
 
+use whspr_audio::CaptureOptions;
+use whspr_config::Config;
+
 /// The input device a capture should open, after checking the configured
 /// name against the devices actually connected.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +40,23 @@ pub(super) fn resolve_device(configured: Option<&str>, available: &[String]) -> 
             device: None,
             missing: None,
         },
+    }
+}
+
+/// The `CaptureOptions` for a capture on `device`: `[capture].input_gain` and
+/// `[capture].noise_suppression` straight from `config`, plus `preroll` (16 kHz
+/// mono samples an idle monitor kept from just before the hotkey press;
+/// empty when there is none).
+pub(super) fn capture_options(
+    config: &Config,
+    device: Option<String>,
+    preroll: Vec<f32>,
+) -> CaptureOptions {
+    CaptureOptions {
+        device,
+        input_gain: config.capture.input_gain,
+        noise_suppression: config.capture.noise_suppression,
+        preroll,
     }
 }
 
