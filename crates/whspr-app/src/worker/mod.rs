@@ -30,6 +30,7 @@ mod backends;
 mod capture_plan;
 mod hotkey_decision;
 mod preroll;
+mod processor;
 
 pub(crate) use backends::{build_asr_backend, build_refiner};
 use hotkey_decision::{capture_decision, CaptureDecision};
