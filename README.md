@@ -491,10 +491,10 @@ target too, rather than silently degrading.
 ### Tests
 
 - `crates/whspr-diarize/src/lib.rs` — unit tests for `SherpaDiarizer`'s model-dir resolution precedence, segment-range clamping, and missing-model-file error paths.
-- `crates/whspr-config/src/speaker.rs` — unit tests for `SpeakerDb::match_or_enroll` (new speaker, matching speaker, orthogonal embedding creates a new speaker), `rename`, and save/load round-tripping.
-- `crates/whspr-cli/tests/diarize_e2e.rs` — `assert_cmd`-driven end-to-end tests: mock-backend labeling, cross-run persistence, nonexistent-model-dir/unknown-embedding error paths, and the `SPEAKER_MODEL_DIR` fallback.
-- `crates/whspr-app/src/speakers.rs` — a test covering `run_diarize_scan`'s mock-fallback and `SPEAKER_MODEL_DIR`-fallback paths for the GUI's background diarization task.
-- `whspr_core::testkit::MockDiarizer` — the shared, deterministic double all of the above (and the demo above) run against; two orthogonal canned embeddings so matching-vs-enrolling is exercised meaningfully with no real model files.
+- `crates/whspr-config/src/speaker/mod.rs` — unit tests for `SpeakerDb::match_or_enroll` (UUID assignment, matching an existing speaker, an orthogonal embedding creating a new speaker), `rename`, and save/load round-tripping.
+- `crates/whspr-cli/tests/diarize_e2e.rs` — `assert_cmd`-driven end-to-end tests: mock-backend labeling (`diarize_with_mock_backend_prints_speaker_labeled_turns`), cross-run persistence (`diarize_persists_speaker_matches_across_runs`), nonexistent-model-dir/unknown-embedding error paths (`diarize_with_nonexistent_model_dir_fails_with_clear_error`, `diarize_with_unknown_embedding_choice_fails_with_clear_error`), and the `SPEAKER_MODEL_DIR` fallback (`diarize_falls_back_to_speaker_model_dir_env_var`).
+- `crates/whspr-app/src/speakers.rs` — tests covering `run_diarize_scan`'s refusal with no model available (`run_diarize_scan_refuses_without_a_model`) and when the feature is disabled (`run_diarize_scan_refuses_when_disabled`), for the GUI's background diarization task.
+- `whspr_core::testkit::MockDiarizer` — the shared, deterministic double all of the above (and the `WHSPR_DIARIZE_MOCK` demo above) run against; two orthogonal canned embeddings so matching-vs-enrolling is exercised meaningfully with no real model files.
 
 All of the above run under `cargo test --workspace` and stay green with no model files, no network, and no GPU.
 
