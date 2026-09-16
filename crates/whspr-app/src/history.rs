@@ -383,4 +383,23 @@ mod tests {
         assert_eq!(without_key.entries.len(), 1);
         assert_eq!(without_key.unreadable, 2);
     }
+
+    #[test]
+    fn an_encrypted_append_hides_the_text_but_reads_back_with_the_key() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("history.jsonl");
+        let key = [5u8; 32];
+        let entry = HistoryEntry {
+            text: "private dictation".to_string(),
+            duration_secs: Some(2.0),
+            speaker_id: Some("spk-1".to_string()),
+        };
+
+        append_history_entry(&path, &entry, Some(&key)).expect("append should succeed");
+
+        let raw = std::fs::read_to_string(&path).expect("history file should exist");
+        assert!(raw.starts_with(whspr_config::history_codec::ENCRYPTED_PREFIX));
+        assert!(!raw.contains("private dictation"));
+        assert_eq!(read_history_file(&path, Some(&key)).entries, vec![entry]);
+    }
 }
