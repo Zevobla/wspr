@@ -73,4 +73,12 @@ mod tests {
     fn app_name_for_enabled_with_no_detected_name_returns_none() {
         assert_eq!(app_name_for(true, None), None);
     }
+
+    #[test]
+    fn app_name_for_disabled_ignores_a_detected_name() {
+        assert_eq!(
+            app_name_for(false, Some("Visual Studio Code".to_string())),
+            None
+        );
+    }
 }
