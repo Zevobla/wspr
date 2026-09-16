@@ -260,4 +260,32 @@ mod tests {
         );
         assert!(!path.exists());
     }
+
+    fn state_with(keystore: whspr_config::MemoryKeystore) -> State {
+        State::with_keystore(
+            whspr_config::Config::default(),
+            crate::secret_store::SecretStore::new(std::sync::Arc::new(keystore)),
+        )
+    }
+
+    #[test]
+    fn turning_encryption_on_then_off_converts_the_file_both_ways() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = history_file(&dir, "{\"text\":\"dictated\"}\n");
+        let mut state = state_with(whspr_config::MemoryKeystore::default());
+
+        assert!(set_history_encryption_at(&mut state, true, Some(&path)));
+        assert!(state.config.privacy.history_encryption);
+        assert!(state.history_key.is_some());
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("dictated"));
+
+        assert!(set_history_encryption_at(&mut state, false, Some(&path)));
+        assert!(!state.config.privacy.history_encryption);
+        assert!(state.history_key.is_none());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"text\":\"dictated\"}\n"
+        );
+        assert_eq!(state.history_note, None);
+    }
 }
