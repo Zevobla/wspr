@@ -262,19 +262,135 @@ hand:
 
 ## Settings
 
-`whspr-config::Config` exists today with these fields; `load()` currently
-always returns the defaults below — there is no config file, env var, or
-CLI flag that changes them yet.
+`whspr-config::Config` loads from `config.toml` in the platform config
+directory (e.g. `~/.config/whspr/config.toml` on Linux,
+`~/Library/Application Support/whspr/config.toml` on macOS), overlaid on
+the compiled-in defaults below — the file is written with these defaults
+on first run. There is no environment-variable override, by design.
 
-| Key | Type | Default | Meaning |
+The **Status** column is load-bearing: "wired" means changing the value
+(in the Hub or the config file) visibly changes behavior; "persisted; no
+effect yet" means the value round-trips through the Settings UI and the
+config file, but nothing in the pipeline reads it yet — verified by
+grepping every non-config, non-Settings-screen read site.
+
+### Top-level
+
+| Key | Default | Status | Meaning |
 |---|---|---|---|
-| `asr` | `AsrChoice` (`whisper-local` \| `open-ai` \| `deepgram`) | `whisper-local` | Which ASR backend to use (selection not wired to `Pipeline` yet) |
-| `refine` | `RefineChoice` (`noop` \| `open-ai` \| `anthropic` \| `llama-local`) | `noop` | Which refiner to use (selection not wired to `Pipeline` yet) |
-| `language` | `Option<String>` | `None` | Language hint for ASR (not consumed anywhere yet) |
+| `asr` | `whisper-local` | wired | Default ASR backend (`whisper-local`\|`open-ai`\|`deepgram`\|`apple-speech`\|`mock`); overridden per-run by `--asr`. |
+| `refine` | `noop` | wired | Default refiner (`noop`\|`open-ai`\|`anthropic`\|`llama-local`\|`apple-foundation`); overridden per-run by `--refine`. |
+| `language` | `None` | wired | BCP47 language hint for ASR; overridden per-run by `--language`. |
+| `hotkey` | `None` (platform default) | wired | Push-to-talk hotkey combo label (e.g. `"Ctrl+Shift+D"`). |
+| `api_keys` | `{}` | wired | `[api_keys]` table: cloud backend id -> API key, stored in plaintext. |
 
-**Planned:** on-disk config file (via `figment`/`toml`), a platform config
-directory (via `directories`), env var overrides, and wiring these values
-into `whspr-cli` / `whspr-app` so they actually select a backend.
+### `[whisper]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `whisper.model_path` | `None` | wired | Path to a GGML model file for `WhisperLocal`. |
+
+### `[speaker]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `speaker.enabled` | `true` | wired | Turns the whole diarization feature on/off. |
+| `speaker.model_dir` | `None` | wired | Directory of sherpa-onnx model files for `whspr diarize`. |
+| `speaker.similarity_threshold` | `0.7` | wired | Minimum cosine similarity to match an already-enrolled speaker. |
+| `speaker.embedding_model` | `cam-plus-plus` | wired | Embedding model choice (`cam-plus-plus`\|`eres2net`). |
+
+### `[normalize]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `normalize.numbers` | `true` | wired | Spell-out numbers -> digits. |
+| `normalize.dates` | `true` | wired | Normalize recognized dates to `YYYY-MM-DD`. |
+| `normalize.times` | `true` | wired | Normalize recognized times to 24-hour `HH:MM`. |
+| `normalize.numbers_format` | `digits` | wired | How normalized numbers/dates/times render. |
+| `normalize.macros` | `{}` | wired | Trigger phrase -> expansion (a `lua:`-prefixed value runs as a sandboxed LuaJIT script). |
+| `normalize.paragraph_break` | `true` | wired | Insert paragraph breaks on long pauses. |
+| `normalize.punctuation_toggle` | `true` | wired | Auto-punctuation cleanup. |
+| `normalize.dictionary` | `{}` | wired | Trigger term -> replacement (finer-grained than `macros`). |
+| `normalize.formulas` | `true` | wired | Recognize spoken arithmetic/symbols and rewrite them symbolically. |
+
+### `[language-settings]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `language_settings.language_switch` | `true` | wired | Auto-detect the recognition language per utterance. |
+| `language_settings.fixed_language` | `None` | wired | Fixed language code used when `language_switch` is `false`. |
+
+### `[device]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `device.input_device` | `None` | wired | Selected input device name (`None` = host default). |
+| `device.device_hotplug` | `true` | persisted; no effect yet | Intended to rescan devices on plug/unplug. |
+| `device.active_window` | `true` | persisted; no effect yet | Intended to record the focused app's name for per-app context. |
+| `device.bluetooth_source` | `true` | persisted; no effect yet | Intended to allow Bluetooth input sources. |
+| `device.virtual_source` | `true` | persisted; no effect yet | Intended to allow virtual/loopback input sources. |
+| `device.tray_static` | `true` | persisted; no effect yet | Intended to keep the tray icon static instead of animating. |
+
+### `[autostart]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `autostart.enabled` | `false` | wired | Launch-at-login; toggling it writes/removes a real OS autostart entry. |
+
+### `[sound]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `sound.enabled` | `true` | wired | Start/stop sound cues. |
+
+### `[injection]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `injection.pre_paste_delay_ms` | `0` | wired | Pause before the paste keystroke, for slow-to-focus target apps. |
+
+### `[privacy]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `privacy.mic_privacy` | `true` | persisted; no effect yet | Intended to release the mic outside active capture. |
+| `privacy.history_encryption` | `false` | persisted; no effect yet | Intended to encrypt stored history at rest. |
+| `privacy.cookies_browser` | `None` | wired | Browser whose cookies media import may borrow for gated videos. |
+
+### `[capture]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `capture.refine_timeout_ms` | `30000` | wired | Timeout for the refine step. |
+| `capture.auto_send` | `false` | persisted; no effect yet | Intended to auto-inject when recording pauses. |
+| `capture.input_field_detection` | `true` | persisted; no effect yet | Intended to detect read-only targets before injecting. |
+| `capture.noise_suppression` | `false` | persisted; no effect yet | Intended noise-suppression preprocessing. |
+| `capture.input_gain` | `1.0` | persisted; no effect yet | Intended input gain multiplier. |
+| `capture.vad_threshold` | `0.01` | persisted; no effect yet | Intended VAD sensitivity — the real silence trim (`whspr_audio::trim_silence_default`) uses its own fixed constant, not this field. |
+| `capture.translate` | `false` | wired | Translate transcribed text via the ASR backend. |
+| `capture.shorten` | `false` | persisted; no effect yet | Intended transcript shortening/summarization. |
+
+### `[huggingface]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `huggingface.token` | `None` | wired | OAuth access token for HuggingFace downloads. |
+| `huggingface.models_dir` | `None` | wired | Directory downloaded model files are placed in. |
+| `huggingface.model_dirs` | `[]` | wired | Extra directories scanned for already-installed model files. |
+| `huggingface.oauth_client_id` | `None` | wired | OAuth app client id for HuggingFace sign-in. |
+
+### `[refine_settings]`
+
+| Key | Default | Status | Meaning |
+|---|---|---|---|
+| `refine_settings.openai_model` | `gpt-4o-mini` | wired | Model id for `OpenAiRefiner`. |
+| `refine_settings.anthropic_model` | `claude-3-5-sonnet-20241022` | wired | Model id for `AnthropicRefiner`. |
+| `refine_settings.llama_model_path` | `None` | wired | GGUF model path for `LlamaLocal`. |
+| `refine_settings.instructions` | `None` | wired | Extra cleanup instructions layered onto the refiners' shared defaults. |
+
+**Planned:** moving `api_keys` / `huggingface.token` into the OS keystore
+(criterion P-06); wiring the "persisted; no effect yet" toggles above into
+real capture/device/privacy behavior.
 
 ## Original feature: speaker fingerprinting
 
