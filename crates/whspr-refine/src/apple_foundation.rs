@@ -46,11 +46,20 @@ pub fn is_available() -> bool {
 /// On-device cleanup via Apple's Foundation Models system LLM (macOS 26+).
 /// Nothing leaves the machine; there is no model to download.
 #[derive(Default)]
-pub struct AppleFoundation;
+pub struct AppleFoundation {
+    shorten: bool,
+}
 
 impl AppleFoundation {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// J-11: append the concise-mode instruction to the cleanup prompt.
+    /// Off by default; whspr-cli wires this from `[capture].shorten`.
+    pub fn with_shorten(mut self, shorten: bool) -> Self {
+        self.shorten = shorten;
+        self
     }
 }
 
@@ -98,7 +107,7 @@ impl TextRefiner for AppleFoundation {
             // backends); the session gets a short system instruction on top.
             let instructions =
                 "You clean up raw speech-to-text. Output only the cleaned text, with no preamble.";
-            let prompt = crate::build_cleanup_prompt(raw, ctx, false);
+            let prompt = crate::build_cleanup_prompt(raw, ctx, self.shorten);
             // Foundation Models inference is synchronous from our side (the shim
             // blocks); keep it off the async runtime, like the llama-local path.
             tokio::task::spawn_blocking(move || refine_blocking(instructions, &prompt))
@@ -107,7 +116,7 @@ impl TextRefiner for AppleFoundation {
         }
         #[cfg(not(whspr_apple_fm))]
         {
-            let _ = (raw, ctx);
+            let _ = (raw, ctx, self.shorten);
             Err(WhsprError::Refine(
                 "Apple Foundation Models was not built into this binary".into(),
             ))
@@ -144,6 +153,22 @@ mod tests {
             return;
         }
         let result = AppleFoundation::new()
+            .refine("um hello there", &RefineContext::default())
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn with_shorten_does_not_disturb_the_unavailable_error_path() {
+        // Same reasoning as refine_when_unavailable_errors_without_panicking:
+        // no real device/model in this test environment to inspect the
+        // actual prompt against (that's build_cleanup_prompt's own tests,
+        // in lib.rs), so this just proves the builder wires through cleanly.
+        if is_available() {
+            return;
+        }
+        let result = AppleFoundation::new()
+            .with_shorten(true)
             .refine("um hello there", &RefineContext::default())
             .await;
         assert!(result.is_err());
