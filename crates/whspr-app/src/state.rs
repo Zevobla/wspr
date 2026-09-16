@@ -4,6 +4,7 @@ use iced::window;
 use whspr_config::Config;
 
 use crate::history::HistoryEntry;
+use crate::secret_store::{SecretLocation, SecretSlot, SecretStore};
 // The Hub's navigation enums live in their own module (AA-06 line cap); they
 // were part of this file, so they're re-exported here to keep the existing
 // `crate::state::Screen` / `crate::state::SettingsSection` paths working.
@@ -168,6 +169,16 @@ pub struct State {
     /// `Message::HfDownloadProgress`, cleared on completion; drives the Models
     /// screen's progress bar (see `crate::hf_progress`).
     pub active_download: Option<crate::hf_progress::ActiveDownload>,
+    /// The keystore Hub-managed secrets (API keys, the HuggingFace token)
+    /// are read from and written to -- the OS keystore in the running app
+    /// (see `State::with_keystore` and `crate::secret_store`).
+    pub keystore: SecretStore,
+    /// Where each Hub-managed secret lives, cached at boot and after every
+    /// change so views never query the keychain on a redraw.
+    pub secret_locations: std::collections::HashMap<SecretSlot, SecretLocation>,
+    /// The Accounts & keys section's unsaved API-key inputs, by backend id.
+    /// Credentials: never logged, dropped as soon as they are saved.
+    pub api_key_drafts: std::collections::HashMap<&'static str, String>,
     /// Live contents of the Models tab's "sign in with a token" field: a
     /// HuggingFace access token the user pastes in place of the browser OAuth
     /// flow. Held here (never logged) only until `Message::HfTokenSubmit`
@@ -211,19 +222,26 @@ pub struct State {
 }
 
 impl State {
-    /// Builds the initial state from the config loaded at boot. Device
-    /// fields start empty; `crate::app::boot` fills them in separately since
-    /// enumerating devices is its own concern from loading config.
+    /// Builds the initial state from `config` with no OS keystore: secrets
+    /// stay in `config.toml`, as on a platform whose keystore does not
+    /// survive a reboot (see `SecretStore::plaintext_only`). The app itself
+    /// boots through [`State::with_keystore`].
     pub fn new(config: Config) -> Self {
+        Self::with_keystore(config, SecretStore::plaintext_only())
+    }
+
+    /// Builds the initial state from the config loaded at boot, reading and
+    /// writing secrets through `keystore`. Device fields start empty;
+    /// `crate::app::boot` fills them in separately since enumerating devices
+    /// is its own concern from loading config.
+    pub fn with_keystore(config: Config, keystore: SecretStore) -> Self {
         let refine_timeout_draft = config.capture.refine_timeout_ms.to_string();
         let pre_paste_delay_draft = config.injection.pre_paste_delay_ms.to_string();
-        // Computed before the struct literal moves `config` into place: a
-        // saved token means "already signed in" even before any whoami call.
-        let hf_status = config
-            .huggingface
-            .token
-            .as_ref()
-            .map(|_| "Signed in with a saved token.".to_string());
+        let secret_locations = crate::secret_store::locate_all(&config, keystore.keystore());
+        // A saved token means "already signed in" even before any whoami call.
+        let hf_status = (secret_locations.get(&SecretSlot::HfToken)
+            != Some(&SecretLocation::Missing))
+        .then(|| "Signed in with a saved token.".to_string());
         Self {
             hub_window: None,
             config,
@@ -257,6 +275,9 @@ impl State {
             hf_status,
             hf_busy: false,
             active_download: None,
+            keystore,
+            secret_locations,
+            api_key_drafts: std::collections::HashMap::new(),
             hf_token_input: String::new(),
             hf_models: whspr_hf::ScanResult::default(),
             hf_specs: whspr_hf::probe(),
