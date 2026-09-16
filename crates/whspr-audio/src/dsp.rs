@@ -192,4 +192,21 @@ mod tests {
         apply_gain(&mut samples, 2.0);
         assert!(samples.is_empty());
     }
+
+    #[test]
+    fn suppress_noise_on_empty_slice_does_not_panic() {
+        let mut samples: Vec<f32> = Vec::new();
+        suppress_noise(&mut samples, 16000);
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    fn suppress_noise_with_zero_sample_rate_does_not_panic_or_divide_by_zero() {
+        let mut samples = vec![0.1, 0.2, 0.3];
+        let original = samples.clone();
+        suppress_noise(&mut samples, 0);
+        // sample_rate == 0 is nonsensical input; suppress_noise leaves it
+        // untouched rather than dividing by zero building the filter.
+        assert_eq!(samples, original);
+    }
 }
