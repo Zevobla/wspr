@@ -92,4 +92,16 @@ mod tests {
             Some(JSON)
         );
     }
+
+    #[test]
+    fn a_tampered_line_fails_authentication() {
+        let line = encode_line(JSON, &KEY);
+        // Flip one ciphertext digit, well past the prefix and nonce.
+        let mut tampered: Vec<char> = line.chars().collect();
+        let at = ENCRYPTED_PREFIX.len() + 2 * NONCE_LEN + 4;
+        tampered[at] = if tampered[at] == '0' { '1' } else { '0' };
+        let tampered: String = tampered.into_iter().collect();
+
+        assert!(decode_line(&tampered, Some(&KEY)).is_err());
+    }
 }
